@@ -23,7 +23,8 @@ export function DatePickerWithYearSelector({
   placeholder = 'Selecionar data', 
   disabled 
 }: DatePickerWithYearSelectorProps) {
-  const [month, setMonth] = React.useState<Date>(date || new Date());
+  const safeDate = date && !isNaN(date.getTime()) ? date : undefined;
+  const [month, setMonth] = React.useState<Date>(safeDate || new Date());
   const [showYearSelector, setShowYearSelector] = React.useState(false);
   const [showMonthSelector, setShowMonthSelector] = React.useState(false);
 
@@ -74,7 +75,7 @@ export function DatePickerWithYearSelector({
   };
 
   React.useEffect(() => {
-    if (date) {
+    if (date && !isNaN(date.getTime())) {
       setMonth(date);
     }
   }, [date]);
@@ -84,11 +85,11 @@ export function DatePickerWithYearSelector({
       <PopoverTrigger asChild>
         <Button
           variant={'outline'}
-          className={cn('w-full justify-start text-left font-normal', !date && 'text-muted-foreground')}
+          className={cn('w-full justify-start text-left font-normal', !safeDate && 'text-muted-foreground')}
           disabled={disabled}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
-          {date ? format(date, 'dd/MM/yyyy', { locale: ptBR }) : <span>{placeholder}</span>}
+          {safeDate ? format(safeDate, 'dd/MM/yyyy', { locale: ptBR }) : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
@@ -179,7 +180,7 @@ export function DatePickerWithYearSelector({
           {/* Calendário */}
           <Calendar
             mode="single"
-            selected={date}
+            selected={safeDate}
             onSelect={onDateChange}
             month={month}
             onMonthChange={setMonth}
