@@ -29,6 +29,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toast": "^1.2.2",
+    "@supabase/supabase-js": "^2.99.1",
     "@uibakery/data": "0.0.7",
     "canvas-confetti": "1.9.3",
     "class-variance-authority": "0.7.0",
