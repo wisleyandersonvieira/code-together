@@ -75,7 +75,7 @@ export function DatePickerWithYearSelector({
   };
 
   React.useEffect(() => {
-    if (date) {
+    if (date && !isNaN(date.getTime())) {
       setMonth(date);
     }
   }, [date]);
