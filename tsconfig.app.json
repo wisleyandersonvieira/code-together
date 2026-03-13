@@ -38,6 +38,7 @@
     "hooks",
     "lib",
     "main.tsx",
+    "src",
     "types",
     "utils",
     "vite-env.d.ts"
