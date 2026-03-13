@@ -86,6 +86,7 @@ import {
 import { Database, Github } from 'lucide-react';
 import { ProvisonLogo } from '@/components/ProvisonLogo';
 import { ExportProject } from '@/components/ExportProject';
+import { cn } from '@/lib/utils';
 
 type TabType = 
   | 'dashboard' 
@@ -369,37 +370,40 @@ function App() {
     }
   };
 
-  const getActiveButtonVariant = (tab: TabType) => {
-    return activeTab === tab ? 'default' : 'ghost';
-  };
+  const getNavItemClasses = (isActive: boolean) =>
+    cn(
+      'h-10 rounded-xl border border-transparent bg-transparent px-4 text-sm font-medium text-slate-700 transition-all duration-200 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-950',
+      isActive &&
+        'border-slate-900 bg-slate-900 text-white shadow-sm hover:border-slate-800 hover:bg-slate-800 hover:text-white',
+    );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       {/* Database Connection Status - only show if there's an error */}
       <div className="container mx-auto p-4">
         <DatabaseConnectionStatus />
       </div>
       
-      <div className="border-b bg-white">
+      <div className="border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/85">
         <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="bg-black p-2 rounded">
+          <div className="flex h-20 items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 p-2.5 shadow-sm">
                 <ProvisonLogo className="w-8 h-8" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-900">PROVISON</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">PROVISON</h1>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">{currentUser.role}</Badge>
-                <span className="text-sm text-gray-600">{currentUser.name}</span>
+            <div className="flex items-center gap-5">
+              <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+                <Badge variant="outline" className="border-slate-300 bg-white text-slate-700">{currentUser.role}</Badge>
+                <span className="text-sm font-medium text-slate-600">{currentUser.name}</span>
               </div>
 
               <Button 
-                variant="ghost" 
+                variant="ghost"
                 size="sm" 
                 onClick={handleLogout}
-                className="text-gray-600 hover:text-gray-900"
+                className="h-10 rounded-xl border border-slate-200 px-4 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
@@ -409,12 +413,12 @@ function App() {
         </div>
       </div>
 
-      <div className="border-b bg-white overflow-x-auto">
+      <div className="border-b border-slate-200 bg-white/80 shadow-[0_1px_0_rgba(15,23,42,0.04)] overflow-x-auto">
         <div className="container mx-auto px-4">
-          <div className="flex gap-1 h-12 min-w-max">
+          <div className="flex min-w-max items-center gap-2 py-3">
             <Button
-              variant={getActiveButtonVariant('dashboard')}
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+              variant="ghost"
+              className={getNavItemClasses(activeTab === 'dashboard')}
               onClick={() => setActiveTab('dashboard')}
             >
               <BarChart3 className="mr-2 h-4 w-4" />
@@ -423,16 +427,15 @@ function App() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={isCadastroActive ? 'default' : 'ghost'}
-                  className="rounded-none border-b-2 border-transparent data-[state=open]:border-blue-600"
-                  style={{ borderBottomColor: isCadastroActive ? '#2563eb' : 'transparent' }}
+                  variant="ghost"
+                  className={getNavItemClasses(isCadastroActive)}
                 >
                   <FolderOpen className="mr-2 h-4 w-4" />
                   Cadastros
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
                 <DropdownMenuItem onClick={() => setActiveTab('clientes')}>
                   <UserCheck className="mr-2 h-4 w-4" />
                   Clientes
@@ -484,16 +487,16 @@ function App() {
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
-              variant={getActiveButtonVariant('projetos')}
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+              variant="ghost"
+              className={getNavItemClasses(activeTab === 'projetos')}
               onClick={() => setActiveTab('projetos')}
             >
               <Home className="mr-2 h-4 w-4" />
               Projetos
             </Button>
             <Button
-              variant={getActiveButtonVariant('kanban')}
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600"
+              variant="ghost"
+              className={getNavItemClasses(activeTab === 'kanban')}
               onClick={() => setActiveTab('kanban')}
             >
               <BarChart3 className="mr-2 h-4 w-4" />
@@ -502,16 +505,15 @@ function App() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={isFinanceiroActive ? 'default' : 'ghost'}
-                  className="rounded-none border-b-2 border-transparent data-[state=open]:border-blue-600"
-                  style={{ borderBottomColor: isFinanceiroActive ? '#2563eb' : 'transparent' }}
+                  variant="ghost"
+                  className={getNavItemClasses(isFinanceiroActive)}
                 >
                   <Banknote className="mr-2 h-4 w-4" />
                   Financeiro
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
                 <DropdownMenuItem onClick={() => setActiveTab('contas-pagar')}>
                   <Receipt className="mr-2 h-4 w-4" />
                   Cadastro de Contas a Pagar
@@ -533,16 +535,15 @@ function App() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={isRelatorioActive ? 'default' : 'ghost'}
-                  className="rounded-none border-b-2 border-transparent data-[state=open]:border-blue-600"
-                  style={{ borderBottomColor: isRelatorioActive ? '#2563eb' : 'transparent' }}
+                  variant="ghost"
+                  className={getNavItemClasses(isRelatorioActive)}
                 >
                   <PieChart className="mr-2 h-4 w-4" />
                   Relatórios
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
                 <DropdownMenuItem onClick={() => setActiveTab('relatorio-cliente')}>
                   <UserCheck className="mr-2 h-4 w-4" />
                   Relatório por Projeto
@@ -568,16 +569,15 @@ function App() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={isMatrizActive ? 'default' : 'ghost'}
-                  className="rounded-none border-b-2 border-transparent data-[state=open]:border-blue-600"
-                  style={{ borderBottomColor: isMatrizActive ? '#2563eb' : 'transparent' }}
+                  variant="ghost"
+                  className={getNavItemClasses(isMatrizActive)}
                 >
                   <Building className="mr-2 h-4 w-4" />
                   Matriz
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
                 <DropdownMenuItem onClick={() => setActiveTab('socios')}>
                   <UserIcon className="mr-2 h-4 w-4" />
                   Cadastrar Sócio
