@@ -28,7 +28,7 @@ import {
   File,
   PieChart,
   LogOut,
-  User,
+  User as UserIcon,
   Server,
   Zap
 } from 'lucide-react';
