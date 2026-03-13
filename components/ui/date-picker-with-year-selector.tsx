@@ -180,7 +180,7 @@ export function DatePickerWithYearSelector({
           {/* Calendário */}
           <Calendar
             mode="single"
-            selected={date}
+            selected={safeDate}
             onSelect={onDateChange}
             month={month}
             onMonthChange={setMonth}
