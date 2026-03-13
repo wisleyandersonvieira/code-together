@@ -1,5 +1,57 @@
 import { corsHeaders } from "../_shared/cors.ts";
 
+/**
+ * Evaluates UIBakery-style template expressions in SQL queries.
+ * Handles both:
+ *   - Simple: {{params.key}}
+ *   - Conditional: {{ params && params.key ? "SQL fragment" : "" }}
+ */
+function processTemplate(query: string, params: Record<string, any>): string {
+  // First, evaluate complex JS expressions: {{ expr }}
+  // These contain ternary operators, && chains, etc.
+  let processed = query.replace(/\{\{([\s\S]*?)\}\}/g, (_match, expr: string) => {
+    const trimmed = expr.trim();
+
+    // Simple param reference: params.key or params.key::type
+    const simpleMatch = trimmed.match(/^params\.(\w+)(::.*)?$/);
+    if (simpleMatch) {
+      const key = simpleMatch[1];
+      const cast = simpleMatch[2] || "";
+      const value = params[key];
+      if (value === null || value === undefined) {
+        return "NULL" + cast;
+      } else if (typeof value === "number" || typeof value === "boolean") {
+        return String(value) + cast;
+      } else {
+        const escaped = String(value).replace(/'/g, "''");
+        return `'${escaped}'` + cast;
+      }
+    }
+
+    // Complex expression - evaluate as JavaScript with params in scope
+    try {
+      // Create a function that has access to params
+      const fn = new Function("params", `
+        try {
+          return (${trimmed});
+        } catch(e) {
+          return "";
+        }
+      `);
+      const result = fn(params);
+      if (result === null || result === undefined || result === false) {
+        return "";
+      }
+      return String(result);
+    } catch (_e) {
+      console.warn(`[execute-sql] Failed to evaluate expression: ${trimmed}`);
+      return "";
+    }
+  });
+
+  return processed;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -15,36 +67,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Substitute {{params.xxx}} with actual values
-    let processedQuery = query;
-    if (params && typeof params === "object") {
-      for (const [key, value] of Object.entries(params)) {
-        // First handle quoted placeholders: '{{params.key}}'
-        const quotedPlaceholder = new RegExp(`'\\{\\{params\\.${key}\\}\\}'`, "g");
-        // Then handle unquoted placeholders: {{params.key}}
-        const unquotedPlaceholder = new RegExp(`\\{\\{params\\.${key}\\}\\}`, "g");
+    // Process all template expressions
+    const processedQuery = processTemplate(query, params || {});
 
-        if (value === null || value === undefined) {
-          processedQuery = processedQuery.replace(quotedPlaceholder, "NULL");
-          processedQuery = processedQuery.replace(unquotedPlaceholder, "NULL");
-        } else if (typeof value === "string") {
-          const escaped = String(value).replace(/'/g, "''");
-          processedQuery = processedQuery.replace(quotedPlaceholder, `'${escaped}'`);
-          processedQuery = processedQuery.replace(unquotedPlaceholder, `'${escaped}'`);
-        } else if (typeof value === "number" || typeof value === "boolean") {
-          processedQuery = processedQuery.replace(quotedPlaceholder, String(value));
-          processedQuery = processedQuery.replace(unquotedPlaceholder, String(value));
-        } else {
-          const escaped = JSON.stringify(value).replace(/'/g, "''");
-          processedQuery = processedQuery.replace(quotedPlaceholder, `'${escaped}'`);
-          processedQuery = processedQuery.replace(unquotedPlaceholder, `'${escaped}'`);
-        }
-      }
-    }
+    // Clean up any trailing semicolons followed by whitespace issues
+    const cleanQuery = processedQuery.replace(/;\s*$/, "").trim();
 
-    console.log(`[execute-sql] Running query: ${processedQuery.substring(0, 200)}...`);
+    console.log(`[execute-sql] Running query: ${cleanQuery.substring(0, 200)}...`);
 
-    // Use the database URL directly with postgres.js
     const dbUrl = Deno.env.get("SUPABASE_DB_URL");
     if (!dbUrl) {
       return new Response(
@@ -53,12 +83,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Dynamic import of postgres
     const postgres = (await import("https://deno.land/x/postgresjs@v3.4.5/mod.js")).default;
     const sql = postgres(dbUrl, { max: 1 });
 
     try {
-      const result = await sql.unsafe(processedQuery);
+      const result = await sql.unsafe(cleanQuery);
       await sql.end();
 
       return new Response(
@@ -68,6 +97,7 @@ Deno.serve(async (req) => {
     } catch (pgError: any) {
       await sql.end();
       console.error(`[execute-sql] SQL error:`, pgError.message);
+      console.error(`[execute-sql] Failed query:`, cleanQuery.substring(0, 500));
       return new Response(
         JSON.stringify({ data: null, error: pgError.message }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
