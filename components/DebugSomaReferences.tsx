@@ -13,12 +13,10 @@ export function DebugSomaReferences() {
   const [estruturaId, setEstruturaId] = useState<string>('9');
   const [shouldLoad, setShouldLoad] = useState(false);
 
-  // @ts-ignore - useLoadAction supports 4th arg at runtime
   const [referencias, loading] = useLoadAction(
     debugSomaReferencesAction,
     [],
-    { estruturaId: estruturaId ? parseInt(estruturaId) : null },
-    shouldLoad && !!estruturaId
+    { estruturaId: estruturaId ? parseInt(estruturaId) : null }
   );
 
   const handleLoad = () => {

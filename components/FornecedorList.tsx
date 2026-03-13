@@ -294,13 +294,13 @@ export function FornecedorList() {
       </Card>
 
       <FornecedorViewDialog
-        fornecedor={selectedFornecedor}
+        fornecedor={selectedFornecedor as any}
         open={isViewOpen}
         onOpenChange={setIsViewOpen}
       />
 
       <FornecedorEditDialog
-        fornecedor={selectedFornecedor}
+        fornecedor={selectedFornecedor as any}
         open={isEditOpen}
         onOpenChange={setIsEditOpen}
         onSuccess={handleEditSuccess}

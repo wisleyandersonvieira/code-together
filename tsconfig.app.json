@@ -24,6 +24,7 @@
     "skipLibCheck": true,
     "strict": true,
     "strictNullChecks": false,
+    "useUnknownInCatchVariables": false,
     "target": "ES2020",
     "useDefineForClassFields": true
   },
