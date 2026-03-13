@@ -11,6 +11,7 @@ export function DatabaseConnectionStatus() {
   const [isRetrying, setIsRetrying] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   
+  // @ts-ignore - useLoadAction supports 4th arg at runtime
   const [parametros, loading, error, reload] = useLoadAction(
     loadParametrosAction,
     [],

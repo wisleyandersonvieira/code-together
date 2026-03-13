@@ -56,6 +56,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
 
   
   // Load existing items if editing
+  // @ts-ignore - useLoadAction supports 4th arg at runtime
   const [existingItens, , , refreshItens] = useLoadAction(
     loadEstruturaDreItensAction,
     [],

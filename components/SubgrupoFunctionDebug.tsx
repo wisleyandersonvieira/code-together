@@ -10,7 +10,7 @@ export function SubgrupoFunctionDebug() {
   const [subgrupos, loading, error] = useLoadAction(checkSubgruposFuncaoDataAction, []);
 
   if (loading) return <div>Carregando dados de função dos subgrupos...</div>;
-  if (error) return <div>Erro: {error}</div>;
+  if (error) return <div>Erro: {String(error)}</div>;
 
   console.log('=== DEBUGGING SUBGRUPO FUNCTIONS ===');
   console.log('Raw data from database:', subgrupos);

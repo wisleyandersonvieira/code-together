@@ -16,7 +16,7 @@ export function TaxaAdmDebugger() {
   console.log('================================');
 
   if (loading) return <div>Carregando verificação Taxa Adm...</div>;
-  if (error) return <div className="text-red-600">Erro: {error}</div>;
+  if (error) return <div className="text-red-600">Erro: {String(error)}</div>;
 
   return (
     <Card className="border-blue-200">
