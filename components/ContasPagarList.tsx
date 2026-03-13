@@ -5,7 +5,6 @@ import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
@@ -39,6 +38,7 @@ import loadTitulosByContaPagarAction from '@/actions/loadTitulosByContaPagar';
 import deleteContaPagarAction from '@/actions/deleteContaPagar';
 import payTituloPagarAction from '@/actions/payTituloPagar';
 import reverseTituloPagarAction from '@/actions/reverseTituloPagar';
+import { FinanceActionButton, FinanceStatusBadge } from '@/components/finance/listing-ui';
 
 type SortColumn = 'numero_documento' | 'fornecedor_nome' | 'data_vencimento' | 'valor_total' | 'status';
 type SortDirection = 'asc' | 'desc';
@@ -317,20 +317,20 @@ export function ContasPagarList() {
 
   const getSortIcon = (column: SortColumn) => {
     if (column !== sortColumn) {
-      return <ArrowUpDown className="h-4 w-4 ml-2 opacity-50" />;
+      return <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-slate-400" />;
     }
     return sortDirection === 'asc' 
-      ? <ArrowUp className="h-4 w-4 ml-2" />
-      : <ArrowDown className="h-4 w-4 ml-2" />;
+      ? <ArrowUp className="ml-2 h-3.5 w-3.5 text-slate-500" />
+      : <ArrowDown className="ml-2 h-3.5 w-3.5 text-slate-500" />;
   };
 
   const getStatusBadge = (status: string, titulosPagos: number, totalTitulos: number) => {
     if (status === 'PAGO_TOTAL' || titulosPagos === totalTitulos) {
-      return <Badge variant="default" className="bg-green-500">Pago</Badge>;
+      return <FinanceStatusBadge label="Pago" tone="success" />;
     } else if (status === 'PAGO_PARCIAL' || titulosPagos > 0) {
-      return <Badge variant="secondary">Parcial</Badge>;
+      return <FinanceStatusBadge label="Parcial" tone="warning" />;
     } else {
-      return <Badge variant="destructive">Pendente</Badge>;
+      return <FinanceStatusBadge label="Pendente" tone="danger" />;
     }
   };
 
@@ -494,14 +494,14 @@ export function ContasPagarList() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
+          <Table className="min-w-[1120px]">
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead>Matriz</TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50 w-[120px]"
+                  className="w-[120px] cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('numero_documento')}
                 >
                   <div className="flex items-center">
@@ -509,9 +509,9 @@ export function ContasPagarList() {
                     {getSortIcon('numero_documento')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[80px]">Tipo</TableHead>
+                <TableHead className="w-[80px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Tipo</TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('fornecedor_nome')}
                 >
                   <div className="flex items-center">
@@ -520,7 +520,7 @@ export function ContasPagarList() {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('data_vencimento')}
                 >
                   <div className="flex items-center">
@@ -528,9 +528,9 @@ export function ContasPagarList() {
                     {getSortIcon('data_vencimento')}
                   </div>
                 </TableHead>
-                <TableHead>Pagamento</TableHead>
+                <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Pagamento</TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('valor_total')}
                 >
                   <div className="flex items-center">
@@ -538,9 +538,9 @@ export function ContasPagarList() {
                     {getSortIcon('valor_total')}
                   </div>
                 </TableHead>
-                <TableHead>Títulos</TableHead>
+                <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Títulos</TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('status')}
                 >
                   <div className="flex items-center">
@@ -548,83 +548,52 @@ export function ContasPagarList() {
                     {getSortIcon('status')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[120px]">Ações</TableHead>
+                <TableHead className="w-[160px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedContasPagar.map((conta: any) => (
-                <TableRow key={conta.id} className="hover:bg-muted/50">
-                  <TableCell>
+                <TableRow key={conta.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {conta.matriz_nome || '-'}
                   </TableCell>
-                  <TableCell className="font-mono font-medium">
+                  <TableCell className="px-4 py-3.5 align-middle font-mono text-sm font-semibold text-slate-700">
                     {conta.numero_documento}
                   </TableCell>
-                  <TableCell className="font-medium text-sm">
+                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
                     {conta.tipo_documento_descricao}
                   </TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
                     {conta.fornecedor_nome}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {formatDateWithTimezone(conta.data_vencimento)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {conta.data_primeiro_pagamento && conta.data_ultimo_pagamento
                       ? conta.data_primeiro_pagamento === conta.data_ultimo_pagamento
                         ? formatDateWithTimezone(conta.data_primeiro_pagamento)
                         : `${formatDateWithTimezone(conta.data_primeiro_pagamento)} - ${formatDateWithTimezone(conta.data_ultimo_pagamento)}`
                       : '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
                     {formatCurrency(parseFloat(conta.valor_total))}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {conta.titulos_pagos}/{conta.total_titulos}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle">
                     {getStatusBadge(conta.status, conta.titulos_pagos, conta.total_titulos)}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(conta)}
-                        title="Editar"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                  <TableCell className="px-4 py-3.5 align-middle">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <FinanceActionButton icon={Edit} onClick={() => handleEdit(conta)} title="Editar" tone="brand" />
                       {conta.titulos_pagos === 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(conta)}
-                          title="Excluir"
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <FinanceActionButton icon={Trash2} onClick={() => handleDelete(conta)} title="Excluir" tone="danger" />
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handlePayment(conta)}
-                        title="Baixar/Pagar"
-                        className="text-green-600 hover:text-green-700"
-                      >
-                        <CreditCard className="h-4 w-4" />
-                      </Button>
+                      <FinanceActionButton icon={CreditCard} onClick={() => handlePayment(conta)} title="Baixar/Pagar" tone="success" />
                       {conta.titulos_pagos > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleReverse(conta)}
-                          title="Estornar Pagamento"
-                          className="text-orange-600 hover:text-orange-700"
-                        >
-                          <Undo2 className="h-4 w-4" />
-                        </Button>
+                        <FinanceActionButton icon={Undo2} onClick={() => handleReverse(conta)} title="Estornar Pagamento" tone="warning" />
                       )}
                     </div>
                   </TableCell>
@@ -632,7 +601,7 @@ export function ContasPagarList() {
               ))}
               {sortedContasPagar.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-12">
+                  <TableCell colSpan={10} className="py-14 text-center">
                     <div className="flex flex-col items-center">
                       <Receipt className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-medium mb-2">Nenhuma conta a pagar cadastrada</h3>
@@ -810,8 +779,8 @@ function ReversePaymentModalContent({ conta, onClose, onSuccess }: ReversePaymen
           </div>
         ) : (
           <Table>
-            <TableHeader>
-              <TableRow>
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead className="w-[50px]">Estornar</TableHead>
                 <TableHead>Parcela</TableHead>
                 <TableHead>Vencimento</TableHead>
