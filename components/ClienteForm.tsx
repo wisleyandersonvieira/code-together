@@ -28,7 +28,7 @@ const formSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }).optional().or(z.literal('')),
   cpf: z.string().min(11, { message: 'CPF deve ter 11 dígitos.' }).max(14).optional().or(z.literal('')),
   birthDate: z.date().optional(),
-  active: z.boolean().default(true),
+  active: z.boolean().optional().default(true),
 });
 
 type FormData = z.infer<typeof formSchema>;
