@@ -23,7 +23,8 @@ export function DatePickerWithYearSelector({
   placeholder = 'Selecionar data', 
   disabled 
 }: DatePickerWithYearSelectorProps) {
-  const [month, setMonth] = React.useState<Date>(date || new Date());
+  const safeDate = date && !isNaN(date.getTime()) ? date : undefined;
+  const [month, setMonth] = React.useState<Date>(safeDate || new Date());
   const [showYearSelector, setShowYearSelector] = React.useState(false);
   const [showMonthSelector, setShowMonthSelector] = React.useState(false);
 
