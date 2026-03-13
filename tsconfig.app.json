@@ -33,7 +33,6 @@
     "actions"
   ],
   "include": [
-    "actions",
     "app",
     "components",
     "hooks",
