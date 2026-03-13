@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';

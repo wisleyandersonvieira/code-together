@@ -180,6 +180,13 @@ export type Database = {
             referencedRelation: "orcamentos"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "conta_pagar_orcamento_alocacao_orcamento_id_fkey"
+            columns: ["orcamento_id"]
+            isOneToOne: false
+            referencedRelation: "orcamentos_executado"
+            referencedColumns: ["id"]
+          },
         ]
       }
       contas: {
@@ -1617,7 +1624,34 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      orcamentos_executado: {
+        Row: {
+          description: string | null
+          fornecedor_id: number | null
+          id: number | null
+          predicted_date: string | null
+          projeto_id: number | null
+          valor_executado: number | null
+          valor_orcado: number | null
+          valor_saldo: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orcamentos_fornecedor_id_fkey"
+            columns: ["fornecedor_id"]
+            isOneToOne: false
+            referencedRelation: "fornecedores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orcamentos_projeto_id_fkey"
+            columns: ["projeto_id"]
+            isOneToOne: false
+            referencedRelation: "projetos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       [_ in never]: never
