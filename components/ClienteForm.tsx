@@ -66,7 +66,7 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
   }, [cliente?.id]);
 
   const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(formSchema) as any,
     defaultValues: {
       name: cliente?.name || '',
       address: cliente?.address || '',
