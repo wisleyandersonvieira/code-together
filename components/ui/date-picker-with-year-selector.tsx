@@ -85,7 +85,7 @@ export function DatePickerWithYearSelector({
       <PopoverTrigger asChild>
         <Button
           variant={'outline'}
-          className={cn('w-full justify-start text-left font-normal', !date && 'text-muted-foreground')}
+          className={cn('w-full justify-start text-left font-normal', !safeDate && 'text-muted-foreground')}
           disabled={disabled}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
