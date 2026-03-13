@@ -111,7 +111,7 @@ export function TransferenciaForm({ transferencia, onSuccess, onCancel }: Transf
           description: "Transferência foi atualizada com sucesso.",
         });
       } else {
-        await createTransferencia(transferencia);
+        await createTransferencia(transferenciaData);
         toast({
           title: "Transferência criada",
           description: "Nova transferência foi registrada com sucesso.",
