@@ -1,33 +1,35 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
     "jsx": "react-jsx",
-
-    /* Linting */
-    "strict": true,
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true,
     "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
-    "strictNullChecks": false,
-
-    /* for ShadCN */
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
-    }
+      "@/*": [
+        "./*"
+      ]
+    },
+    "skipLibCheck": true,
+    "strict": true,
+    "strictNullChecks": false,
+    "target": "ES2020",
+    "useDefineForClassFields": true
   },
+  "exclude": [
+    "app/examples"
+  ],
   "include": [
     "actions",
     "app",
@@ -38,6 +40,5 @@
     "types",
     "utils",
     "vite-env.d.ts"
-  ],
-  "exclude": ["app/examples"]
+  ]
 }
