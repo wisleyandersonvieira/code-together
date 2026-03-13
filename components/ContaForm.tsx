@@ -44,7 +44,7 @@ export function ContaForm({ conta, onSuccess, onCancel }: ContaFormProps) {
   const [fixSequence] = useMutateAction(fixContasSequenceAction);
 
   const form = useForm<ContaFormData>({
-    resolver: zodResolver(contaSchema) as any,
+    resolver: zodResolver(contaSchema),
     defaultValues: {
       nome: '',
       numero: '',

@@ -26,7 +26,7 @@ import fixGruposSequenceAction from '@/actions/fixGruposSequence';
 import { useToast } from '@/hooks/use-toast';
 
 const memberSchema = z.object({
-  type: z.enum(['cliente', 'empresa'], { message: 'Selecione o tipo' }),
+  type: z.enum(['cliente', 'empresa'], { required_error: 'Selecione o tipo' }),
   id: z.string().min(1, 'Selecione um cliente ou empresa'),
   percentage: z.number().min(0.01, 'Porcentagem deve ser maior que 0').max(100, 'Porcentagem não pode ser maior que 100'),
 });

@@ -23,7 +23,7 @@ const formSchema = z.object({
     message: 'Descrição deve ter pelo menos 2 caracteres.',
   }),
   tipo: z.enum(['Produto', 'Servico'], {
-    message: 'Selecione um tipo.',
+    required_error: 'Selecione um tipo.',
   }),
   grupo_id: z.string().min(1, {
     message: 'Selecione um grupo.',

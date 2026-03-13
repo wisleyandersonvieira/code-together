@@ -20,11 +20,11 @@ import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadContasAction from '@/actions/loadContas';
 
 const aporteSchema = z.object({
-  socioId: z.number({ message: 'Selecione um sócio' }),
-  matrizId: z.number({ message: 'Selecione uma matriz' }),
-  contaId: z.number({ message: 'Selecione uma conta' }),
+  socioId: z.number({ required_error: 'Selecione um sócio' }),
+  matrizId: z.number({ required_error: 'Selecione uma matriz' }),
+  contaId: z.number({ required_error: 'Selecione uma conta' }),
   dataAporte: z.string().min(1, 'Data é obrigatória'),
-  valor: z.number({ message: 'Valor é obrigatório' }).positive('Valor deve ser positivo'),
+  valor: z.number({ required_error: 'Valor é obrigatório' }).positive('Valor deve ser positivo'),
   observacoes: z.string().optional(),
 });
 

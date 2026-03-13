@@ -59,7 +59,7 @@ const formSchema = z.object({
   landSqft: z.number().min(0, 'Metragem deve ser positiva').optional(),
   details: z.string().optional(),
   predictedSaleValue: z.number().min(0, 'Valor deve ser positivo').optional(),
-  status: z.enum(['Em andamento', 'Concluído'], { message: 'Selecione o status do projeto' }),
+  status: z.enum(['Em andamento', 'Concluído'], { required_error: 'Selecione o status do projeto' }),
   members: z.array(memberSchema).min(1, 'Adicione pelo menos um membro ao projeto'),
   orcamentos: z.array(orcamentoSchema).optional(),
 });
