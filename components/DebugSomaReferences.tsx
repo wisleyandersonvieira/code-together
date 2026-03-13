@@ -16,8 +16,7 @@ export function DebugSomaReferences() {
   const [referencias, loading] = useLoadAction(
     debugSomaReferencesAction,
     [],
-    { estruturaId: estruturaId ? parseInt(estruturaId) : null },
-    shouldLoad && !!estruturaId
+    { estruturaId: estruturaId ? parseInt(estruturaId) : null }
   );
 
   const handleLoad = () => {

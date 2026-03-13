@@ -93,7 +93,7 @@ export function TransferenciaForm({ transferencia, onSuccess, onCancel }: Transf
         return;
       }
 
-      const transferencia = {
+      const transferenciaData = {
         conta_origem_id: parseInt(data.conta_origem_id),
         conta_destino_id: parseInt(data.conta_destino_id),
         valor: valorNumerico,
@@ -104,14 +104,14 @@ export function TransferenciaForm({ transferencia, onSuccess, onCancel }: Transf
       if (isEditing) {
         await updateTransferencia({
           id: transferencia.id,
-          ...transferencia,
+          ...transferenciaData,
         });
         toast({
           title: "Transferência atualizada",
           description: "Transferência foi atualizada com sucesso.",
         });
       } else {
-        await createTransferencia(transferencia);
+        await createTransferencia(transferenciaData);
         toast({
           title: "Transferência criada",
           description: "Nova transferência foi registrada com sucesso.",

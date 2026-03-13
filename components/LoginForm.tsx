@@ -125,7 +125,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
       }
 
       toast({
-        description: `Erro ao fazer login: ${error?.message || JSON.stringify(error) || 'Erro desconhecido'}`,
+        description: `Erro ao fazer login: ${(error as any)?.message || JSON.stringify(error) || 'Erro desconhecido'}`,
         variant: 'destructive',
       });
     }

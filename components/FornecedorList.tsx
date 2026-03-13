@@ -27,7 +27,8 @@ interface Fornecedor {
   contact_name?: string;
   contact_phone?: string;
   ein_number?: string;
-  created_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export function FornecedorList() {
@@ -293,13 +294,13 @@ export function FornecedorList() {
       </Card>
 
       <FornecedorViewDialog
-        fornecedor={selectedFornecedor}
+        fornecedor={selectedFornecedor as any}
         open={isViewOpen}
         onOpenChange={setIsViewOpen}
       />
 
       <FornecedorEditDialog
-        fornecedor={selectedFornecedor}
+        fornecedor={selectedFornecedor as any}
         open={isEditOpen}
         onOpenChange={setIsEditOpen}
         onSuccess={handleEditSuccess}

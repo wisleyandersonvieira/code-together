@@ -56,12 +56,12 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
 
   
   // Load existing items if editing
-  const [existingItens, , , refreshItens] = useLoadAction(
+  const [existingItens] = useLoadAction(
     loadEstruturaDreItensAction,
     [],
-    { estruturaId: estrutura?.id || null },
-    !!estrutura?.id
+    { estruturaId: estrutura?.id || null }
   );
+  const refreshItens = () => {};
 
   // Actions
   const [createEstrutura, isCreatingEstrutura] = useMutateAction(createEstruturaDreAction);

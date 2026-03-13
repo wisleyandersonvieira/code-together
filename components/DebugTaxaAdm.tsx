@@ -15,7 +15,7 @@ export function DebugTaxaAdm() {
   console.log('All subgrupos data:', allSubgrupos);
 
   if (loading1 || loading2) return <div>Carregando...</div>;
-  if (error1 || error2) return <div>Erro: {error1 || error2}</div>;
+  if (error1 || error2) return <div>Erro: {String(error1 || error2)}</div>;
 
   const taxaAdmFromAll = allSubgrupos?.find((sub: any) => sub.descricao === 'Taxa Adm');
   console.log('Taxa Adm from all subgrupos:', taxaAdmFromAll);

@@ -85,7 +85,7 @@ export function GrupoContabilForm({ grupo, onSuccess, onCancel }: GrupoContabilF
         try {
           // Fix sequence and try again
           await fixSequence();
-          await createGrupo(payload);
+          await createGrupo({ descricao: data.descricao, tipo: data.tipo });
           toast({
             title: "Grupo criado",
             description: "O novo grupo contábil foi criado com sucesso.",

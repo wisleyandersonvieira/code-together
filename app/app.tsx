@@ -28,7 +28,7 @@ import {
   File,
   PieChart,
   LogOut,
-  User,
+  User as UserIcon,
   Server,
   Zap
 } from 'lucide-react';
@@ -579,7 +579,7 @@ function App() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuItem onClick={() => setActiveTab('socios')}>
-                  <User className="mr-2 h-4 w-4" />
+                  <UserIcon className="mr-2 h-4 w-4" />
                   Cadastrar Sócio
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setActiveTab('matrizes')}>

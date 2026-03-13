@@ -117,7 +117,7 @@ function updateDatabaseReferences() {
         console.log(`✅ ${filePath} - ${replacements} substituições`);
       }
     } catch (error) {
-      console.log(`⚠️ ${filePath} - arquivo não encontrado ou erro: ${error.message}`);
+      console.log(`⚠️ ${filePath} - arquivo não encontrado ou erro: ${(error as any).message}`);
     }
   });
   

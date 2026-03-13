@@ -12,7 +12,7 @@ export function TestSubgruposFuncoes() {
   console.log('Subgrupos data:', subgrupos);
 
   if (loading) return <div>Carregando...</div>;
-  if (error) return <div>Erro: {error}</div>;
+  if (error) return <div>Erro: {String(error)}</div>;
 
   return (
     <Card>
