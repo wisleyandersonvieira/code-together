@@ -29,7 +29,8 @@
     "useDefineForClassFields": true
   },
   "exclude": [
-    "app/examples"
+    "app/examples",
+    "actions"
   ],
   "include": [
     "actions",
