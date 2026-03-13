@@ -103,7 +103,7 @@ export function TransferenciaForm({ transferencia, onSuccess, onCancel }: Transf
 
       if (isEditing) {
         await updateTransferencia({
-          id: transferencia.id,
+          id: editData?.id,
           ...transferencia,
         });
         toast({

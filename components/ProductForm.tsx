@@ -101,7 +101,7 @@ export function ProductForm({ produto, onSuccess, onCancel }: ProductFormProps) 
         try {
           // Fix sequence and try again
           await fixSequence();
-          await createProduto(data);
+          await createProduto({ ...values, grupo_id: parseInt(values.grupo_id), subgrupo_id: parseInt(values.subgrupo_id) });
           toast({
             title: "Produto criado",
             description: "O produto/serviço foi criado com sucesso.",

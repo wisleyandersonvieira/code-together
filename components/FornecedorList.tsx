@@ -27,7 +27,8 @@ interface Fornecedor {
   contact_name?: string;
   contact_phone?: string;
   ein_number?: string;
-  created_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export function FornecedorList() {

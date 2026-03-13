@@ -91,7 +91,7 @@ export function SubgrupoContabilForm({ subgrupo, onSuccess, onCancel }: Subgrupo
         try {
           // Fix sequence and try again
           await fixSequence();
-          await createSubgrupo(payload);
+          await createSubgrupo({ descricao: data.descricao, grupoId: parseInt(data.grupoId), funcao: data.funcao });
           toast({
             title: "Subgrupo criado",
             description: "O novo subgrupo contábil foi criado com sucesso.",
