@@ -19,7 +19,9 @@ export function formatDateForDatabase(date: Date): string {
  * instead of UTC to prevent timezone shifts
  */
 export function parseLocalDate(dateString: string): Date {
-  const [year, month, day] = dateString.split('-').map(Number);
+  // Handle ISO timestamp format (e.g., "2026-03-02T00:00:00.000Z")
+  const cleanDate = dateString.split('T')[0];
+  const [year, month, day] = cleanDate.split('-').map(Number);
   return new Date(year, month - 1, day);
 }
 
