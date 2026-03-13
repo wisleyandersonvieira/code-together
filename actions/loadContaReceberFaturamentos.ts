@@ -1,0 +1,18 @@
+import { action } from '@uibakery/data';
+
+function loadContaReceberFaturamentos() {
+  return action('loadContaReceberFaturamentos', 'SQL', {
+    databaseName: 'provision',
+    query: `
+      SELECT 
+        cf.*,
+        p.name as projeto_nome
+      FROM contas_receber_faturamento cf
+      LEFT JOIN projetos p ON p.id = cf.projeto_id
+      WHERE cf.conta_receber_id = {{params.contaReceberId}}
+      ORDER BY cf.created_at ASC;
+    `,
+  });
+}
+
+export default loadContaReceberFaturamentos;
