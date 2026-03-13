@@ -6,7 +6,6 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,11 +15,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileManager } from '@/components/FileManager';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { ArrowLeft, Save, Plus, Trash2, Calculator, CreditCard, Upload, FileText } from 'lucide-react';
+import { Save, Plus, Trash2, CreditCard, Upload, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase } from '@/utils/timezone';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
+import {
+  FinanceDetailHeader,
+  FinanceDetailSectionCard,
+  financeDetailFieldClassName,
+  financeDetailMutedPanelClassName,
+  financeDetailTableWrapClassName,
+  financeDetailTabsListClassName,
+  financeDetailTabsTriggerClassName,
+  financeDetailTextareaClassName,
+} from '@/components/finance/detail-ui';
 import loadClienteEntitiesAction from '@/actions/loadClienteEntities';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import loadProdutosCreditoAction from '@/actions/loadProdutosCredito';
@@ -653,27 +662,18 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" onClick={onCancel}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Voltar
-        </Button>
-        <div>
-          <h2 className="text-2xl font-bold">
-            {isEditing ? 'Conta a Receber' : 'Nova Conta a Receber'}
-          </h2>
-          <p className="text-muted-foreground">
-            {isEditing 
-              ? (conta.titulos_recebidos > 0 
-                  ? 'Visualizando conta (possui recebimentos efetuados)'
-                  : 'Editando dados da conta a receber'
-                )
-              : 'Preencha os dados da nova conta a receber'
-            }
-          </p>
-        </div>
-      </div>
+    <div className="space-y-8 pb-6">
+      <FinanceDetailHeader
+        title={isEditing ? 'Conta a Receber' : 'Nova Conta a Receber'}
+        subtitle={
+          isEditing
+            ? conta.titulos_recebidos > 0
+              ? 'Visualização da conta com recebimentos já efetuados, preservando a conferência dos dados com mais clareza.'
+              : 'Edite a conta a receber em uma interface mais limpa, sofisticada e alinhada ao novo padrão visual.'
+            : 'Cadastre uma nova conta a receber com melhor hierarquia, mais respiro e uma experiência mais premium.'
+        }
+        onBack={onCancel}
+      />
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
@@ -684,22 +684,22 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
             description: "Por favor, verifique os campos obrigatórios.",
             variant: "destructive",
           });
-        })} className="space-y-6">
+        })} className="space-y-6 [&_label]:text-[0.82rem] [&_label]:font-semibold [&_label]:tracking-[0.01em] [&_label]:text-slate-600">
           <Tabs defaultValue="geral" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="geral">Dados Gerais</TabsTrigger>
-              <TabsTrigger value="itens">Itens</TabsTrigger>
-              <TabsTrigger value="projetos">Projetos</TabsTrigger>
-              <TabsTrigger value="anexos">Anexos</TabsTrigger>
-              <TabsTrigger value="recebimento">Parcelamento</TabsTrigger>
+            <TabsList className={financeDetailTabsListClassName}>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="geral">Dados Gerais</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="itens">Itens</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="projetos">Projetos</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="anexos">Anexos</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="recebimento">Parcelamento</TabsTrigger>
             </TabsList>
 
             <TabsContent value="geral" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Informações Gerais</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <FinanceDetailSectionCard
+                title="Informações Gerais"
+                description="Concentre os dados principais da receita em um layout mais leve, moderno e corporativo."
+                contentClassName="space-y-5"
+              >
                   <FormField
                     control={form.control}
                     name="matriz_id"
@@ -708,7 +708,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                         <FormLabel>Matriz *</FormLabel>
                         <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className={financeDetailFieldClassName}>
                               <SelectValue placeholder="Selecione a matriz" />
                             </SelectTrigger>
                           </FormControl>
@@ -741,7 +741,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                             }}
                           >
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger className={financeDetailFieldClassName}>
                                 <SelectValue placeholder="Selecione o tipo" />
                               </SelectTrigger>
                             </FormControl>
@@ -771,7 +771,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                             disabled={!form.watch('entity_type')}
                           >
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger className={financeDetailFieldClassName}>
                                 <SelectValue placeholder={`Selecione ${form.watch('entity_type') || 'a entidade'}`} />
                               </SelectTrigger>
                             </FormControl>
@@ -798,7 +798,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                           <FormLabel>Tipo de Documento</FormLabel>
                           <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger className={financeDetailFieldClassName}>
                                 <SelectValue placeholder="Selecione o tipo" />
                               </SelectTrigger>
                             </FormControl>
@@ -821,14 +821,14 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                   <FormField
                     control={form.control}
                     name="numero_documento"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Número do Documento</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Digite o número do documento" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Número do Documento</FormLabel>
+                          <FormControl>
+                            <Input className={financeDetailFieldClassName} placeholder="Digite o número do documento" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                     )}
                   />
 
@@ -844,6 +844,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                               date={field.value}
                               onDateChange={field.onChange}
                               placeholder="Selecione a data"
+                              triggerClassName={financeDetailFieldClassName}
                             />
                           </FormControl>
                           <FormMessage />
@@ -862,6 +863,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                               date={field.value}
                               onDateChange={field.onChange}
                               placeholder="Selecione a data"
+                              triggerClassName={financeDetailFieldClassName}
                             />
                           </FormControl>
                           <FormMessage />
@@ -880,6 +882,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                               date={field.value}
                               onDateChange={field.onChange}
                               placeholder="Selecione a data"
+                              triggerClassName={financeDetailFieldClassName}
                             />
                           </FormControl>
                           <FormMessage />
@@ -897,30 +900,36 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                         <FormControl>
                           <Textarea
                             placeholder="Digite observações sobre a conta"
-                            className="resize-none"
+                            className={`${financeDetailTextareaClassName} resize-none`}
                             {...field}
                           />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
-                  />
-                </CardContent>
-              </Card>
+                      />
+              </FinanceDetailSectionCard>
             </TabsContent>
 
             <TabsContent value="itens" className="space-y-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle>Itens do Documento</CardTitle>
-                  <Button type="button" variant="outline" onClick={addItem}>
+              <FinanceDetailSectionCard
+                title="Itens do Documento"
+                description="Mantenha os itens bem distribuídos, com leitura mais suave e total consolidado em destaque."
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addItem}
+                    className="h-10 rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  >
                     <Plus className="mr-2 h-4 w-4" />
                     Adicionar Item
                   </Button>
-                </CardHeader>
-                <CardContent>
+                }
+              >
                   {itensFields.length > 0 ? (
                     <div className="space-y-4">
+                      <div className={financeDetailTableWrapClassName}>
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -937,10 +946,10 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                               <TableCell className="w-[200px]">
                                 <FormField
                                   control={form.control}
-                                  name={`itens.${index}.produto_id`}
-                                  render={({ field }) => (
-                                    <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
-                                      <SelectTrigger>
+                                      name={`itens.${index}.produto_id`}
+                                      render={({ field }) => (
+                                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
+                                      <SelectTrigger className={financeDetailFieldClassName}>
                                         <SelectValue placeholder="Selecionar" />
                                       </SelectTrigger>
                                       <SelectContent>
@@ -960,6 +969,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                   name={`itens.${index}.quantidade`}
                                   render={({ field }) => (
                                     <Input
+                                      className={financeDetailFieldClassName}
                                       type="number"
                                       step="0.001"
                                       {...field}
@@ -977,6 +987,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                   name={`itens.${index}.valor_unitario`}
                                   render={({ field }) => (
                                     <Input
+                                      className={financeDetailFieldClassName}
                                       type="number"
                                       step="0.01"
                                       {...field}
@@ -992,7 +1003,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                 {formatCurrency((watchedItens[index]?.quantidade || 0) * (watchedItens[index]?.valor_unitario || 0))}
                               </TableCell>
                               <TableCell>
-                                <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index)}>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index)} className="rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600">
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </TableCell>
@@ -1000,8 +1011,9 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                           ))}
                         </TableBody>
                       </Table>
+                      </div>
                       <div className="flex justify-end">
-                        <div className="text-lg font-semibold">
+                        <div className={`${financeDetailMutedPanelClassName} text-lg font-semibold text-slate-800`}>
                           Total: {formatCurrency(valorTotalItens)}
                         </div>
                       </div>
@@ -1011,20 +1023,21 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       Nenhum item adicionado. Clique em "Adicionar Item" para começar.
                     </div>
                   )}
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
             </TabsContent>
 
             <TabsContent value="projetos" className="space-y-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle>Projetos</CardTitle>
+              <FinanceDetailSectionCard
+                title="Projetos"
+                description="Escolha entre rateio percentual ou faturamento por projeto com feedback mais claro e visual mais refinado."
+                action={
                   <div className="flex gap-2">
                     <Button 
                       type="button" 
                       variant="outline" 
                       onClick={addProjeto}
                       disabled={projetoActionType === 'faturamento'}
+                      className="h-10 rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                     >
                       <Plus className="mr-2 h-4 w-4" />
                       Adicionar Projeto
@@ -1034,13 +1047,14 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       variant="outline" 
                       onClick={addFaturamento}
                       disabled={projetoActionType === 'rateio'}
+                      className="h-10 rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                     >
                       <Plus className="mr-2 h-4 w-4" />
                       Adicionar Faturamento
                     </Button>
                   </div>
-                </CardHeader>
-                <CardContent>
+                }
+              >
                   {projetoActionType === null && (
                     <div className="text-center py-8 text-muted-foreground">
                       <p className="mb-4">Escolha uma das opções acima para começar:</p>
@@ -1058,6 +1072,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                           <div className="flex items-center gap-2 mb-4">
                             <Badge variant="secondary">Modo: Rateio por Projetos</Badge>
                           </div>
+                          <div className={financeDetailTableWrapClassName}>
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -1076,7 +1091,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       name={`projetos_rateio.${index}.projeto_id`}
                                       render={({ field }) => (
                                         <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
-                                          <SelectTrigger>
+                                          <SelectTrigger className={financeDetailFieldClassName}>
                                             <SelectValue placeholder="Selecionar" />
                                           </SelectTrigger>
                                           <SelectContent>
@@ -1096,6 +1111,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       name={`projetos_rateio.${index}.percentual`}
                                       render={({ field }) => (
                                         <Input
+                                          className={financeDetailFieldClassName}
                                           type="number"
                                           step="0.01"
                                           max="100"
@@ -1112,7 +1128,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                     {formatCurrency(valorTotalItens * ((watchedProjetosRateio[index]?.percentual || 0) / 100))}
                                   </TableCell>
                                   <TableCell>
-                                    <Button type="button" variant="ghost" size="sm" onClick={() => {
+                                    <Button type="button" variant="ghost" size="sm" className="rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600" onClick={() => {
                                       removeProjeto(index);
                                       if (projetosFields.length === 1) {
                                         setProjetoActionType(null);
@@ -1125,6 +1141,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                               ))}
                             </TableBody>
                           </Table>
+                          </div>
                           <div className="flex justify-end space-x-4">
                             <div className={`text-lg font-semibold ${Math.abs(percentualTotalRateio - 100) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
                               Total: {percentualTotalRateio.toFixed(2)}% / 100%
@@ -1146,6 +1163,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                           <div className="flex items-center gap-2 mb-4">
                             <Badge variant="secondary">Modo: Faturamento por Projetos</Badge>
                           </div>
+                          <div className={financeDetailTableWrapClassName}>
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -1164,7 +1182,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       name={`projetos_faturamento.${index}.projeto_id`}
                                       render={({ field }) => (
                                         <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
-                                          <SelectTrigger>
+                                          <SelectTrigger className={financeDetailFieldClassName}>
                                             <SelectValue placeholder="Selecionar" />
                                           </SelectTrigger>
                                           <SelectContent>
@@ -1184,6 +1202,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       name={`projetos_faturamento.${index}.valor_faturamento`}
                                       render={({ field }) => (
                                         <Input
+                                          className={financeDetailFieldClassName}
                                           type="number"
                                           step="0.01"
                                           placeholder="0,00"
@@ -1201,6 +1220,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       name={`projetos_faturamento.${index}.observacoes`}
                                       render={({ field }) => (
                                         <Input
+                                          className={financeDetailFieldClassName}
                                           placeholder="Observações opcionais"
                                           {...field}
                                         />
@@ -1208,7 +1228,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                     />
                                   </TableCell>
                                   <TableCell>
-                                    <Button type="button" variant="ghost" size="sm" onClick={() => {
+                                    <Button type="button" variant="ghost" size="sm" className="rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600" onClick={() => {
                                       removeFaturamento(index);
                                       if (faturamentosFields.length === 1) {
                                         setProjetoActionType(null);
@@ -1221,6 +1241,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                               ))}
                             </TableBody>
                           </Table>
+                          </div>
                           <div className="flex justify-end space-x-4">
                             <div className={`text-lg font-semibold ${Math.abs(valorTotalFaturamento - valorTotalItens) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
                               Total Faturado: {formatCurrency(valorTotalFaturamento)} / {formatCurrency(valorTotalItens)}
@@ -1234,8 +1255,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       )}
                     </>
                   )}
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
 
               {/* Rateio de Aportes quando há apenas um projeto */}
               {projetosFields.length === 1 && form.watch('entity_type') && form.watch('entity_id') && (
@@ -1254,18 +1274,18 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
             </TabsContent>
 
             <TabsContent value="anexos" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Anexos e Documentos</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <FinanceDetailSectionCard
+                title="Anexos e Documentos"
+                description="Reúna arquivos e comprovantes em um bloco mais limpo, arejado e coerente com a navegação."
+                contentClassName="space-y-4"
+              >
                   {/* File upload section for new conta */}
                   {!isEditing && (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-medium">Arquivos para Upload</h4>
                         <label htmlFor="file-upload-new-conta">
-                          <Button variant="outline" size="sm" asChild>
+                          <Button variant="outline" size="sm" asChild className="rounded-xl border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50">
                             <span className="cursor-pointer">
                               <Upload className="h-4 w-4 mr-2" />
                               Adicionar Arquivos
@@ -1285,7 +1305,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       {pendingFiles.length > 0 ? (
                         <div className="space-y-2">
                           {pendingFiles.map((file, index) => (
-                            <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div key={index} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                               <div className="flex items-center gap-2">
                                 <FileText className="h-4 w-4 text-blue-600" />
                                 <span className="text-sm">{file.name}</span>
@@ -1298,6 +1318,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                 size="sm"
                                 onClick={() => removePendingFile(index)}
                                 type="button"
+                                className="rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1321,16 +1342,15 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       title="Documentos da Conta"
                     />
                   )}
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
             </TabsContent>
 
             <TabsContent value="recebimento" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Configurações de Parcelamento</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <FinanceDetailSectionCard
+                title="Configurações de Parcelamento"
+                description="Configure parcelas e datas com uma composição mais suave, legível e alinhada ao padrão premium."
+                contentClassName="space-y-4"
+              >
                   {!isEditing && (
                     <FormField
                       control={form.control}
@@ -1340,6 +1360,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                           <FormLabel>Número de Parcelas</FormLabel>
                           <FormControl>
                             <Input
+                              className={financeDetailFieldClassName}
                               type="number"
                               min="1"
                               max="360"
@@ -1374,7 +1395,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                     />
                   )}
 
-                  <div className="p-4 border rounded-lg bg-muted/50">
+                  <div className={financeDetailMutedPanelClassName}>
                     <h4 className="font-medium mb-2">Resumo do Parcelamento</h4>
                     <div className="space-y-1 text-sm">
                       <div>Valor total: {formatCurrency(valorTotalItens)}</div>
@@ -1386,7 +1407,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                   {!isEditing && parcelasPreview.length > 0 && (
                     <div className="mt-4">
                       <h4 className="font-medium mb-2">Detalhamento das Parcelas</h4>
-                      <div className="border rounded-lg overflow-hidden">
+                      <div className={financeDetailTableWrapClassName}>
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -1412,10 +1433,12 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       }
                                     }}
                                     placeholder="Selecione a data"
+                                    triggerClassName={financeDetailFieldClassName}
                                   />
                                 </TableCell>
                                 <TableCell>
                                   <Input
+                                    className={financeDetailFieldClassName}
                                     type="number"
                                     step="0.01"
                                     value={parcela.valor}
@@ -1440,11 +1463,10 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                     </div>
                   )}
 
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
 
               <div className="space-y-4">
-                <div className="flex gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <Button 
                     type="submit" 
                     disabled={
@@ -1456,7 +1478,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       itensFields.length === 0 ||
                       (isEditing && conta?.titulos_recebidos > 0)
                     }
-                    className="flex-1"
+                    className="h-11 flex-1 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                   >
                     <Save className="mr-2 h-4 w-4" />
                     {isEditing && conta?.titulos_recebidos > 0 
@@ -1466,7 +1488,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                         : (isCreating ? 'Salvando...' : 'Salvar Conta')
                     }
                   </Button>
-                  <Button type="button" variant="outline" onClick={onCancel}>
+                  <Button type="button" variant="outline" onClick={onCancel} className="h-11 rounded-xl border-slate-200 bg-white px-5 text-slate-700 hover:border-slate-300 hover:bg-slate-50">
                     Cancelar
                   </Button>
                 </div>

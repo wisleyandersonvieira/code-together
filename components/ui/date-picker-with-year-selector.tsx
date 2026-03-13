@@ -15,13 +15,15 @@ interface DatePickerWithYearSelectorProps {
   onDateChange: (date: Date | undefined) => void;
   placeholder?: string;
   disabled?: boolean;
+  triggerClassName?: string;
 }
 
 export function DatePickerWithYearSelector({ 
   date, 
   onDateChange, 
   placeholder = 'Selecionar data', 
-  disabled 
+  disabled,
+  triggerClassName,
 }: DatePickerWithYearSelectorProps) {
   const safeDate = date && !isNaN(date.getTime()) ? date : undefined;
   const [month, setMonth] = React.useState<Date>(safeDate || new Date());
@@ -85,7 +87,11 @@ export function DatePickerWithYearSelector({
       <PopoverTrigger asChild>
         <Button
           variant={'outline'}
-          className={cn('w-full justify-start text-left font-normal', !safeDate && 'text-muted-foreground')}
+          className={cn(
+            'w-full justify-start text-left font-normal',
+            !safeDate && 'text-muted-foreground',
+            triggerClassName,
+          )}
           disabled={disabled}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />

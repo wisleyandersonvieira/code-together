@@ -17,11 +17,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileManager } from '@/components/FileManager';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { ArrowLeft, Save, Plus, Trash2, Calculator, CreditCard, Upload, FileText } from 'lucide-react';
+import { Save, Plus, Trash2, Calculator, CreditCard, Upload, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, parseLocalDate } from '@/utils/timezone';
+import {
+  FinanceDetailHeader,
+  FinanceDetailSectionCard,
+  financeDetailCardClassName,
+  financeDetailFieldClassName,
+  financeDetailMutedPanelClassName,
+  financeDetailTableWrapClassName,
+  financeDetailTabsListClassName,
+  financeDetailTabsTriggerClassName,
+  financeDetailTextareaClassName,
+} from '@/components/finance/detail-ui';
 import loadFornecedoresAction from '@/actions/loadFornecedores';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import loadProdutosDebitoAction from '@/actions/loadProdutosDebito';
@@ -110,8 +121,8 @@ function ProjetoOrcamentoAlocacao({
 
   if (!orcamentos || orcamentos.length === 0) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className={financeDetailCardClassName}>
+        <CardHeader className="border-b border-slate-100 bg-slate-50/70">
           <CardTitle className="flex items-center gap-2">
             {projetoNome}
             <Badge variant="secondary" className="text-xs">
@@ -132,8 +143,8 @@ function ProjetoOrcamentoAlocacao({
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className={financeDetailCardClassName}>
+      <CardHeader className="border-b border-slate-100 bg-slate-50/70">
         <CardTitle className="flex items-center gap-2">
           {projetoNome}
           <Badge variant={isCompleta ? "default" : "destructive"} className="text-xs">
@@ -223,7 +234,7 @@ function ProjetoOrcamentoAlocacao({
                         const valor = parseFloat(e.target.value) || 0;
                         onAlocacaoChange(orcamento.id, valor);
                       }}
-                      className="w-24"
+                      className={`w-24 ${financeDetailFieldClassName}`}
                       disabled={isProjetoConcluido}
                       title={isProjetoConcluido ? "Projeto concluído - não é possível alterar alocações" : ""}
                     />
@@ -832,45 +843,39 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" onClick={onCancel}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Voltar
-        </Button>
-        <div>
-          <h2 className="text-2xl font-bold">
-            {isEditing ? 'Conta a Pagar' : 'Nova Conta a Pagar'}
-          </h2>
-          <p className="text-muted-foreground">
-            {isEditing 
-              ? (conta.titulos_pagos > 0 
-                  ? 'Visualizando conta (possui pagamentos efetuados)'
-                  : 'Editando dados da conta a pagar'
-                )
-              : 'Preencha os dados da nova conta a pagar'
-            }
-          </p>
-        </div>
-      </div>
+    <div className="space-y-8 pb-6">
+      <FinanceDetailHeader
+        title={isEditing ? 'Conta a Pagar' : 'Nova Conta a Pagar'}
+        subtitle={
+          isEditing
+            ? conta.titulos_pagos > 0
+              ? 'Visualização da conta com pagamentos já efetuados, mantendo toda a rastreabilidade financeira.'
+              : 'Edite as informações da conta a pagar com uma navegação mais leve, clara e organizada.'
+            : 'Preencha os dados da nova conta a pagar em uma estrutura mais limpa, elegante e objetiva.'
+        }
+        onBack={onCancel}
+      />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="space-y-6 [&_label]:text-[0.82rem] [&_label]:font-semibold [&_label]:tracking-[0.01em] [&_label]:text-slate-600"
+        >
           <Tabs defaultValue="geral" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="geral">Dados Gerais</TabsTrigger>
-              <TabsTrigger value="itens">Itens</TabsTrigger>
-              <TabsTrigger value="projetos">Projetos</TabsTrigger>
-              <TabsTrigger value="anexos">Anexos</TabsTrigger>
-              <TabsTrigger value="pagamento">Parcelamento</TabsTrigger>
+            <TabsList className={financeDetailTabsListClassName}>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="geral">Dados Gerais</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="itens">Itens</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="projetos">Projetos</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="anexos">Anexos</TabsTrigger>
+              <TabsTrigger className={financeDetailTabsTriggerClassName} value="pagamento">Parcelamento</TabsTrigger>
             </TabsList>
 
             <TabsContent value="geral" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Informações Gerais</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <FinanceDetailSectionCard
+                title="Informações Gerais"
+                description="Dados principais da conta, com foco em leitura rápida, boa hierarquia e mais respiro visual."
+                contentClassName="space-y-5"
+              >
                   <FormField
                     control={form.control}
                     name="matriz_id"
@@ -879,7 +884,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                         <FormLabel>Matriz *</FormLabel>
                         <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className={financeDetailFieldClassName}>
                               <SelectValue placeholder="Selecione a matriz" />
                             </SelectTrigger>
                           </FormControl>
@@ -908,7 +913,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                             onValueChange={(value) => field.onChange(parseInt(value) || 0)}
                           >
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger className={financeDetailFieldClassName}>
                                 <SelectValue placeholder="Selecione o fornecedor" />
                               </SelectTrigger>
                             </FormControl>
@@ -933,7 +938,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                           <FormLabel>Tipo de Documento</FormLabel>
                           <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
                             <FormControl>
-                              <SelectTrigger>
+                              <SelectTrigger className={financeDetailFieldClassName}>
                                 <SelectValue placeholder="Selecione o tipo" />
                               </SelectTrigger>
                             </FormControl>
@@ -954,14 +959,14 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                   <FormField
                     control={form.control}
                     name="numero_documento"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Número do Documento</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Digite o número do documento" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Número do Documento</FormLabel>
+                          <FormControl>
+                          <Input className={financeDetailFieldClassName} placeholder="Digite o número do documento" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                     )}
                   />
 
@@ -977,6 +982,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                               date={field.value}
                               onDateChange={field.onChange}
                               placeholder="Selecione a data"
+                              triggerClassName={financeDetailFieldClassName}
                             />
                           </FormControl>
                           <FormMessage />
@@ -995,6 +1001,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                               date={field.value}
                               onDateChange={field.onChange}
                               placeholder="Selecione a data"
+                              triggerClassName={financeDetailFieldClassName}
                             />
                           </FormControl>
                           <FormMessage />
@@ -1013,6 +1020,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                               date={field.value}
                               onDateChange={field.onChange}
                               placeholder="Selecione a data"
+                              triggerClassName={financeDetailFieldClassName}
                             />
                           </FormControl>
                           <FormMessage />
@@ -1030,30 +1038,36 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                         <FormControl>
                           <Textarea
                             placeholder="Digite observações sobre a conta"
-                            className="resize-none"
+                            className={`${financeDetailTextareaClassName} resize-none`}
                             {...field}
                           />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
-                  />
-                </CardContent>
-              </Card>
+                      />
+              </FinanceDetailSectionCard>
             </TabsContent>
 
             <TabsContent value="itens" className="space-y-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle>Itens do Documento</CardTitle>
-                  <Button type="button" variant="outline" onClick={addItem}>
+              <FinanceDetailSectionCard
+                title="Itens do Documento"
+                description="Organize os lançamentos com melhor leitura, densidade visual mais leve e total sempre visível."
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addItem}
+                    className="h-10 rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  >
                     <Plus className="mr-2 h-4 w-4" />
                     Adicionar Item
                   </Button>
-                </CardHeader>
-                <CardContent>
+                }
+              >
                   {itensFields.length > 0 ? (
                     <div className="space-y-4">
+                      <div className={financeDetailTableWrapClassName}>
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -1076,6 +1090,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                       value={field.value > 0 ? field.value.toString() : undefined}
                                       onValueChange={(value) => field.onChange(parseInt(value) || 0)}
                                       options={produtoOptions}
+                                      className={financeDetailFieldClassName}
                                       placeholder="Selecionar produto/serviço"
                                       searchPlaceholder="Digite para buscar..."
                                       emptyText="Nenhum produto encontrado."
@@ -1089,6 +1104,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                   name={`itens.${index}.quantidade`}
                                   render={({ field }) => (
                                     <Input
+                                      className={financeDetailFieldClassName}
                                       type="number"
                                       step="0.001"
                                       {...field}
@@ -1106,6 +1122,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                   name={`itens.${index}.valor_unitario`}
                                   render={({ field }) => (
                                     <Input
+                                      className={financeDetailFieldClassName}
                                       type="number"
                                       step="0.01"
                                       {...field}
@@ -1121,7 +1138,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                 {formatCurrency((watchedItens?.[index]?.quantidade || 0) * (watchedItens?.[index]?.valor_unitario || 0))}
                               </TableCell>
                               <TableCell>
-                                <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index)}>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => removeItem(index)} className="rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600">
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </TableCell>
@@ -1129,8 +1146,9 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                           ))}
                         </TableBody>
                       </Table>
+                      </div>
                       <div className="flex justify-end">
-                        <div className="text-lg font-semibold">
+                        <div className={`${financeDetailMutedPanelClassName} text-lg font-semibold text-slate-800`}>
                           Total: {formatCurrency(valorTotalItens)}
                         </div>
                       </div>
@@ -1140,23 +1158,29 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       Nenhum item adicionado. Clique em "Adicionar Item" para começar.
                     </div>
                   )}
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
             </TabsContent>
 
             <TabsContent value="projetos" className="space-y-4">
               {/* Rateio por Projetos */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle>Rateio por Projetos</CardTitle>
-                  <Button type="button" variant="outline" onClick={addProjeto}>
+              <FinanceDetailSectionCard
+                title="Rateio por Projetos"
+                description="Distribua a conta entre projetos com percentuais claros e feedback visual mais sofisticado."
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addProjeto}
+                    className="h-10 rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  >
                     <Plus className="mr-2 h-4 w-4" />
                     Adicionar Projeto
                   </Button>
-                </CardHeader>
-                <CardContent>
+                }
+              >
                   {projetosFields.length > 0 ? (
                     <div className="space-y-4">
+                      <div className={financeDetailTableWrapClassName}>
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -1172,10 +1196,10 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                               <TableCell className="w-[200px]">
                                 <FormField
                                   control={form.control}
-                                  name={`projetos_rateio.${index}.projeto_id`}
-                                  render={({ field }) => (
-                                    <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
-                                      <SelectTrigger>
+                                      name={`projetos_rateio.${index}.projeto_id`}
+                                      render={({ field }) => (
+                                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
+                                      <SelectTrigger className={financeDetailFieldClassName}>
                                         <SelectValue placeholder="Selecionar" />
                                       </SelectTrigger>
                                       <SelectContent>
@@ -1195,6 +1219,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                   name={`projetos_rateio.${index}.percentual`}
                                   render={({ field }) => (
                                     <Input
+                                      className={financeDetailFieldClassName}
                                       type="number"
                                       step="0.01"
                                       max="100"
@@ -1211,7 +1236,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                 {formatCurrency(valorTotalItens * ((watchedProjetosRateio?.[index]?.percentual || 0) / 100))}
                               </TableCell>
                               <TableCell>
-                                <Button type="button" variant="ghost" size="sm" onClick={() => removeProjeto(index)}>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => removeProjeto(index)} className="rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600">
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </TableCell>
@@ -1219,6 +1244,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                           ))}
                         </TableBody>
                       </Table>
+                      </div>
                       <div className="flex justify-end space-x-4">
                         <div className={`text-lg font-semibold ${Math.abs(percentualTotalRateio - 100) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
                           Total: {percentualTotalRateio.toFixed(2)}% / 100%
@@ -1228,6 +1254,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                             type="button" 
                             onClick={handleSalvarRateio}
                             disabled={Math.abs(percentualTotalRateio - 100) > 0.01 || projetosFields.length === 0}
+                            className="rounded-xl bg-slate-900 px-4 text-white hover:bg-slate-800"
                           >
                             <Calculator className="mr-2 h-4 w-4" />
                             SALVAR RATEIO
@@ -1238,6 +1265,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                             type="button" 
                             variant="outline"
                             onClick={handleEditarRateio}
+                            className="rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                           >
                             Editar Rateio
                           </Button>
@@ -1249,8 +1277,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       Nenhum projeto adicionado. Clique em "Adicionar Projeto" para começar.
                     </div>
                   )}
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
 
               {/* Alocação de Orçamentos por Projeto */}
               {rateioConfirmado && watchedProjetosRateio && watchedProjetosRateio.length > 0 && (
@@ -1275,7 +1302,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                   })}
                   
                   {/* Resumo Geral das Alocações */}
-                  <Card className="border-2 border-blue-200">
+                  <Card className={`${financeDetailCardClassName} border-blue-200`}>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         Resumo Geral das Alocações
@@ -1327,18 +1354,18 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
             </TabsContent>
 
             <TabsContent value="anexos" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Anexos e Documentos</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <FinanceDetailSectionCard
+                title="Anexos e Documentos"
+                description="Centralize comprovantes e documentos com uma apresentação mais limpa e menos pesada."
+                contentClassName="space-y-4"
+              >
                   {/* File upload section for new conta */}
                   {!isEditing && (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-medium">Arquivos para Upload</h4>
                         <label htmlFor="file-upload-new-conta">
-                          <Button variant="outline" size="sm" asChild>
+                          <Button variant="outline" size="sm" asChild className="rounded-xl border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50">
                             <span className="cursor-pointer">
                               <Upload className="h-4 w-4 mr-2" />
                               Adicionar Arquivos
@@ -1358,7 +1385,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       {pendingFiles.length > 0 ? (
                         <div className="space-y-2">
                           {pendingFiles.map((file, index) => (
-                            <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div key={index} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                               <div className="flex items-center gap-2">
                                 <FileText className="h-4 w-4 text-blue-600" />
                                 <span className="text-sm">{file.name}</span>
@@ -1371,6 +1398,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                 size="sm"
                                 onClick={() => removePendingFile(index)}
                                 type="button"
+                                className="rounded-xl text-slate-500 hover:bg-rose-50 hover:text-rose-600"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1394,18 +1422,15 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       title="Documentos da Conta"
                     />
                   )}
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
             </TabsContent>
 
             <TabsContent value="pagamento" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    {isEditing ? 'Parcelas Cadastradas' : 'Configurações de Parcelamento'}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+              <FinanceDetailSectionCard
+                title={isEditing ? 'Parcelas Cadastradas' : 'Configurações de Parcelamento'}
+                description="Visualize e ajuste o parcelamento com mais clareza, melhor hierarquia e indicadores mais suaves."
+                contentClassName="space-y-4"
+              >
                   {!isEditing && (
                     <>
                       <FormField
@@ -1416,6 +1441,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                             <FormLabel>Número de Parcelas</FormLabel>
                             <FormControl>
                               <Input
+                                className={financeDetailFieldClassName}
                                 type="number"
                                 min="1"
                                 max="360"
@@ -1449,7 +1475,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                         )}
                       />
 
-                      <div className="p-4 border rounded-lg bg-muted/50">
+                      <div className={financeDetailMutedPanelClassName}>
                         <h4 className="font-medium mb-2">Resumo do Parcelamento</h4>
                         <div className="space-y-1 text-sm">
                           <div>Valor total: {formatCurrency(valorTotalItens)}</div>
@@ -1461,7 +1487,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       {parcelasPreview.length > 0 && (
                         <div className="mt-4">
                           <h4 className="font-medium mb-2">Detalhamento das Parcelas</h4>
-                          <div className="border rounded-lg overflow-hidden">
+                          <div className={financeDetailTableWrapClassName}>
                             <Table>
                               <TableHeader>
                                 <TableRow>
@@ -1487,10 +1513,12 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                           }
                                         }}
                                         placeholder="Selecione a data"
+                                        triggerClassName={financeDetailFieldClassName}
                                       />
                                     </TableCell>
                                     <TableCell>
                                       <Input
+                                        className={financeDetailFieldClassName}
                                         type="number"
                                         step="0.01"
                                         value={parcela.valor}
@@ -1522,7 +1550,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                   {/* Exibir títulos existentes quando editando */}
                   {isEditing && existingTitulos && existingTitulos.length > 0 && (
                     <div className="space-y-4">
-                      <div className="p-4 border rounded-lg bg-muted/50">
+                      <div className={financeDetailMutedPanelClassName}>
                         <h4 className="font-medium mb-2">Resumo das Parcelas</h4>
                         <div className="space-y-1 text-sm">
                           <div>Valor total: {formatCurrency(valorTotalItens)}</div>
@@ -1533,6 +1561,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
 
                       <div>
                         <h4 className="font-medium mb-3">Parcelas e Datas de Vencimento</h4>
+                        <div className={financeDetailTableWrapClassName}>
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -1563,6 +1592,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                     }}
                                     placeholder="Data de vencimento"
                                     disabled={titulo.status_calculado === 'pago'}
+                                    triggerClassName={financeDetailFieldClassName}
                                   />
                                 </TableCell>
                                 <TableCell>{formatCurrency(parseFloat(titulo.valor))}</TableCell>
@@ -1598,6 +1628,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                       type="button"
                                       variant="outline"
                                       size="sm"
+                                      className="rounded-xl border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                                       onClick={async () => {
                                         try {
                                           console.log('Updating titulo:', titulo.id, 'with date:', titulosEditaveis[titulo.id]);
@@ -1630,6 +1661,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                             ))}
                           </TableBody>
                         </Table>
+                        </div>
 
                         {existingTitulos.some((titulo: any) => titulo.status_calculado !== 'pago') && (
                           <div className="mt-4 p-3 border rounded-lg bg-blue-50 border-blue-200">
@@ -1642,10 +1674,9 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       </div>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+              </FinanceDetailSectionCard>
 
-              <div className="flex gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <Button 
                   type="submit" 
                   disabled={
@@ -1657,7 +1688,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                     (isEditing && conta.titulos_pagos > 0) ||
                     itensFields.length === 0
                   }
-                  className="flex-1"
+                  className="h-11 flex-1 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                 >
                   <Save className="mr-2 h-4 w-4" />
                   {isEditing && conta.titulos_pagos > 0 
@@ -1667,7 +1698,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       : (isCreating ? 'Salvando...' : 'Salvar Conta')
                   }
                 </Button>
-                <Button type="button" variant="outline" onClick={onCancel}>
+                <Button type="button" variant="outline" onClick={onCancel} className="h-11 rounded-xl border-slate-200 bg-white px-5 text-slate-700 hover:border-slate-300 hover:bg-slate-50">
                   Cancelar
                 </Button>
               </div>
