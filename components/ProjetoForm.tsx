@@ -39,7 +39,7 @@ import { PrevisaoAportesEditModal } from './PrevisaoAportesEditModal';
 import checkPrevisaoAportesExistsAction from '@/actions/checkPrevisaoAportesExists';
 
 const memberSchema = z.object({
-  type: z.enum(['cliente', 'empresa', 'grupo'], { required_error: 'Selecione o tipo' }),
+  type: z.enum(['cliente', 'empresa', 'grupo'], { message: 'Selecione o tipo' }),
   id: z.string().min(1, 'Selecione um cliente, empresa ou grupo'),
   percentage: z.number().min(0.01, 'Porcentagem deve ser maior que 0').max(100, 'Porcentagem não pode ser maior que 100'),
 });
