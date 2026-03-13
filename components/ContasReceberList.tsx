@@ -5,7 +5,6 @@ import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
@@ -39,6 +38,7 @@ import loadTitulosByContaReceberAction from '@/actions/loadTitulosByContaReceber
 import deleteContaReceberAction from '@/actions/deleteContaReceber';
 import receiveTituloReceberAction from '@/actions/receiveTituloReceber';
 import reverseTituloReceberAction from '@/actions/reverseTituloReceber';
+import { FinanceActionButton, FinanceStatusBadge } from '@/components/finance/listing-ui';
 
 type SortColumn = 'numero_documento' | 'cliente_nome' | 'data_vencimento' | 'valor_total' | 'status';
 type SortDirection = 'asc' | 'desc';
@@ -300,20 +300,20 @@ export function ContasReceberList() {
 
   const getSortIcon = (column: SortColumn) => {
     if (column !== sortColumn) {
-      return <ArrowUpDown className="h-4 w-4 ml-2 opacity-50" />;
+      return <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-slate-400" />;
     }
     return sortDirection === 'asc' 
-      ? <ArrowUp className="h-4 w-4 ml-2" />
-      : <ArrowDown className="h-4 w-4 ml-2" />;
+      ? <ArrowUp className="ml-2 h-3.5 w-3.5 text-slate-500" />
+      : <ArrowDown className="ml-2 h-3.5 w-3.5 text-slate-500" />;
   };
 
   const getStatusBadge = (status: string, titulosRecebidos: number, totalTitulos: number) => {
     if (status === 'RECEBIDO_TOTAL' || titulosRecebidos === totalTitulos) {
-      return <Badge variant="default" className="bg-green-500">Recebido</Badge>;
+      return <FinanceStatusBadge label="Recebido" tone="success" />;
     } else if (status === 'RECEBIDO_PARCIAL' || titulosRecebidos > 0) {
-      return <Badge variant="secondary">Parcial</Badge>;
+      return <FinanceStatusBadge label="Parcial" tone="warning" />;
     } else {
-      return <Badge variant="destructive">Pendente</Badge>;
+      return <FinanceStatusBadge label="Pendente" tone="danger" />;
     }
   };
 
@@ -477,13 +477,13 @@ export function ContasReceberList() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
+          <Table className="min-w-[1040px]">
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50 w-[120px]"
+                  className="w-[120px] cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('numero_documento')}
                 >
                   <div className="flex items-center">
@@ -492,7 +492,7 @@ export function ContasReceberList() {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('cliente_nome')}
                 >
                   <div className="flex items-center">
@@ -500,10 +500,10 @@ export function ContasReceberList() {
                     {getSortIcon('cliente_nome')}
                   </div>
                 </TableHead>
-                <TableHead>Matriz</TableHead>
-                <TableHead>Tipo</TableHead>
+                <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Matriz</TableHead>
+                <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Tipo</TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('data_vencimento')}
                 >
                   <div className="flex items-center">
@@ -512,7 +512,7 @@ export function ContasReceberList() {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('valor_total')}
                 >
                   <div className="flex items-center">
@@ -520,9 +520,9 @@ export function ContasReceberList() {
                     {getSortIcon('valor_total')}
                   </div>
                 </TableHead>
-                <TableHead>Títulos</TableHead>
+                <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Títulos</TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('status')}
                 >
                   <div className="flex items-center">
@@ -530,76 +530,45 @@ export function ContasReceberList() {
                     {getSortIcon('status')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[120px]">Ações</TableHead>
+                <TableHead className="w-[160px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedContasReceber.map((conta: any) => (
-                <TableRow key={conta.id} className="hover:bg-muted/50">
-                  <TableCell className="font-mono font-medium">
+                <TableRow key={conta.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                  <TableCell className="px-4 py-3.5 align-middle font-mono text-sm font-semibold text-slate-700">
                     {conta.numero_documento}
                   </TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
                     {conta.cliente_nome}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {conta.matriz_nome || '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-700">
                     {conta.tipo_documento_descricao}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {formatDateForDisplay(conta.data_vencimento)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
                     {formatCurrency(parseFloat(conta.valor_total))}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {conta.titulos_recebidos}/{conta.total_titulos}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="px-4 py-3.5 align-middle">
                     {getStatusBadge(conta.status, conta.titulos_recebidos, conta.total_titulos)}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(conta)}
-                        title="Editar"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                  <TableCell className="px-4 py-3.5 align-middle">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <FinanceActionButton icon={Edit} onClick={() => handleEdit(conta)} title="Editar" tone="brand" />
                       {conta.titulos_recebidos === 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(conta)}
-                          title="Excluir"
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <FinanceActionButton icon={Trash2} onClick={() => handleDelete(conta)} title="Excluir" tone="danger" />
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleReceipt(conta)}
-                        title="Baixar/Receber"
-                        className="text-green-600 hover:text-green-700"
-                      >
-                        <CreditCard className="h-4 w-4" />
-                      </Button>
+                      <FinanceActionButton icon={CreditCard} onClick={() => handleReceipt(conta)} title="Baixar/Receber" tone="success" />
                       {conta.titulos_recebidos > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleReverse(conta)}
-                          title="Estornar Recebimento"
-                          className="text-orange-600 hover:text-orange-700"
-                        >
-                          <Undo2 className="h-4 w-4" />
-                        </Button>
+                        <FinanceActionButton icon={Undo2} onClick={() => handleReverse(conta)} title="Estornar Recebimento" tone="warning" />
                       )}
                     </div>
                   </TableCell>
@@ -607,7 +576,7 @@ export function ContasReceberList() {
               ))}
               {sortedContasReceber.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12">
+                  <TableCell colSpan={9} className="py-14 text-center">
                     <div className="flex flex-col items-center">
                       <Receipt className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-medium mb-2">Nenhuma conta a receber cadastrada</h3>
@@ -785,8 +754,8 @@ function ReverseReceiptModalContent({ conta, onClose, onSuccess }: ReverseReceip
           </div>
         ) : (
           <Table>
-            <TableHeader>
-              <TableRow>
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead className="w-[50px]">Estornar</TableHead>
                 <TableHead>Parcela</TableHead>
                 <TableHead>Vencimento</TableHead>
