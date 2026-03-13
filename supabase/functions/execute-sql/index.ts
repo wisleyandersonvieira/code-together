@@ -7,10 +7,9 @@ import { corsHeaders } from "../_shared/cors.ts";
  *   - Conditional: {{ params && params.key ? "SQL fragment" : "" }}
  */
 function processTemplate(query: string, params: Record<string, any>): string {
-  // First, evaluate complex JS expressions: {{ expr }}
-  // These contain ternary operators, && chains, etc.
-  let processed = query.replace(/\{\{([\s\S]*?)\}\}/g, (_match, expr: string) => {
+  let processed = query.replace(/'?\{\{([\s\S]*?)\}\}'?/g, (_match, expr: string) => {
     const trimmed = expr.trim();
+    const wrappedInQuotes = _match.startsWith("'") && _match.endsWith("'");
 
     // Simple param reference: params.key or params.key::type
     const simpleMatch = trimmed.match(/^params\.(\w+)(::.*)?$/);
@@ -28,9 +27,8 @@ function processTemplate(query: string, params: Record<string, any>): string {
       }
     }
 
-    // Complex expression - evaluate as JavaScript with params in scope
+    // Complex expression
     try {
-      // Create a function that has access to params
       const fn = new Function("params", `
         try {
           return (${trimmed});
@@ -40,12 +38,16 @@ function processTemplate(query: string, params: Record<string, any>): string {
       `);
       const result = fn(params);
       if (result === null || result === undefined || result === false) {
-        return "";
+        return wrappedInQuotes ? "''" : "";
+      }
+      if (wrappedInQuotes) {
+        const escaped = String(result).replace(/'/g, "''");
+        return `'${escaped}'`;
       }
       return String(result);
     } catch (_e) {
       console.warn(`[execute-sql] Failed to evaluate expression: ${trimmed}`);
-      return "";
+      return wrappedInQuotes ? "''" : "";
     }
   });
 
