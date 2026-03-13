@@ -21,7 +21,7 @@ const subgrupoContabilSchema = z.object({
   descricao: z.string().min(1, 'Descrição é obrigatória'),
   grupoId: z.string().min(1, 'Grupo é obrigatório'),
   funcao: z.enum(['Crédito', 'Débito'], { 
-    required_error: 'Função é obrigatória' 
+    message: 'Função é obrigatória' 
   }),
 });
 

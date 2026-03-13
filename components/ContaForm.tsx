@@ -104,7 +104,16 @@ export function ContaForm({ conta, onSuccess, onCancel }: ContaFormProps) {
         try {
           // Fix sequence and try again
           await fixSequence();
-          await createConta(payload);
+          const retryPayload = {
+            nome: data.nome,
+            numero: data.numero,
+            banco: data.banco,
+            descricao: data.descricao,
+            saldoInicial: parseFloat(data.saldoInicial),
+            dataSaldoInicial: data.dataSaldoInicial.toISOString().split('T')[0],
+            destaque: data.destaque,
+          };
+          await createConta(retryPayload);
           toast({
             title: "Conta criada",
             description: "A nova conta foi criada com sucesso.",

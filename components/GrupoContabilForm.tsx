@@ -19,7 +19,7 @@ import fixGruposContabeisSequenceAction from '@/actions/fixGruposContabeisSequen
 const grupoContabilSchema = z.object({
   descricao: z.string().min(1, 'Descrição é obrigatória'),
   tipo: z.enum(['Receita', 'Despesa', 'Investimento', 'Distribuição'], { 
-    required_error: 'Tipo é obrigatório' 
+    message: 'Tipo é obrigatório' 
   }),
 });
 
