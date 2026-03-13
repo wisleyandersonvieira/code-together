@@ -29,7 +29,7 @@ export const financeDetailTabsListClassName =
   'grid h-auto w-full grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50/85 p-2 shadow-sm md:grid-cols-5';
 
 export const financeDetailTabsTriggerClassName =
-  'min-h-[46px] rounded-xl border border-transparent px-4 py-2.5 text-sm font-semibold text-slate-600 transition-all duration-200 hover:border-slate-200 hover:bg-white hover:text-slate-900 data-[state=active]:border-slate-900 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-[0_12px_30px_-18px_rgba(15,23,42,0.7)]';
+  'min-h-[46px] rounded-xl border border-slate-700/70 bg-slate-700 px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:border-slate-800 hover:bg-slate-800 hover:text-white data-[state=active]:border-slate-900 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-[0_12px_30px_-18px_rgba(15,23,42,0.7)]';
 
 interface FinanceDetailHeaderProps {
   title: string;
