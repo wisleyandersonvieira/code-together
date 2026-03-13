@@ -23,8 +23,8 @@ const contaSchema = z.object({
   banco: z.string().min(1, 'Banco é obrigatório'),
   descricao: z.string().optional(),
   saldoInicial: z.string().min(1, 'Saldo inicial é obrigatório'),
-  dataSaldoInicial: z.date({ message: 'Data do saldo inicial é obrigatória' }),
-  destaque: z.boolean().optional().default(false),
+  dataSaldoInicial: z.date({ required_error: 'Data do saldo inicial é obrigatória' }),
+  destaque: z.boolean().default(false),
 });
 
 type ContaFormData = z.infer<typeof contaSchema>;
