@@ -44,6 +44,7 @@ import { RDSMigration } from '@/components/RDSMigration';
 import { ProvisonLogo } from '@/components/ProvisonLogo';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types/user';
+import { authSecondaryButtonClassName } from '@/components/AuthShell';
 
 type TabType =
   | 'dashboard'
@@ -465,8 +466,12 @@ function App() {
     if (showRegistration) {
       return (
         <>
-          <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl">
+          <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#f8fafc_0%,#f3f4f6_45%,#eef2f7_100%)] px-4 py-8 sm:px-6 lg:px-8">
+            <div className="pointer-events-none absolute inset-0">
+              <div className="absolute left-1/2 top-0 h-[320px] w-[320px] -translate-x-1/2 rounded-full bg-slate-200/40 blur-3xl" />
+              <div className="absolute bottom-0 left-0 h-[280px] w-[280px] rounded-full bg-slate-300/20 blur-3xl" />
+            </div>
+            <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-2xl items-center justify-center">
               <Suspense fallback={<LoadingPage />}>
                 <UserForm
                   onSuccess={() => setShowRegistration(false)}
@@ -482,18 +487,76 @@ function App() {
 
     return (
       <>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md space-y-6">
-            <LoginForm onLogin={handleLogin} />
-            <div className="text-center">
-              <Button
-                variant="outline"
-                onClick={() => setShowRegistration(true)}
-                className="w-full"
-              >
-                <UserPlus className="mr-2 h-4 w-4" />
-                Cadastrar Novo Usuário
-              </Button>
+        <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#f8fafc_0%,#f3f4f6_45%,#eef2f7_100%)] px-4 py-8 sm:px-6 lg:px-8">
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute left-1/2 top-0 h-[320px] w-[320px] -translate-x-1/2 rounded-full bg-slate-200/40 blur-3xl" />
+            <div className="absolute bottom-0 right-0 h-[280px] w-[280px] rounded-full bg-slate-300/20 blur-3xl" />
+          </div>
+
+          <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-5xl items-center justify-center">
+            <div className="grid w-full items-center gap-10 lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="hidden lg:block">
+                <div className="max-w-xl space-y-8">
+                  <div className="inline-flex items-center gap-4 rounded-full border border-white/80 bg-white/75 px-5 py-3 shadow-sm backdrop-blur">
+                    <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 p-3 shadow-[0_18px_30px_rgba(15,23,42,0.18)]">
+                      <ProvisonLogo className="h-10 w-10" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">Provision</p>
+                      <p className="text-sm font-medium text-slate-600">Sistema de Gestao</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-5">
+                    <h2 className="max-w-lg text-5xl font-semibold tracking-[-0.06em] text-slate-950">
+                      Gestao premium com uma experiencia mais clara, elegante e eficiente.
+                    </h2>
+                    <p className="max-w-xl text-lg leading-8 text-slate-600">
+                      Acesse o ambiente da Provision com o mesmo padrao visual refinado aplicado nas areas internas do sistema.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-3xl border border-white/80 bg-white/70 p-5 shadow-sm backdrop-blur">
+                      <p className="text-sm font-semibold text-slate-900">Visual corporativo</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                        Interface limpa, hierarquia bem definida e interacoes mais agradaveis.
+                      </p>
+                    </div>
+                    <div className="rounded-3xl border border-white/80 bg-white/70 p-5 shadow-sm backdrop-blur">
+                      <p className="text-sm font-semibold text-slate-900">Acesso seguro</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                        Continue usando toda a logica atual de autenticacao com uma apresentacao muito mais sofisticada.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mx-auto w-full max-w-md space-y-5">
+                <LoginForm onLogin={handleLogin} />
+
+                <div className="rounded-[24px] border border-white/80 bg-white/80 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-slate-900">Primeiro acesso?</p>
+                      <p className="text-sm leading-6 text-slate-500">
+                        Cadastre um novo usuario e comece a usar a plataforma.
+                      </p>
+                    </div>
+                    <div className="sm:min-w-[210px]">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowRegistration(true)}
+                        className={`w-full ${authSecondaryButtonClassName}`}
+                      >
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Cadastrar Novo Usuário
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

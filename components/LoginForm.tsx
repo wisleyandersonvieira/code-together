@@ -7,13 +7,17 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useMutateAction } from '@uibakery/data';
 import authenticateUserAction from '@/actions/authenticateUser';
 import updateLastLoginAction from '@/actions/updateLastLogin';
 import { useToast } from '@/hooks/use-toast';
 import { PasswordResetForm } from './PasswordResetForm';
-import { ProvisonLogo } from './ProvisonLogo';
+import {
+  AuthShell,
+  authGhostButtonClassName,
+  authInputClassName,
+  authPrimaryButtonClassName,
+} from './AuthShell';
 
 const formSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),
@@ -140,29 +144,25 @@ export function LoginForm({ onLogin }: LoginFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <div className="flex flex-col items-center space-y-4">
-          <div className="bg-black p-4 rounded-lg">
-            <ProvisonLogo className="w-16 h-16" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900">PROVISON</h1>
-            <CardTitle className="text-xl text-gray-600 mt-2">Sistema de Gestão</CardTitle>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
+    <AuthShell
+      title="Acesse sua conta"
+      description="Entre no ambiente Provision com uma experiência refinada, segura e alinhada ao novo padrão visual do sistema."
+    >
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
             <FormField
               control={form.control}
               name="email"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
+                <FormItem className="space-y-2.5">
+                  <FormLabel className="text-sm font-semibold text-slate-700">Email</FormLabel>
                   <FormControl>
-                    <Input type="email" placeholder="seu@email.com" {...field} />
+                    <Input
+                      type="email"
+                      placeholder="voce@empresa.com"
+                      className={authInputClassName}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -173,33 +173,41 @@ export function LoginForm({ onLogin }: LoginFormProps) {
               control={form.control}
               name="password"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Senha</FormLabel>
+                <FormItem className="space-y-2.5">
+                  <FormLabel className="text-sm font-semibold text-slate-700">Senha</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="••••••••" {...field} />
+                    <Input
+                      type="password"
+                      placeholder="Digite sua senha"
+                      className={authInputClassName}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <Button type="submit" disabled={isAuthenticating} className="w-full">
+            <Button
+              type="submit"
+              disabled={isAuthenticating}
+              className={`w-full ${authPrimaryButtonClassName}`}
+            >
               {isAuthenticating ? 'Entrando...' : 'Entrar'}
             </Button>
 
-            <div className="text-center">
-              <Button 
-                type="button" 
-                variant="link" 
+            <div className="flex justify-center pt-1">
+              <Button
+                type="button"
+                variant="ghost"
                 onClick={() => setShowPasswordReset(true)}
-                className="text-sm"
+                className={authGhostButtonClassName}
               >
                 Esqueci minha senha
               </Button>
             </div>
           </form>
         </Form>
-      </CardContent>
-    </Card>
+    </AuthShell>
   );
 }

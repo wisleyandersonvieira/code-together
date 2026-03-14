@@ -1518,7 +1518,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                     </TableCell>
                                     <TableCell>
                                       <Input
-                                        className={financeDetailFieldClassName}
+                                        className={`${financeDetailFieldClassName} max-w-[150px]`}
                                         type="number"
                                         step="0.01"
                                         value={parcela.valor}
@@ -1527,7 +1527,6 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                           updatedParcelas[index].valor = parseFloat(e.target.value) || 0;
                                           setParcelasPreview(updatedParcelas);
                                         }}
-                                        className="max-w-[150px]"
                                       />
                                     </TableCell>
                                   </TableRow>

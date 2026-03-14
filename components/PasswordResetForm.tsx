@@ -7,12 +7,17 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useMutateAction } from '@uibakery/data';
 import generatePasswordResetTokenAction from '@/actions/generatePasswordResetToken';
 import resetPasswordAction from '@/actions/resetPassword';
-import verifyPasswordResetTokenAction from '@/actions/verifyPasswordResetToken';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AuthShell,
+  authGhostButtonClassName,
+  authInputClassName,
+  authPrimaryButtonClassName,
+  authSecondaryButtonClassName,
+} from './AuthShell';
 
 const emailSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),
@@ -41,7 +46,6 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
 
   const [generateToken, isGeneratingToken] = useMutateAction(generatePasswordResetTokenAction);
   const [resetPassword, isResettingPassword] = useMutateAction(resetPasswordAction);
-  const [verifyToken, isVerifyingToken] = useMutateAction(verifyPasswordResetTokenAction);
 
   const emailForm = useForm<EmailFormData>({
     resolver: zodResolver(emailSchema),
@@ -125,39 +129,42 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
 
   if (step === 'success') {
     return (
-      <Card className="w-full max-w-md mx-auto">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">Senha Alterada!</CardTitle>
-        </CardHeader>
-        <CardContent className="text-center space-y-4">
-          <p>Sua senha foi alterada com sucesso. Você já pode fazer login com a nova senha.</p>
+      <AuthShell
+        eyebrow="Recuperação concluída"
+        title="Senha alterada com sucesso"
+        description="Sua nova senha já está ativa. Você pode voltar ao login e acessar a plataforma normalmente."
+      >
+        <div className="space-y-4 text-center">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm leading-6 text-emerald-800">
+            Sua senha foi atualizada com sucesso.
+          </div>
           {onCancel && (
-            <Button onClick={onCancel} className="w-full">
+            <Button onClick={onCancel} className={`w-full ${authPrimaryButtonClassName}`}>
               Fazer Login
             </Button>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </AuthShell>
     );
   }
 
   if (step === 'reset') {
     return (
-      <Card className="w-full max-w-md mx-auto">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">Nova Senha</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <AuthShell
+        eyebrow="Redefinir acesso"
+        title="Crie uma nova senha"
+        description="Escolha uma senha segura para concluir a recuperação e voltar ao sistema com tranquilidade."
+      >
           <Form {...resetForm}>
-            <form onSubmit={resetForm.handleSubmit(onSubmitReset)} className="space-y-4">
+            <form onSubmit={resetForm.handleSubmit(onSubmitReset)} className="space-y-5">
               <FormField
                 control={resetForm.control}
                 name="password"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nova Senha</FormLabel>
+                  <FormItem className="space-y-2.5">
+                    <FormLabel className="text-sm font-semibold text-slate-700">Nova Senha</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="••••••••" {...field} />
+                      <Input type="password" placeholder="No minimo 6 caracteres" className={authInputClassName} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -168,84 +175,91 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
                 control={resetForm.control}
                 name="confirmPassword"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirmar Nova Senha</FormLabel>
+                  <FormItem className="space-y-2.5">
+                    <FormLabel className="text-sm font-semibold text-slate-700">Confirmar Nova Senha</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="••••••••" {...field} />
+                      <Input type="password" placeholder="Repita a senha" className={authInputClassName} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="flex gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 {onCancel && (
-                  <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+                  <Button type="button" variant="outline" onClick={onCancel} className={`flex-1 ${authSecondaryButtonClassName}`}>
                     Cancelar
                   </Button>
                 )}
-                <Button type="submit" disabled={isResettingPassword} className="flex-1">
+                <Button type="submit" disabled={isResettingPassword} className={`flex-1 ${authPrimaryButtonClassName}`}>
                   {isResettingPassword ? 'Alterando...' : 'Alterar Senha'}
                 </Button>
               </div>
             </form>
           </Form>
-        </CardContent>
-      </Card>
+      </AuthShell>
     );
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle className="text-2xl text-center">Esqueci Minha Senha</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <AuthShell
+      eyebrow="Recuperação de acesso"
+      title="Esqueceu sua senha?"
+      description="Informe seu email corporativo e enviaremos um link para redefinir seu acesso com segurança."
+    >
         {emailSent ? (
-          <div className="text-center space-y-4">
-            <p>Enviamos um link de recuperação para seu email. Verifique sua caixa de entrada.</p>
-            <p className="text-sm text-gray-600">
+          <div className="space-y-4 text-center">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-700">
+              Enviamos um link de recuperação para seu email. Verifique sua caixa de entrada.
+            </div>
+            <p className="text-sm leading-6 text-slate-500">
               Não recebeu o email? Verifique sua pasta de spam ou tente novamente.
             </p>
-            <Button 
-              variant="outline" 
-              onClick={() => setEmailSent(false)}
-              className="w-full"
-            >
-              Tentar Novamente
-            </Button>
+            <div className="flex flex-col gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setEmailSent(false)}
+                className={`w-full ${authSecondaryButtonClassName}`}
+              >
+                Tentar Novamente
+              </Button>
+              {onCancel ? (
+                <Button type="button" variant="ghost" onClick={onCancel} className={authGhostButtonClassName}>
+                  Voltar ao login
+                </Button>
+              ) : null}
+            </div>
           </div>
         ) : (
           <Form {...emailForm}>
-            <form onSubmit={emailForm.handleSubmit(onSubmitEmail)} className="space-y-4">
+            <form onSubmit={emailForm.handleSubmit(onSubmitEmail)} className="space-y-5">
               <FormField
                 control={emailForm.control}
                 name="email"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
+                  <FormItem className="space-y-2.5">
+                    <FormLabel className="text-sm font-semibold text-slate-700">Email</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="seu@email.com" {...field} />
+                      <Input type="email" placeholder="voce@empresa.com" className={authInputClassName} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <div className="flex gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 {onCancel && (
-                  <Button type="button" variant="outline" onClick={onCancel} className="flex-1">
+                  <Button type="button" variant="outline" onClick={onCancel} className={`flex-1 ${authSecondaryButtonClassName}`}>
                     Cancelar
                   </Button>
                 )}
-                <Button type="submit" disabled={isGeneratingToken} className="flex-1">
+                <Button type="submit" disabled={isGeneratingToken} className={`flex-1 ${authPrimaryButtonClassName}`}>
                   {isGeneratingToken ? 'Enviando...' : 'Enviar Link'}
                 </Button>
               </div>
             </form>
           </Form>
         )}
-      </CardContent>
-    </Card>
+    </AuthShell>
   );
 }

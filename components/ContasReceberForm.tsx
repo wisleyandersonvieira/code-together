@@ -1438,7 +1438,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                 </TableCell>
                                 <TableCell>
                                   <Input
-                                    className={financeDetailFieldClassName}
+                                    className={`${financeDetailFieldClassName} max-w-[150px]`}
                                     type="number"
                                     step="0.01"
                                     value={parcela.valor}
@@ -1447,7 +1447,6 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       updatedParcelas[index].valor = parseFloat(e.target.value) || 0;
                                       setParcelasPreview(updatedParcelas);
                                     }}
-                                    className="max-w-[150px]"
                                   />
                                 </TableCell>
                               </TableRow>
