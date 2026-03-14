@@ -26,6 +26,7 @@ import deleteProdutoAction from '@/actions/deleteProduto';
 import checkProdutoUsageAction from '@/actions/checkProdutoUsage';
 import loadGruposContabeisAction from '@/actions/loadGruposContabeis';
 import loadSubgruposByGrupoAction from '@/actions/loadSubgruposByGrupo';
+import { FinanceActionButton } from '@/components/finance/listing-ui';
 
 type SortColumn = 'codigo' | 'descricao' | 'tipo' | 'grupo_descricao' | 'subgrupo_descricao';
 type SortDirection = 'asc' | 'desc';
@@ -369,20 +370,18 @@ export function ProductList() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                      <FinanceActionButton
+                        icon={Edit}
+                        title="Editar"
                         onClick={() => handleEdit(produto)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                        tone="brand"
+                      />
+                      <FinanceActionButton
+                        icon={Trash2}
+                        title="Excluir"
                         onClick={() => handleDelete(produto.id, produto.descricao)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        tone="danger"
+                      />
                     </div>
                   </TableCell>
                 </TableRow>
