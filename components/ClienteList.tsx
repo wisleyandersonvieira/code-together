@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { Pencil, Trash2, Plus, FileText, Search, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -152,12 +152,7 @@ export function ClienteList() {
                 Novo Cliente
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {isEditMode ? 'Editar Cliente' : 'Criar Novo Cliente'}
-                </DialogTitle>
-              </DialogHeader>
+            <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto border-0 bg-transparent p-0 shadow-none [&>button]:hidden">
               <ClienteForm
                 cliente={selectedCliente || undefined}
                 onSuccess={handleFormSuccess}
