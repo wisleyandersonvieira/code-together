@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { FileManager } from './FileManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -57,7 +57,7 @@ const clienteFieldClassName =
   'h-11 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm transition-all duration-200 placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-slate-400 focus-visible:ring-4 focus-visible:ring-slate-200/60';
 
 const clienteTextareaClassName =
-  'min-h-[126px] rounded-2xl border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all duration-200 placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-slate-400 focus-visible:ring-4 focus-visible:ring-slate-200/60';
+  'min-h-[110px] rounded-2xl border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all duration-200 placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-slate-400 focus-visible:ring-4 focus-visible:ring-slate-200/60';
 
 const clienteTabsListClassName =
   'grid h-auto w-full grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-2 shadow-sm sm:grid-cols-3';
@@ -153,20 +153,17 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
 
   return (
     <Card className="w-full max-w-4xl overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/95 shadow-[0_22px_60px_-32px_rgba(15,23,42,0.35)]">
-      <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white via-slate-50/70 to-white px-6 py-5 sm:px-7">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white via-slate-50/70 to-white px-6 py-4 sm:px-7">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
               <UserRound className="h-5 w-5 text-slate-700" />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Provision</p>
               <CardTitle className="text-2xl font-semibold tracking-tight text-slate-950">
                 {cliente ? 'Editar Cliente' : 'Cadastrar Novo Cliente'}
               </CardTitle>
-              <CardDescription className="max-w-2xl text-sm leading-6 text-slate-500">
-                Organize os dados cadastrais, documentos e vinculos do cliente com um fluxo mais leve e elegante.
-              </CardDescription>
             </div>
           </div>
 
@@ -183,9 +180,9 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="px-6 py-6 sm:px-7">
+      <CardContent className="px-6 py-5 sm:px-7">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <Tabs defaultValue="main" className="w-full">
               <TabsList className={clienteTabsListClassName}>
                 <TabsTrigger value="main" className={clienteTabsTriggerClassName}>
@@ -201,8 +198,8 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="main" className="mt-5 space-y-6">
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <TabsContent value="main" className="mt-4 space-y-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="name"
@@ -232,7 +229,7 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="phone"
@@ -262,7 +259,7 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                   <FormField
                     control={form.control}
                     name="birthDate"
@@ -286,10 +283,10 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                     control={form.control}
                     name="active"
                     render={({ field }) => (
-                      <FormItem className="flex min-h-[76px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 shadow-sm">
+                      <FormItem className="flex min-h-[68px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 shadow-sm">
                         <div className="space-y-1">
                           <FormLabel className="text-sm font-semibold text-slate-800">Cliente Ativo</FormLabel>
-                          <div className="text-sm leading-6 text-slate-500">
+                          <div className="text-sm leading-5 text-slate-500">
                             Desative para ocultar da lista principal
                           </div>
                         </div>
@@ -319,7 +316,7 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                 />
               </TabsContent>
 
-              <TabsContent value="documents" className="mt-5 space-y-6">
+              <TabsContent value="documents" className="mt-4 space-y-4">
                 {(savedClienteId || cliente?.id) ? (
                   <FileManager
                     entityType="cliente_document"
@@ -336,7 +333,7 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                 )}
               </TabsContent>
 
-              <TabsContent value="vinculos" className="mt-5 space-y-6">
+              <TabsContent value="vinculos" className="mt-4 space-y-4">
                 {(savedClienteId || cliente?.id) ? (
                   <ClienteVinculos clienteId={savedClienteId || cliente!.id} />
                 ) : (
@@ -349,7 +346,7 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
               </TabsContent>
             </Tabs>
 
-            <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:justify-end">
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
               {onCancel && (
                 <Button type="button" variant="outline" onClick={onCancel} className={clienteSecondaryButtonClassName}>
                   Cancelar
