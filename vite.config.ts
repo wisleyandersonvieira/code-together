@@ -9,6 +9,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './'),
       '@uibakery/data': path.resolve(__dirname, './lib/uibakery-shim.ts'),
     },
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
   },
   server: {
     host: "::",
