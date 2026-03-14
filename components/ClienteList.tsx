@@ -14,6 +14,20 @@ import loadClientesAction from '@/actions/loadClientes';
 import deleteClienteAction from '@/actions/deleteCliente';
 import checkClienteCanDeleteAction from '@/actions/checkClienteCanDelete';
 import { ClienteForm } from './ClienteForm';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingFilterBadge,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingFilterFieldClassName,
+  listingPrimaryButtonClassName,
+  listingSecondaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 interface Cliente {
   id: number;
@@ -142,12 +156,15 @@ export function ClienteList() {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl">Lista de Clientes</CardTitle>
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardHeader className="px-0 pt-0">
+          <ListingPageHeader
+            title="Clientes"
+            description="Gerencie os cadastros de clientes com a mesma experiência visual das áreas financeiras."
+            action={
           <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
             <DialogTrigger asChild>
-              <Button onClick={handleCreate}>
+              <Button onClick={handleCreate} className={listingPrimaryButtonClassName}>
                 <Plus className="mr-2 h-4 w-4" />
                 Novo Cliente
               </Button>
@@ -161,29 +178,31 @@ export function ClienteList() {
               />
             </DialogContent>
           </Dialog>
+            }
+          />
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6 px-0">
           <div className="space-y-4">
-            {/* Campo de busca */}
-            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-gray-50 rounded-lg">
+            <ListingFilterCard>
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:flex-row">
               <div className="flex-1">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                <label className="mb-1 block text-sm font-medium text-slate-700">
                   Buscar por Nome
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     placeholder="Digite parte do nome do cliente..."
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    className="pl-10"
+                    className={`pl-10 ${listingFilterFieldClassName}`}
                   />
                 </div>
               </div>
               
               <div className="flex items-end gap-2">
-                <Button onClick={handleSearch} className="flex items-center gap-2">
+                <Button onClick={handleSearch} className={listingPrimaryButtonClassName}>
                   <Search className="h-4 w-4" />
                   Filtrar
                 </Button>
@@ -192,7 +211,7 @@ export function ClienteList() {
                   <Button 
                     variant="outline" 
                     onClick={handleClearSearch}
-                    className="flex items-center gap-2"
+                    className={listingSecondaryButtonClassName}
                   >
                     <X className="h-4 w-4" />
                     Limpar
@@ -200,74 +219,79 @@ export function ClienteList() {
                 )}
               </div>
             </div>
+            </ListingFilterCard>
 
-            {/* Indicador de filtro ativo */}
             {appliedSearch && (
               <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary">
+                <ListingFilterBadge>
                   Busca: "{appliedSearch}"
-                </Badge>
+                </ListingFilterBadge>
               </div>
             )}
 
             {clientes.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {appliedSearch 
-                  ? "Nenhum cliente encontrado com o filtro aplicado."
-                  : "Nenhum cliente encontrado. Clique em \"Novo Cliente\" para começar."
-                }
-              </div>
+              <ListingTableCard>
+                <CardContent className="p-0">
+                  <ListingEmptyState
+                    icon={FileText}
+                    title={appliedSearch ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}
+                    description={
+                      appliedSearch
+                        ? 'Nenhum cliente encontrado com o filtro aplicado.'
+                        : 'Clique em "Novo Cliente" para começar.'
+                    }
+                  />
+                </CardContent>
+              </ListingTableCard>
             ) : (
-            <div className="rounded-md border">
+            <ListingTableCard>
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>CPF</TableHead>
-                    <TableHead>Data Nasc.</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
+                <TableHeader className="bg-slate-50/80">
+                  <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                    <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Status</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Email</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Telefone</TableHead>
+                    <TableHead className={listingTableHeadClassName}>CPF</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Data Nasc.</TableHead>
+                    <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {clientes.map((cliente: Cliente) => (
-                    <TableRow key={cliente.id}>
-                      <TableCell className="font-medium">{cliente.name}</TableCell>
-                      <TableCell>
-                        <Badge variant={cliente.active ? 'default' : 'secondary'}>
-                          {cliente.active ? 'Ativo' : 'Inativo'}
-                        </Badge>
+                    <TableRow key={cliente.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                      <TableCell className={`${listingTableCellClassName} font-medium text-slate-700`}>{cliente.name}</TableCell>
+                      <TableCell className={listingTableCellClassName}>
+                        {cliente.active ? (
+                          <FinanceStatusBadge label="Ativo" tone="success" />
+                        ) : (
+                          <FinanceStatusBadge label="Inativo" tone="neutral" />
+                        )}
                       </TableCell>
-                      <TableCell>{cliente.email || '-'}</TableCell>
-                      <TableCell>{cliente.phone || '-'}</TableCell>
-                      <TableCell>{cliente.cpf || '-'}</TableCell>
-                      <TableCell>
+                      <TableCell className={listingTableCellClassName}>{cliente.email || '-'}</TableCell>
+                      <TableCell className={listingTableCellClassName}>{cliente.phone || '-'}</TableCell>
+                      <TableCell className={`${listingTableCellClassName} font-mono`}>{cliente.cpf || '-'}</TableCell>
+                      <TableCell className={listingTableCellClassName}>
                         {cliente.birth_date
                           ? new Date(cliente.birth_date).toLocaleDateString('pt-BR')
                           : '-'}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="sm" onClick={() => handleEdit(cliente)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
+                      <TableCell className={`${listingTableCellClassName} text-right`}>
+                        <div className="flex justify-end gap-2">
+                          <FinanceActionButton icon={Pencil} onClick={() => handleEdit(cliente)} title="Editar" tone="brand" />
+                          <FinanceActionButton
+                            icon={Trash2}
                             onClick={() => handleDelete(cliente.id, cliente.name)}
-                            disabled={isDeleting}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                            title="Excluir"
+                            tone="danger"
+                          />
                         </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </ListingTableCard>
             )}
           </div>
         </CardContent>

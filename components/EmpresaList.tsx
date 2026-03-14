@@ -16,6 +16,20 @@ import loadClientesAction from '@/actions/loadClientes';
 import checkEmpresaCanDeleteAction from '@/actions/checkEmpresaCanDelete';
 import deleteEmpresaAction from '@/actions/deleteEmpresa';
 import { EmpresaForm } from './EmpresaForm';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingFilterBadge,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingFilterFieldClassName,
+  listingPrimaryButtonClassName,
+  listingSecondaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 interface Empresa {
   id: number;
@@ -143,40 +157,43 @@ export function EmpresaList() {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl">Lista de Empresas Clientes</CardTitle>
-          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={handleCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Nova Empresa
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {isEditMode ? 'Editar Empresa' : 'Criar Nova Empresa'}
-                </DialogTitle>
-              </DialogHeader>
-              <EmpresaForm
-                empresa={selectedEmpresa || undefined}
-                onSuccess={handleFormSuccess}
-                onCancel={() => setIsFormOpen(false)}
-              />
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
+      <div className="space-y-6">
+        <ListingPageHeader
+          title="Empresas"
+          description="Gerencie empresas clientes com a mesma estrutura visual das listagens financeiras."
+          action={
+            <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+              <DialogTrigger asChild>
+                <Button className={listingPrimaryButtonClassName} onClick={handleCreate}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nova Empresa
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>
+                    {isEditMode ? 'Editar Empresa' : 'Criar Nova Empresa'}
+                  </DialogTitle>
+                </DialogHeader>
+                <EmpresaForm
+                  empresa={selectedEmpresa || undefined}
+                  onSuccess={handleFormSuccess}
+                  onCancel={() => setIsFormOpen(false)}
+                />
+              </DialogContent>
+            </Dialog>
+          }
+        />
+
+        <ListingFilterCard>
           <div className="space-y-4">
-            {/* Filtros */}
-            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-gray-50 rounded-lg">
-              <div className="flex-1">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:flex-row">
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium text-slate-700">
                   Filtrar por Cliente
                 </label>
                 <Select value={selectedClienteId} onValueChange={setSelectedClienteId}>
-                  <SelectTrigger>
+                  <SelectTrigger className={listingFilterFieldClassName}>
                     <SelectValue placeholder="Todos os clientes" />
                   </SelectTrigger>
                   <SelectContent>
@@ -190,125 +207,118 @@ export function EmpresaList() {
                 </Select>
               </div>
               
-              <div className="flex-1">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium text-slate-700">
                   Buscar por Nome
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     placeholder="Digite o nome da empresa..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
+                    className={`${listingFilterFieldClassName} pl-10`}
                   />
                 </div>
               </div>
               
               {hasActiveFilters && (
                 <div className="flex items-end">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleClearFilters}
-                    className="flex items-center gap-2"
-                  >
-                    <X className="h-4 w-4" />
+                  <Button onClick={handleClearFilters} className={listingSecondaryButtonClassName}>
+                    <X className="mr-2 h-4 w-4" />
                     Limpar Filtros
                   </Button>
                 </div>
               )}
             </div>
 
-            {/* Indicador de filtros ativos */}
             {hasActiveFilters && (
               <div className="flex flex-wrap gap-2">
                 {selectedClienteId !== 'all' && (
-                  <Badge variant="secondary">
+                  <ListingFilterBadge>
                     Cliente: {clientes.find((c: any) => c.id.toString() === selectedClienteId)?.name}
-                  </Badge>
+                  </ListingFilterBadge>
                 )}
                 {searchTerm && (
-                  <Badge variant="secondary">
+                  <ListingFilterBadge>
                     Busca: "{searchTerm}"
-                  </Badge>
+                  </ListingFilterBadge>
                 )}
               </div>
             )}
-            {empresas.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {hasActiveFilters 
-                  ? "Nenhuma empresa encontrada com os filtros aplicados."
-                  : "Nenhuma empresa encontrada. Clique em \"Nova Empresa\" para começar."
-                }
-              </div>
-            ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Número</TableHead>
-                    <TableHead>Clientes</TableHead>
-                    <TableHead>Participação</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {empresas.map((empresa: Empresa) => {
-                    const totalPercentage = empresa.clientes.reduce((sum, c) => sum + c.percentage, 0);
-                    
-                    return (
-                      <TableRow key={empresa.id}>
-                        <TableCell className="font-medium">{empresa.name}</TableCell>
-                        <TableCell>{empresa.number || '-'}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {empresa.clientes.map((cliente, idx) => (
-                              <div key={idx} className="text-sm">
-                                {cliente.cliente_name}
-                              </div>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {empresa.clientes.map((cliente, idx) => (
-                              <Badge key={idx} variant="outline" className="text-xs">
-                                {cliente.percentage}%
-                              </Badge>
-                            ))}
-                            <div className="text-xs text-muted-foreground">
-                              Total: {totalPercentage.toFixed(2)}%
-                            </div>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-right">
-                          <div className="flex gap-2 justify-end">
-                            <Button variant="outline" size="sm" onClick={() => handleEdit(empresa)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => handleDelete(empresa)}
-                              disabled={isDeleting}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-            )}
           </div>
-        </CardContent>
-      </Card>
+        </ListingFilterCard>
+
+        <ListingTableCard>
+          <CardContent className="p-0">
+            {empresas.length === 0 ? (
+              <ListingEmptyState
+                icon={Plus}
+                title="Nenhuma empresa encontrada"
+                description={
+                  hasActiveFilters 
+                    ? "Nenhuma empresa encontrada com os filtros aplicados."
+                    : 'Clique em "Nova Empresa" para começar.'
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50/80">
+                    <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                      <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Número</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Clientes</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Participação</TableHead>
+                      <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {empresas.map((empresa: Empresa) => {
+                      const totalPercentage = empresa.clientes.reduce((sum, c) => sum + c.percentage, 0);
+                      
+                      return (
+                        <TableRow key={empresa.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                          <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{empresa.name}</TableCell>
+                          <TableCell className={listingTableCellClassName}>{empresa.number || '-'}</TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <div className="space-y-1">
+                              {empresa.clientes.map((cliente, idx) => (
+                                <div key={idx} className="text-sm text-slate-700">
+                                  {cliente.cliente_name}
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap gap-2">
+                                {empresa.clientes.map((cliente, idx) => (
+                                  <FinanceStatusBadge key={idx} label={`${cliente.percentage}%`} tone="neutral" />
+                                ))}
+                              </div>
+                              <div className="text-xs font-medium text-slate-500">
+                                Total: {totalPercentage.toFixed(2)}%
+                              </div>
+                            </div>
+                          </TableCell>
+
+                          <TableCell className={`${listingTableCellClassName} text-right`}>
+                            <div className="flex justify-end gap-2">
+                              <FinanceActionButton icon={Pencil} title="Editar" onClick={() => handleEdit(empresa)} tone="brand" />
+                              <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(empresa)} tone="danger" />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </ListingTableCard>
+      </div>
     </>
   );
 }

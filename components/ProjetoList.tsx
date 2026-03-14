@@ -15,6 +15,16 @@ import checkProjetoRestrictiveRelationshipsAction from '@/actions/checkProjetoRe
 import { ProjetoForm } from './ProjetoForm';
 import { ProjetoFileViewer } from './ProjetoFileViewer';
 import { useToast } from '@/hooks/use-toast';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingPageHeader,
+  ListingTableCard,
+  listingPrimaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 interface Projeto {
   id: number;
@@ -204,163 +214,154 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl">Lista de Projetos</CardTitle>
-          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={handleCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Projeto
-              </Button>
-            </DialogTrigger>
-            <DialogContent 
-              className="max-w-7xl max-h-[90vh] overflow-y-auto"
-              onInteractOutside={(e) => {
-                // Prevent dialog from closing when clicking download links or other file actions
-                const target = e.target as Element;
-                if (target.closest('.file-manager-content') || target.tagName === 'A') {
-                  e.preventDefault();
-                }
-              }}
-            >
-              <DialogHeader>
-                <DialogTitle>
-                  {isViewMode ? 'Visualizar Projeto' : isEditMode ? 'Editar Projeto' : 'Criar Novo Projeto'}
-                </DialogTitle>
-              </DialogHeader>
-              <ProjetoForm
-                projeto={selectedProjeto || undefined}
-                onSuccess={handleFormSuccess}
-                onCancel={() => setIsFormOpen(false)}
-                readOnly={isViewMode}
+      <div className="space-y-6">
+        <ListingPageHeader
+          title="Projetos"
+          description="Acompanhe portfólio, membros e documentação em uma listagem padronizada com o módulo financeiro."
+          action={
+            <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+              <DialogTrigger asChild>
+                <Button className={listingPrimaryButtonClassName} onClick={handleCreate}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Projeto
+                </Button>
+              </DialogTrigger>
+              <DialogContent 
+                className="max-w-7xl max-h-[90vh] overflow-y-auto"
+                onInteractOutside={(e) => {
+                  const target = e.target as Element;
+                  if (target.closest('.file-manager-content') || target.tagName === 'A') {
+                    e.preventDefault();
+                  }
+                }}
+              >
+                <DialogHeader>
+                  <DialogTitle>
+                    {isViewMode ? 'Visualizar Projeto' : isEditMode ? 'Editar Projeto' : 'Criar Novo Projeto'}
+                  </DialogTitle>
+                </DialogHeader>
+                <ProjetoForm
+                  projeto={selectedProjeto || undefined}
+                  onSuccess={handleFormSuccess}
+                  onCancel={() => setIsFormOpen(false)}
+                  readOnly={isViewMode}
+                />
+              </DialogContent>
+            </Dialog>
+          }
+        />
+
+        <ListingTableCard>
+          <CardContent className="p-0">
+            {projetos.length === 0 ? (
+              <ListingEmptyState
+                icon={Plus}
+                title="Nenhum projeto encontrado"
+                description='Clique em "Novo Projeto" para começar.'
               />
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
-          {projetos.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nenhum projeto encontrado. Clique em "Novo Projeto" para começar.
-            </div>
-          ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Cidade</TableHead>
-                  <TableHead>Membros</TableHead>
-                  <TableHead>Valor Previsto</TableHead>
-                  <TableHead>Orçamentos</TableHead>
-                  <TableHead>Fotos</TableHead>
-                  <TableHead>Documentos</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projetos.map((projeto: Projeto) => {
-                  const totalOrcamento = projeto.orcamentos.reduce((sum, orc) => sum + orc.value, 0);
-                  const totalPercentage = projeto.members.reduce((sum, m) => sum + m.percentage, 0);
-                  
-                  return (
-                    <TableRow key={projeto.id}>
-                      <TableCell className="font-medium">{projeto.name}</TableCell>
-                      <TableCell>
-                        <Badge variant={projeto.status === 'Concluído' ? 'default' : 'secondary'}>
-                          {projeto.status || 'Em andamento'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{projeto.city || '-'}</TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          {projeto.members.map((member, idx) => (
-                            <div key={idx} className="text-sm">
-                              {member.cliente_name || member.empresa_name || member.grupo_name}
-                              <span className="text-muted-foreground ml-2">
-                                ({member.cliente_name ? 'Cliente' : member.empresa_name ? 'Empresa' : 'Grupo'} - {member.percentage}%)
-                              </span>
-                            </div>
-                          ))}
-                          <div className="text-xs text-muted-foreground">
-                            Total: {totalPercentage.toFixed(2)}%
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {projeto.predicted_sale_value ? (
-                          `$ ${projeto.predicted_sale_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                        ) : '-'}
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <Badge variant="outline" className="text-xs">
-                            {projeto.orcamentos.length} itens
-                          </Badge>
-                          {totalOrcamento > 0 && (
-                            <div className="text-xs text-muted-foreground">
-                              Total: $ {totalOrcamento.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div 
-                          className="flex items-center gap-1 cursor-pointer hover:bg-gray-50 p-1 rounded"
-                          onClick={() => handleViewFiles(projeto.id, projeto.name, 'photos')}
-                        >
-                          <Image className="h-4 w-4 text-blue-600" />
-                          <span className="text-xs text-muted-foreground">Ver fotos</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div 
-                          className="flex items-center gap-1 cursor-pointer hover:bg-gray-50 p-1 rounded"
-                          onClick={() => handleViewFiles(projeto.id, projeto.name, 'documents')}
-                        >
-                          <FileText className="h-4 w-4 text-green-600" />
-                          <span className="text-xs text-muted-foreground">Ver docs</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleView(projeto)}
-                            title="Visualizar Projeto"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleEdit(projeto)}
-                            title="Editar Projeto"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleDelete(projeto.id, projeto.name)}
-                            disabled={isDeleting}
-                            title="Excluir Projeto"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50/80">
+                    <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                      <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Status</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Cidade</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Membros</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Valor Previsto</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Orçamentos</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Fotos</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Documentos</TableHead>
+                      <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-          )}
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {projetos.map((projeto: Projeto) => {
+                      const totalOrcamento = projeto.orcamentos.reduce((sum, orc) => sum + orc.value, 0);
+                      const totalPercentage = projeto.members.reduce((sum, m) => sum + m.percentage, 0);
+                      
+                      return (
+                        <TableRow key={projeto.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                          <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{projeto.name}</TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <FinanceStatusBadge
+                              label={projeto.status || 'Em andamento'}
+                              tone={projeto.status === 'Concluído' ? 'success' : 'warning'}
+                            />
+                          </TableCell>
+                          <TableCell className={listingTableCellClassName}>{projeto.city || '-'}</TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <div className="space-y-1">
+                              {projeto.members.map((member, idx) => (
+                                <div key={idx} className="text-sm text-slate-700">
+                                  {member.cliente_name || member.empresa_name || member.grupo_name}
+                                  <span className="ml-2 text-xs text-slate-500">
+                                    ({member.cliente_name ? 'Cliente' : member.empresa_name ? 'Empresa' : 'Grupo'} - {member.percentage}%)
+                                  </span>
+                                </div>
+                              ))}
+                              <div className="text-xs font-medium text-slate-500">
+                                Total: {totalPercentage.toFixed(2)}%
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
+                            {projeto.predicted_sale_value ? (
+                              `$ ${projeto.predicted_sale_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                            ) : '-'}
+                          </TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <div className="space-y-1">
+                              <FinanceStatusBadge label={`${projeto.orcamentos.length} itens`} tone="neutral" />
+                              {totalOrcamento > 0 && (
+                                <div className="text-xs text-slate-500">
+                                  Total: $ {totalOrcamento.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+                              onClick={() => handleViewFiles(projeto.id, projeto.name, 'photos')}
+                            >
+                              <Image className="h-4 w-4 text-sky-600" />
+                              Ver fotos
+                            </button>
+                          </TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+                              onClick={() => handleViewFiles(projeto.id, projeto.name, 'documents')}
+                            >
+                              <FileText className="h-4 w-4 text-emerald-600" />
+                              Ver docs
+                            </button>
+                          </TableCell>
+                          <TableCell className={`${listingTableCellClassName} text-right`}>
+                            <div className="flex justify-end gap-2">
+                              <FinanceActionButton icon={Eye} title="Visualizar Projeto" onClick={() => handleView(projeto)} />
+                              <FinanceActionButton icon={Pencil} title="Editar Projeto" onClick={() => handleEdit(projeto)} tone="brand" />
+                              <FinanceActionButton
+                                icon={Trash2}
+                                title="Excluir Projeto"
+                                onClick={() => handleDelete(projeto.id, projeto.name)}
+                                tone="danger"
+                              />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </ListingTableCard>
+      </div>
 
       <ProjetoFileViewer
         files={fileViewerData.files}

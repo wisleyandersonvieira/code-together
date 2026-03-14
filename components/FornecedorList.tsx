@@ -17,6 +17,19 @@ import { FornecedorForm } from './FornecedorForm';
 import { FornecedorViewDialog } from './FornecedorViewDialog';
 import { FornecedorEditDialog } from './FornecedorEditDialog';
 import { useToast } from '@/hooks/use-toast';
+import {
+  FinanceActionButton,
+  ListingEmptyState,
+  ListingFilterBadge,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingFilterFieldClassName,
+  listingPrimaryButtonClassName,
+  listingSecondaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 interface Fornecedor {
   id: number;
@@ -129,169 +142,157 @@ export function FornecedorList() {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl">Lista de Fornecedores</CardTitle>
-          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Fornecedor
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Criar Novo Fornecedor</DialogTitle>
-              </DialogHeader>
-              <FornecedorForm
-                onSuccess={handleFormSuccess}
-                onCancel={() => setIsFormOpen(false)}
-              />
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
+      <div className="space-y-6">
+        <ListingPageHeader
+          title="Fornecedores"
+          description="Mantenha sua base de fornecedores com o mesmo padrão premium das listagens financeiras."
+          action={
+            <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+              <DialogTrigger asChild>
+                <Button className={listingPrimaryButtonClassName}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Fornecedor
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Criar Novo Fornecedor</DialogTitle>
+                </DialogHeader>
+                <FornecedorForm
+                  onSuccess={handleFormSuccess}
+                  onCancel={() => setIsFormOpen(false)}
+                />
+              </DialogContent>
+            </Dialog>
+          }
+        />
+
+        <ListingFilterCard>
           <div className="space-y-4">
-            {/* Campo de busca */}
-            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-gray-50 rounded-lg">
-              <div className="flex-1">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium text-slate-700">
                   Buscar por Nome
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
                     placeholder="Digite o nome do fornecedor..."
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    className="pl-10"
+                    className={`${listingFilterFieldClassName} pl-10`}
                   />
                 </div>
               </div>
               
-              <div className="flex items-end gap-2">
-                <Button onClick={handleSearch} className="flex items-center gap-2">
-                  <Search className="h-4 w-4" />
+              <div className="flex gap-2">
+                <Button onClick={handleSearch} className={listingPrimaryButtonClassName}>
+                  <Search className="mr-2 h-4 w-4" />
                   Filtrar
                 </Button>
                 
                 {appliedSearch && (
-                  <Button 
-                    variant="outline" 
-                    onClick={handleClearSearch}
-                    className="flex items-center gap-2"
-                  >
-                    <X className="h-4 w-4" />
+                  <Button onClick={handleClearSearch} className={listingSecondaryButtonClassName}>
+                    <X className="mr-2 h-4 w-4" />
                     Limpar
                   </Button>
                 )}
               </div>
             </div>
 
-            {/* Indicador de filtro ativo */}
             {appliedSearch && (
               <div className="flex flex-wrap gap-2">
-                <Badge variant="secondary">
+                <ListingFilterBadge>
                   Busca: "{appliedSearch}"
-                </Badge>
+                </ListingFilterBadge>
               </div>
-            )}
-
-            {fornecedores.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {appliedSearch 
-                  ? "Nenhum fornecedor encontrado com o filtro aplicado."
-                  : "Nenhum fornecedor encontrado. Clique em \"Novo Fornecedor\" para começar."
-                }
-              </div>
-            ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>EIN Number</TableHead>
-                    <TableHead>Contato</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {fornecedores.map((fornecedor: Fornecedor) => (
-                    <TableRow key={fornecedor.id}>
-                      <TableCell className="font-medium">{fornecedor.name}</TableCell>
-                      <TableCell>{fornecedor.email || '-'}</TableCell>
-                      <TableCell>{fornecedor.phone || '-'}</TableCell>
-                      <TableCell>{fornecedor.ein_number || '-'}</TableCell>
-                      <TableCell>
-                        {fornecedor.contact_name ? (
-                          <div>
-                            <div className="font-medium">{fornecedor.contact_name}</div>
-                            <div className="text-sm text-muted-foreground">{fornecedor.contact_phone}</div>
-                          </div>
-                        ) : (
-                          '-'
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleView(fornecedor)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleEdit(fornecedor)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-red-600 hover:text-red-700"
-                                disabled={isDeleting}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Excluir fornecedor</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Tem certeza que deseja excluir o fornecedor "{fornecedor.name}"? 
-                                  Esta ação não pode ser desfeita e só será permitida se não houver vínculos com contas a pagar ou orçamentos.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDelete(fornecedor)}
-                                  className="bg-red-600 hover:bg-red-700"
-                                >
-                                  Excluir
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </ListingFilterCard>
+
+        <ListingTableCard>
+          <CardContent className="p-0">
+            {fornecedores.length === 0 ? (
+              <ListingEmptyState
+                icon={Plus}
+                title="Nenhum fornecedor encontrado"
+                description={
+                  appliedSearch 
+                    ? "Nenhum fornecedor encontrado com o filtro aplicado."
+                    : 'Clique em "Novo Fornecedor" para começar.'
+                }
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50/80">
+                    <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                      <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Email</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Telefone</TableHead>
+                      <TableHead className={listingTableHeadClassName}>EIN Number</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Contato</TableHead>
+                      <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {fornecedores.map((fornecedor: Fornecedor) => (
+                      <TableRow key={fornecedor.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                        <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{fornecedor.name}</TableCell>
+                        <TableCell className={listingTableCellClassName}>{fornecedor.email || '-'}</TableCell>
+                        <TableCell className={listingTableCellClassName}>{fornecedor.phone || '-'}</TableCell>
+                        <TableCell className={listingTableCellClassName}>{fornecedor.ein_number || '-'}</TableCell>
+                        <TableCell className={listingTableCellClassName}>
+                          {fornecedor.contact_name ? (
+                            <div>
+                              <div className="font-medium text-slate-800">{fornecedor.contact_name}</div>
+                              <div className="text-xs text-slate-500">{fornecedor.contact_phone}</div>
+                            </div>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                        <TableCell className={`${listingTableCellClassName} text-right`}>
+                          <div className="flex items-center justify-end gap-2">
+                            <FinanceActionButton icon={Eye} title="Visualizar" onClick={() => handleView(fornecedor)} />
+                            <FinanceActionButton icon={Edit} title="Editar" onClick={() => handleEdit(fornecedor)} tone="brand" />
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <span>
+                                  <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => {}} tone="danger" />
+                                </span>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Excluir fornecedor</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Tem certeza que deseja excluir o fornecedor "{fornecedor.name}"? 
+                                    Esta ação não pode ser desfeita e só será permitida se não houver vínculos com contas a pagar ou orçamentos.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDelete(fornecedor)}
+                                    className="bg-red-600 hover:bg-red-700"
+                                  >
+                                    Excluir
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </ListingTableCard>
+      </div>
 
       <FornecedorViewDialog
         fornecedor={selectedFornecedor as any}

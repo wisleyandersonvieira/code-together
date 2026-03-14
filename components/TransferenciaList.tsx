@@ -6,7 +6,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   Plus, 
@@ -24,6 +23,20 @@ import { useCurrency } from '@/hooks/use-currency';
 import loadTransferenciasAction from '@/actions/loadTransferencias';
 import loadContasAction from '@/actions/loadContas';
 import deleteTransferenciaAction from '@/actions/deleteTransferencia';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingFilterBadge,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingFilterFieldClassName,
+  listingPrimaryButtonClassName,
+  listingSecondaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 export function TransferenciaList() {
   const { toast } = useToast();
@@ -142,29 +155,26 @@ export function TransferenciaList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Transferências</h2>
-          <p className="text-muted-foreground">
-            Realize transferências entre contas bancárias
-          </p>
-        </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nova Transferência
-        </Button>
-      </div>
+      <ListingPageHeader
+        title="Transferências"
+        description="Realize transferências entre contas bancárias com a mesma visualização financeira do sistema."
+        action={
+          <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Transferência
+          </Button>
+        }
+      />
 
-      {/* Filtros */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
+      <ListingFilterCard>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">
                 Filtrar por Conta
               </label>
               <Select value={selectedContaId} onValueChange={setSelectedContaId}>
-                <SelectTrigger>
+                <SelectTrigger className={listingFilterFieldClassName}>
                   <SelectValue placeholder="Todas as contas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -178,164 +188,155 @@ export function TransferenciaList() {
               </Select>
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">
                 Data Início
               </label>
               <Input
                 type="date"
                 value={dataInicio}
                 onChange={(e) => setDataInicio(e.target.value)}
+                className={listingFilterFieldClassName}
               />
             </div>
 
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">
                 Data Fim
               </label>
               <Input
                 type="date"
                 value={dataFim}
                 onChange={(e) => setDataFim(e.target.value)}
+                className={listingFilterFieldClassName}
               />
             </div>
 
             <div className="flex items-end gap-2">
-              <Button onClick={handleApplyFilters} className="flex items-center gap-2">
-                <Filter className="h-4 w-4" />
+              <Button onClick={handleApplyFilters} className={listingPrimaryButtonClassName}>
+                <Filter className="mr-2 h-4 w-4" />
                 Filtrar
               </Button>
-              
               {hasActiveFilters && (
-                <Button 
-                  variant="outline" 
-                  onClick={handleClearFilters}
-                  className="flex items-center gap-2"
-                >
-                  <X className="h-4 w-4" />
+                <Button onClick={handleClearFilters} className={listingSecondaryButtonClassName}>
+                  <X className="mr-2 h-4 w-4" />
                   Limpar
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Indicadores de filtros ativos */}
           {hasActiveFilters && (
-            <div className="flex flex-wrap gap-2 mt-4">
+            <div className="flex flex-wrap gap-2">
               {appliedFilters.contaId && (
-                <Badge variant="secondary">
+                <ListingFilterBadge>
                   Conta: {contas.find((c: any) => c.id.toString() === appliedFilters.contaId)?.nome}
-                </Badge>
+                </ListingFilterBadge>
               )}
               {appliedFilters.dataInicio && (
-                <Badge variant="secondary">
+                <ListingFilterBadge>
                   A partir de: {new Date(appliedFilters.dataInicio).toLocaleDateString('pt-BR')}
-                </Badge>
+                </ListingFilterBadge>
               )}
               {appliedFilters.dataFim && (
-                <Badge variant="secondary">
+                <ListingFilterBadge>
                   Até: {new Date(appliedFilters.dataFim).toLocaleDateString('pt-BR')}
-                </Badge>
+                </ListingFilterBadge>
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </ListingFilterCard>
 
-      <Card>
+      <ListingTableCard>
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Conta Origem</TableHead>
-                <TableHead className="text-center">→</TableHead>
-                <TableHead>Conta Destino</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
-                <TableHead>Observações</TableHead>
-                <TableHead className="w-[100px]">Ações</TableHead>
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                <TableHead className={listingTableHeadClassName}>Data</TableHead>
+                <TableHead className={listingTableHeadClassName}>Conta Origem</TableHead>
+                <TableHead className={`${listingTableHeadClassName} text-center`}>→</TableHead>
+                <TableHead className={listingTableHeadClassName}>Conta Destino</TableHead>
+                <TableHead className={`${listingTableHeadClassName} text-right`}>Valor</TableHead>
+                <TableHead className={listingTableHeadClassName}>Observações</TableHead>
+                <TableHead className={`${listingTableHeadClassName} w-[110px] text-right`}>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {transferencias?.map((transferencia: any) => (
-                <TableRow key={transferencia.id} className="hover:bg-muted/50">
-                  <TableCell className="font-medium">
-                    {new Date(transferencia.data_transferencia).toLocaleDateString()}
+                <TableRow key={transferencia.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                  <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>
+                    {new Date(transferencia.data_transferencia).toLocaleDateString('pt-BR')}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={listingTableCellClassName}>
                     <div>
-                      <div className="font-medium">{transferencia.conta_origem_nome}</div>
-                      <div className="text-sm text-muted-foreground">{transferencia.conta_origem_banco}</div>
+                      <div className="font-medium text-slate-800">{transferencia.conta_origem_nome}</div>
+                      <div className="text-xs text-slate-500">{transferencia.conta_origem_banco}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-center">
-                    <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
+                  <TableCell className={`${listingTableCellClassName} text-center`}>
+                    <ArrowRight className="mx-auto h-4 w-4 text-slate-400" />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={listingTableCellClassName}>
                     <div>
-                      <div className="font-medium">{transferencia.conta_destino_nome}</div>
-                      <div className="text-sm text-muted-foreground">{transferencia.conta_destino_banco}</div>
+                      <div className="font-medium text-slate-800">{transferencia.conta_destino_nome}</div>
+                      <div className="text-xs text-slate-500">{transferencia.conta_destino_banco}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-mono font-medium">
-                    <Badge variant="secondary" className="bg-green-100 text-green-800">
-                      {formatCurrency(parseFloat(transferencia.valor))}
-                    </Badge>
+                  <TableCell className={`${listingTableCellClassName} text-right`}>
+                    <FinanceStatusBadge
+                      label={formatCurrency(parseFloat(transferencia.valor))}
+                      tone="success"
+                    />
                   </TableCell>
-                  <TableCell className="max-w-[200px] truncate" title={transferencia.observacoes}>
+                  <TableCell className={`${listingTableCellClassName} max-w-[220px] truncate`} title={transferencia.observacoes}>
                     {transferencia.observacoes || '-'}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(transferencia)}
+                  <TableCell className={`${listingTableCellClassName} text-right`}>
+                    <div className="flex justify-end gap-2">
+                      <FinanceActionButton
+                        icon={Edit}
                         title="Editar"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(transferencia)}
+                        onClick={() => handleEdit(transferencia)}
+                        tone="brand"
+                      />
+                      <FinanceActionButton
+                        icon={Trash2}
                         title="Excluir"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        onClick={() => handleDelete(transferencia)}
+                        tone="danger"
+                      />
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
               {(!transferencias || transferencias.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12">
-                    <div className="flex flex-col items-center">
-                      <ArrowLeftRight className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">
-                        {hasActiveFilters ? 'Nenhuma transferência encontrada' : 'Nenhuma transferência cadastrada'}
-                      </h3>
-                      <p className="text-muted-foreground mb-4">
-                        {hasActiveFilters 
+                  <TableCell colSpan={7} className="px-4">
+                    <ListingEmptyState
+                      icon={ArrowLeftRight}
+                      title={hasActiveFilters ? 'Nenhuma transferência encontrada' : 'Nenhuma transferência cadastrada'}
+                      description={
+                        hasActiveFilters
                           ? 'Nenhuma transferência encontrada com os filtros aplicados.'
                           : 'Comece criando sua primeira transferência entre contas.'
-                        }
-                      </p>
-                      {!hasActiveFilters && (
-                        <Button onClick={() => setShowForm(true)}>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Criar primeira transferência
-                        </Button>
-                      )}
-                    </div>
+                      }
+                      action={
+                        !hasActiveFilters ? (
+                          <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Criar primeira transferência
+                          </Button>
+                        ) : undefined
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </ListingTableCard>
     </div>
   );
 }

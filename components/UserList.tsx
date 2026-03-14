@@ -5,7 +5,6 @@ import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Pencil, Trash2, Plus, UserCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -13,6 +12,16 @@ import loadUsersAction from '@/actions/loadUsers';
 import deleteUserAction from '@/actions/deleteUser';
 import { UserForm } from './UserForm';
 import { UserApprovalCard } from './UserApprovalCard';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingPageHeader,
+  ListingTableCard,
+  listingPrimaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 interface User {
   id: number;
@@ -76,22 +85,23 @@ export function UserList() {
   const activeUsers = users.filter((user: User) => user.status !== 'pending');
 
   const getStatusBadge = (status: string) => {
-    const variants = {
-      active: 'default',
-      inactive: 'secondary',
-      pending: 'outline',
-    } as const;
-    
     const labels = {
       active: 'Ativo',
       inactive: 'Inativo', 
       pending: 'Pendente',
     };
 
+    const tones = {
+      active: 'success',
+      inactive: 'neutral',
+      pending: 'warning',
+    } as const;
+
     return (
-      <Badge variant={variants[status as keyof typeof variants] || 'default'}>
-        {labels[status as keyof typeof labels] || status}
-      </Badge>
+      <FinanceStatusBadge
+        label={labels[status as keyof typeof labels] || status}
+        tone={tones[status as keyof typeof tones] || 'neutral'}
+      />
     );
   };
 
@@ -127,11 +137,10 @@ export function UserList() {
 
   return (
     <div className="space-y-6">
-      {/* Seção de Aprovações Pendentes */}
       {pendingUsers.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl flex items-center">
+        <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+          <CardHeader className="border-b border-slate-200/80 bg-slate-50/70">
+            <CardTitle className="flex items-center text-xl text-slate-900">
               <UserCheck className="mr-2 h-5 w-5 text-orange-600" />
               Usuários Pendentes de Aprovação ({pendingUsers.length})
             </CardTitle>
@@ -151,13 +160,13 @@ export function UserList() {
         </Card>
       )}
 
-      {/* Lista Principal de Usuários */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl">Lista de Usuários</CardTitle>
+      <ListingPageHeader
+        title="Usuários"
+        description="Administre acessos e permissões com a mesma estrutura visual aplicada ao financeiro."
+        action={
           <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
             <DialogTrigger asChild>
-              <Button onClick={handleCreate}>
+              <Button className={listingPrimaryButtonClassName} onClick={handleCreate}>
                 <Plus className="mr-2 h-4 w-4" />
                 Novo Usuário
               </Button>
@@ -176,54 +185,56 @@ export function UserList() {
               />
             </DialogContent>
           </Dialog>
-        </CardHeader>
-        <CardContent>
+        }
+      />
+
+      <ListingTableCard>
+        <CardContent className="p-0">
           {activeUsers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nenhum usuário ativo encontrado. Clique em "Novo Usuário" para começar.
-            </div>
+            <ListingEmptyState
+              icon={Plus}
+              title="Nenhum usuário ativo encontrado"
+              description='Clique em "Novo Usuário" para começar.'
+            />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>Papel</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Data de Criação</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
+                <TableHeader className="bg-slate-50/80">
+                  <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                    <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Email</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Telefone</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Papel</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Status</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Data de Criação</TableHead>
+                    <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {activeUsers.map((user: User) => (
-                    <TableRow key={user.id}>
-                      <TableCell className="font-medium">{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.phone || '-'}</TableCell>
-                      <TableCell>{getRoleBadge(user.role)}</TableCell>
-                      <TableCell>{getStatusBadge(user.status)}</TableCell>
-                      <TableCell>
+                    <TableRow key={user.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                      <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{user.name}</TableCell>
+                      <TableCell className={listingTableCellClassName}>{user.email}</TableCell>
+                      <TableCell className={listingTableCellClassName}>{user.phone || '-'}</TableCell>
+                      <TableCell className={listingTableCellClassName}>{getRoleBadge(user.role)}</TableCell>
+                      <TableCell className={listingTableCellClassName}>{getStatusBadge(user.status)}</TableCell>
+                      <TableCell className={listingTableCellClassName}>
                         {new Date(user.created_at).toLocaleDateString('pt-BR')}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button
-                            variant="outline"
-                            size="sm"
+                      <TableCell className={`${listingTableCellClassName} text-right`}>
+                        <div className="flex justify-end gap-2">
+                          <FinanceActionButton
+                            icon={Pencil}
+                            title="Editar"
                             onClick={() => handleEdit(user)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
+                            tone="brand"
+                          />
+                          <FinanceActionButton
+                            icon={Trash2}
+                            title="Excluir"
                             onClick={() => handleDelete(user.id)}
-                            disabled={isDeleting}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                            tone="danger"
+                          />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -233,7 +244,7 @@ export function UserList() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </ListingTableCard>
     </div>
   );
 }

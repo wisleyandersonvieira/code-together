@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DatePicker } from '@/components/ui/date-picker';
-import { Badge } from '@/components/ui/badge';
 import { FileText, Download, Filter, Calendar, DollarSign, FileDown } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
@@ -17,6 +16,17 @@ import loadContasAction from '@/actions/loadContas';
 import loadExtratoAction from '@/actions/loadExtrato';
 import loadSaldoAnteriorAction from '@/actions/loadSaldoAnterior';
 import loadMatrizesAction from '@/actions/loadMatrizes';
+import {
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingPrimaryButtonClassName,
+  listingSecondaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 
 interface ExtratoTransaction {
@@ -185,186 +195,180 @@ export function ExtratoBancario() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Extratos Bancários</h2>
-          <p className="text-muted-foreground">
-            Visualize o extrato detalhado de movimentações financeiras por conta
-          </p>
-        </div>
-      </div>
+      <ListingPageHeader
+        title="Extratos Bancários"
+        description="Visualize movimentações financeiras por conta com a mesma linguagem visual das demais listagens."
+      />
 
-
-
-      {/* Filtros */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Parâmetros do Extrato
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Conta *</label>
-              <Select value={contaId} onValueChange={setContaId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma conta" />
-                </SelectTrigger>
-                <SelectContent>
-                  {contas.map((conta: any) => (
-                    <SelectItem key={conta.id} value={conta.id.toString()}>
-                      {conta.nome} - {conta.banco}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      <ListingFilterCard>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <Filter className="h-4 w-4" />
+              Parâmetros do Extrato
             </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Conta *</label>
+                <Select value={contaId} onValueChange={setContaId}>
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
+                    <SelectValue placeholder="Selecione uma conta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {contas.map((conta: any) => (
+                      <SelectItem key={conta.id} value={conta.id.toString()}>
+                        {conta.nome} - {conta.banco}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div>
-              <label className="text-sm font-medium mb-2 block">Data Inicial *</label>
-              <DatePicker
-                date={dataInicio}
-                onDateChange={setDataInicio}
-                placeholder="Selecione a data inicial"
-              />
-            </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Data Inicial *</label>
+                <DatePicker
+                  date={dataInicio}
+                  onDateChange={setDataInicio}
+                  placeholder="Selecione a data inicial"
+                />
+              </div>
 
-            <div>
-              <label className="text-sm font-medium mb-2 block">Data Final *</label>
-              <DatePicker
-                date={dataFim}
-                onDateChange={setDataFim}
-                placeholder="Selecione a data final"
-              />
-            </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Data Final *</label>
+                <DatePicker
+                  date={dataFim}
+                  onDateChange={setDataFim}
+                  placeholder="Selecione a data final"
+                />
+              </div>
 
-            <div>
-              <label className="text-sm font-medium mb-2 block">Tipo</label>
-              <Select value={tipo || 'ALL'} onValueChange={(value) => setTipo(value === 'ALL' ? '' : value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos os tipos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Todos os tipos</SelectItem>
-                  <SelectItem value="CP">Contas a Pagar</SelectItem>
-                  <SelectItem value="CR">Contas a Receber</SelectItem>
-                  <SelectItem value="TR">Transferências</SelectItem>
-                  <SelectItem value="APORTE">Aportes</SelectItem>
-                  <SelectItem value="RETIRADA">Retiradas</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Tipo</label>
+                <Select value={tipo || 'ALL'} onValueChange={(value) => setTipo(value === 'ALL' ? '' : value)}>
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
+                    <SelectValue placeholder="Todos os tipos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Todos os tipos</SelectItem>
+                    <SelectItem value="CP">Contas a Pagar</SelectItem>
+                    <SelectItem value="CR">Contas a Receber</SelectItem>
+                    <SelectItem value="TR">Transferências</SelectItem>
+                    <SelectItem value="APORTE">Aportes</SelectItem>
+                    <SelectItem value="RETIRADA">Retiradas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div>
-              <label className="text-sm font-medium mb-2 block">Matriz</label>
-              <Select value={matrizId || 'ALL'} onValueChange={(value) => setMatrizId(value === 'ALL' ? '' : value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas as matrizes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Todas as matrizes</SelectItem>
-                  {matrizes.map((matriz: any) => (
-                    <SelectItem key={matriz.id} value={matriz.id.toString()}>
-                      {matriz.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Matriz</label>
+                <Select value={matrizId || 'ALL'} onValueChange={(value) => setMatrizId(value === 'ALL' ? '' : value)}>
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
+                    <SelectValue placeholder="Todas as matrizes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Todas as matrizes</SelectItem>
+                    {matrizes.map((matriz: any) => (
+                      <SelectItem key={matriz.id} value={matriz.id.toString()}>
+                        {matriz.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button onClick={handleGenerateExtrato}>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleGenerateExtrato} className={listingPrimaryButtonClassName}>
               <FileText className="mr-2 h-4 w-4" />
               Gerar Extrato
             </Button>
             {showExtrato && transacoes && transacoes.length > 0 && (
               <>
-                <Button variant="outline" onClick={handleDownloadExtrato}>
+                <Button className={listingSecondaryButtonClassName} onClick={handleDownloadExtrato}>
                   <Download className="mr-2 h-4 w-4" />
                   Download CSV
                 </Button>
-                <Button variant="outline" onClick={handleDownloadPDF}>
+                <Button className={listingSecondaryButtonClassName} onClick={handleDownloadPDF}>
                   <FileDown className="mr-2 h-4 w-4" />
                   Download PDF
                 </Button>
               </>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ListingFilterCard>
 
-      {/* Extrato */}
       {showExtrato && contaId && dataInicio && dataFim && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Extrato Detalhado
-              </CardTitle>
+        <ListingTableCard>
+          <CardHeader className="border-b border-slate-200/80 bg-slate-50/70 px-5 py-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-1">
+                <CardTitle className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <Calendar className="h-5 w-5 text-slate-500" />
+                  Extrato Detalhado
+                </CardTitle>
+                {saldoData?.[0] && (
+                  <div className="text-sm text-slate-500 space-y-1">
+                    <p><strong>Conta:</strong> {saldoData[0].conta_nome} - {saldoData[0].conta_banco}</p>
+                    <p><strong>Período:</strong> {dataInicio?.toLocaleDateString('pt-BR')} a {dataFim?.toLocaleDateString('pt-BR')}</p>
+                    <p><strong>Saldo Anterior:</strong> {formatCurrency(saldoData[0].saldo_anterior || 0)}</p>
+                  </div>
+                )}
+              </div>
               {saldoData?.[0] && (
-                <Badge variant="outline" className="text-lg px-3 py-1">
-                  <DollarSign className="h-4 w-4 mr-1" />
-                  Saldo Final: {formatCurrency(saldoFinal)}
-                </Badge>
+                <FinanceStatusBadge
+                  label={`Saldo Final: ${formatCurrency(saldoFinal)}`}
+                  tone={saldoFinal < 0 ? 'danger' : 'success'}
+                />
               )}
             </div>
-            {saldoData?.[0] && (
-              <div className="text-sm text-muted-foreground space-y-1">
-                <p><strong>Conta:</strong> {saldoData[0].conta_nome} - {saldoData[0].conta_banco}</p>
-                <p><strong>Período:</strong> {dataInicio?.toLocaleDateString('pt-BR')} a {dataFim?.toLocaleDateString('pt-BR')}</p>
-                <p><strong>Saldo Anterior:</strong> {formatCurrency(saldoData[0].saldo_anterior || 0)}</p>
-              </div>
-            )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {transacoesLoading || saldoLoading ? (
-              <div className="text-center py-8">Carregando extrato...</div>
+              <div className="py-10 text-center text-sm text-slate-500">Carregando extrato...</div>
             ) : transacoesError ? (
-              <div className="text-center py-8 text-red-500">Erro ao carregar extrato</div>
+              <div className="py-10 text-center text-sm text-rose-600">Erro ao carregar extrato</div>
             ) : !transacoes || transacoes.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Nenhuma movimentação encontrada para o período selecionado.
-              </div>
+              <ListingEmptyState
+                icon={Calendar}
+                title="Nenhuma movimentação encontrada"
+                description="Nenhuma movimentação foi encontrada para o período selecionado."
+              />
             ) : (
-              <div className="rounded-md border">
+              <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Data</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Fornecedor/Credor</TableHead>
-                      <TableHead>Nº Documento</TableHead>
-                      <TableHead>Projeto</TableHead>
-                      <TableHead>Matriz</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                      <TableHead className="text-right">Saldo</TableHead>
+                  <TableHeader className="bg-slate-50/80">
+                    <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                      <TableHead className={listingTableHeadClassName}>Data</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Tipo</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Fornecedor/Credor</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Nº Documento</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Projeto</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Matriz</TableHead>
+                      <TableHead className={`${listingTableHeadClassName} text-right`}>Valor</TableHead>
+                      <TableHead className={`${listingTableHeadClassName} text-right`}>Saldo</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {transacoesComSaldo.map((transacao: any, index: number) => (
-                      <TableRow key={index}>
-                        <TableCell className="font-medium">
+                      <TableRow key={index} className="border-b border-slate-100 hover:bg-slate-50/70">
+                        <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>
                           {formatDateForDisplay(transacao.data)}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {transacao.tipo}
-                          </Badge>
+                        <TableCell className={listingTableCellClassName}>
+                          <FinanceStatusBadge label={transacao.tipo} tone="neutral" />
                         </TableCell>
-                        <TableCell>{transacao.fornecedor_creditor}</TableCell>
-                        <TableCell>{transacao.numero_documento || '-'}</TableCell>
-                        <TableCell>{transacao.projeto || '-'}</TableCell>
-                        <TableCell>{transacao.matriz_nome || '-'}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={transacao.valor < 0 ? 'text-red-600' : 'text-green-600'}>
+                        <TableCell className={listingTableCellClassName}>{transacao.fornecedor_creditor}</TableCell>
+                        <TableCell className={listingTableCellClassName}>{transacao.numero_documento || '-'}</TableCell>
+                        <TableCell className={listingTableCellClassName}>{transacao.projeto || '-'}</TableCell>
+                        <TableCell className={listingTableCellClassName}>{transacao.matriz_nome || '-'}</TableCell>
+                        <TableCell className={`${listingTableCellClassName} text-right`}>
+                          <span className={transacao.valor < 0 ? 'font-medium text-rose-600' : 'font-medium text-emerald-600'}>
                             {formatCurrency(transacao.valor)}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right font-medium">
+                        <TableCell className={`${listingTableCellClassName} text-right font-medium text-slate-900`}>
                           {formatCurrency(transacao.saldo_linha)}
                         </TableCell>
                       </TableRow>
@@ -374,7 +378,7 @@ export function ExtratoBancario() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </ListingTableCard>
       )}
     </div>
   );
