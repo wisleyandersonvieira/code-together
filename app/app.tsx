@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toaster';
@@ -178,11 +178,38 @@ const matrizTabs: TabType[] = [
   'export-project',
 ];
 
+function lazyWithRetry<T extends ComponentType<any>>(importer: () => Promise<{ default: T }>) {
+  return lazy(async () => {
+    try {
+      const loadedModule = await importer();
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem('lazy-reload-once');
+      }
+      return loadedModule;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isChunkLoadError =
+        message.includes('Failed to fetch dynamically imported module') ||
+        message.includes('Importing a module script failed');
+
+      if (isChunkLoadError && typeof window !== 'undefined') {
+        const alreadyReloaded = window.sessionStorage.getItem('lazy-reload-once') === 'true';
+        if (!alreadyReloaded) {
+          window.sessionStorage.setItem('lazy-reload-once', 'true');
+          window.location.reload();
+        }
+      }
+
+      throw error;
+    }
+  });
+}
+
 const Dashboard = lazy(() => import('@/components/Dashboard').then((module) => ({ default: module.Dashboard })));
 const UserList = lazy(() => import('@/components/UserList').then((module) => ({ default: module.UserList })));
 const UserForm = lazy(() => import('@/components/UserForm').then((module) => ({ default: module.UserForm })));
 const SetPasswordForm = lazy(() => import('@/components/SetPasswordForm').then((module) => ({ default: module.SetPasswordForm })));
-const ClienteList = lazy(() => import('@/components/ClienteList').then((module) => ({ default: module.ClienteList })));
+const ClienteList = lazyWithRetry(() => import('@/components/ClienteList').then((module) => ({ default: module.ClienteList })));
 const ClienteForm = lazy(() => import('@/components/ClienteForm').then((module) => ({ default: module.ClienteForm })));
 const EmpresaList = lazy(() => import('@/components/EmpresaList').then((module) => ({ default: module.EmpresaList })));
 const GrupoList = lazy(() => import('@/components/GrupoList').then((module) => ({ default: module.GrupoList })));
