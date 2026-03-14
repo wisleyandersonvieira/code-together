@@ -11,6 +11,17 @@ import { MatrizesForm } from './MatrizesForm';
 import { useToast } from '@/hooks/use-toast';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import deleteMatrizAction from '@/actions/deleteMatriz';
+import {
+  FinanceActionButton,
+  ListingEmptyState,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingFilterFieldClassName,
+  listingPrimaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 export function MatrizesList() {
   const { toast } = useToast();
@@ -98,109 +109,87 @@ export function MatrizesList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Cadastro de Matrizes</h2>
-          <p className="text-muted-foreground">
-            Gerencie as matrizes e suas participações societárias
-          </p>
-        </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nova Matriz
-        </Button>
-      </div>
+      <ListingPageHeader
+        title="Cadastrar Matriz"
+        description="Gerencie matrizes e composições societárias com a mesma linguagem visual premium do sistema."
+        action={
+          <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Matriz
+          </Button>
+        }
+      />
 
-      {/* Filtros */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nome..."
-                  value={searchNome}
-                  onChange={(e) => setSearchNome(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-            </div>
+      <ListingFilterCard>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Buscar por nome..."
+              value={searchNome}
+              onChange={(e) => setSearchNome(e.target.value)}
+              className={`${listingFilterFieldClassName} pl-10`}
+            />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ListingFilterCard>
 
-      <Card>
+      <ListingTableCard>
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>CNPJ/EIN</TableHead>
-                <TableHead>Endereço</TableHead>
-                <TableHead>Sócios</TableHead>
-                <TableHead className="w-[100px]">Ações</TableHead>
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                <TableHead className={listingTableHeadClassName}>CNPJ/EIN</TableHead>
+                <TableHead className={listingTableHeadClassName}>Endereço</TableHead>
+                <TableHead className={listingTableHeadClassName}>Sócios</TableHead>
+                <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {matrizes?.map((matriz: any) => (
-                <TableRow key={matriz.id} className="hover:bg-muted/50">
-                  <TableCell className="font-medium">
+                <TableRow key={matriz.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                  <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>
                     {matriz.nome}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={listingTableCellClassName}>
                     {matriz.cnpj_ein || '-'}
                   </TableCell>
-                  <TableCell className="max-w-[200px] truncate" title={matriz.endereco}>
+                  <TableCell className={`${listingTableCellClassName} max-w-[220px] truncate`} title={matriz.endereco}>
                     {matriz.endereco || '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={listingTableCellClassName}>
                     {matriz.total_socios} sócio(s)
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(matriz)}
-                        title="Editar"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(matriz)}
-                        title="Excluir"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                  <TableCell className={`${listingTableCellClassName} text-right`}>
+                    <div className="flex justify-end gap-2">
+                      <FinanceActionButton icon={Edit} title="Editar" onClick={() => handleEdit(matriz)} tone="brand" />
+                      <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(matriz)} tone="danger" />
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
               {matrizes?.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12">
-                    <div className="flex flex-col items-center">
-                      <Building className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">Nenhuma matriz cadastrada</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Comece criando sua primeira matriz.
-                      </p>
-                      <Button onClick={() => setShowForm(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Criar primeira matriz
-                      </Button>
-                    </div>
+                  <TableCell colSpan={5} className="px-4">
+                    <ListingEmptyState
+                      icon={Building}
+                      title="Nenhuma matriz cadastrada"
+                      description="Comece criando sua primeira matriz."
+                      action={
+                        <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Criar primeira matriz
+                        </Button>
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </ListingTableCard>
     </div>
   );
 }

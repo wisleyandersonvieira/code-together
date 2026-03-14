@@ -6,13 +6,22 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import loadGruposAction from '@/actions/loadGrupos';
 import checkGrupoCanDeleteAction from '@/actions/checkGrupoCanDelete';
 import deleteGrupoAction from '@/actions/deleteGrupo';
 import { GrupoForm } from './GrupoForm';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingPageHeader,
+  ListingTableCard,
+  listingPrimaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 interface Grupo {
   id: number;
@@ -123,102 +132,99 @@ export function GrupoList() {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl">Lista de Grupos de Clientes</CardTitle>
-          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={handleCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Novo Grupo
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {isEditMode ? 'Editar Grupo' : 'Criar Novo Grupo'}
-                </DialogTitle>
-              </DialogHeader>
-              <GrupoForm
-                grupo={selectedGrupo || undefined}
-                onSuccess={handleFormSuccess}
-                onCancel={() => setIsFormOpen(false)}
+      <div className="space-y-6">
+        <ListingPageHeader
+          title="Grupos"
+          description="Gerencie grupos de clientes com o mesmo padrão visual das listagens financeiras."
+          action={
+            <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+              <DialogTrigger asChild>
+                <Button className={listingPrimaryButtonClassName} onClick={handleCreate}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Grupo
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>
+                    {isEditMode ? 'Editar Grupo' : 'Criar Novo Grupo'}
+                  </DialogTitle>
+                </DialogHeader>
+                <GrupoForm
+                  grupo={selectedGrupo || undefined}
+                  onSuccess={handleFormSuccess}
+                  onCancel={() => setIsFormOpen(false)}
+                />
+              </DialogContent>
+            </Dialog>
+          }
+        />
+
+        <ListingTableCard>
+          <CardContent className="p-0">
+            {grupos.length === 0 ? (
+              <ListingEmptyState
+                icon={Plus}
+                title="Nenhum grupo encontrado"
+                description='Clique em "Novo Grupo" para começar.'
               />
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
-          {grupos.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nenhum grupo encontrado. Clique em "Novo Grupo" para começar.
-            </div>
-          ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Membros</TableHead>
-                  <TableHead>Participação</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {grupos.map((grupo: Grupo) => {
-                  const totalPercentage = grupo.members.reduce((sum, m) => sum + m.percentage, 0);
-                  
-                  return (
-                    <TableRow key={grupo.id}>
-                      <TableCell className="font-medium">{grupo.name}</TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          {grupo.members.map((member, idx) => (
-                            <div key={idx} className="text-sm">
-                              {member.cliente_name || member.empresa_name}
-                              <span className="text-muted-foreground ml-2">
-                                ({member.cliente_name ? 'Cliente' : 'Empresa'})
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50/80">
+                    <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                      <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Membros</TableHead>
+                      <TableHead className={listingTableHeadClassName}>Participação</TableHead>
+                      <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {grupos.map((grupo: Grupo) => {
+                      const totalPercentage = grupo.members.reduce((sum, m) => sum + m.percentage, 0);
+                      
+                      return (
+                        <TableRow key={grupo.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                          <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{grupo.name}</TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <div className="space-y-1">
+                              {grupo.members.map((member, idx) => (
+                                <div key={idx} className="text-sm text-slate-700">
+                                  {member.cliente_name || member.empresa_name}
+                                  <span className="ml-2 text-xs text-slate-500">
+                                    ({member.cliente_name ? 'Cliente' : 'Empresa'})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className={listingTableCellClassName}>
+                            <div className="flex flex-wrap gap-2">
+                              {grupo.members.map((member, idx) => (
+                                <FinanceStatusBadge key={idx} label={`${member.percentage}%`} tone="neutral" />
+                              ))}
+                              <span className="text-xs font-medium text-slate-500">
+                                Total: {totalPercentage.toFixed(2)}%
                               </span>
                             </div>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          {grupo.members.map((member, idx) => (
-                            <Badge key={idx} variant="outline" className="text-xs">
-                              {member.percentage}%
-                            </Badge>
-                          ))}
-                          <div className="text-xs text-muted-foreground">
-                            Total: {totalPercentage.toFixed(2)}%
-                          </div>
-                        </div>
-                      </TableCell>
+                          </TableCell>
 
-                      <TableCell className="text-right">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="outline" size="sm" onClick={() => handleEdit(grupo)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleDelete(grupo)}
-                            disabled={isDeleting}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-          )}
-        </CardContent>
-      </Card>
+                          <TableCell className={`${listingTableCellClassName} text-right`}>
+                            <div className="flex justify-end gap-2">
+                              <FinanceActionButton icon={Pencil} title="Editar" onClick={() => handleEdit(grupo)} tone="brand" />
+                              <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(grupo)} tone="danger" />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </ListingTableCard>
+      </div>
     </>
   );
 }

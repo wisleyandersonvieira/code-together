@@ -11,6 +11,17 @@ import { SociosForm } from './SociosForm';
 import { useToast } from '@/hooks/use-toast';
 import loadSociosAction from '@/actions/loadSocios';
 import deleteSocioAction from '@/actions/deleteSocio';
+import {
+  FinanceActionButton,
+  ListingEmptyState,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingFilterFieldClassName,
+  listingPrimaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 export function SociosList() {
   const { toast } = useToast();
@@ -98,113 +109,91 @@ export function SociosList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Cadastro de Sócios</h2>
-          <p className="text-muted-foreground">
-            Gerencie os sócios para composição das matrizes
-          </p>
-        </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Sócio
-        </Button>
-      </div>
+      <ListingPageHeader
+        title="Cadastrar Sócio"
+        description="Gerencie os sócios com o mesmo padrão clean e corporativo das demais listagens."
+        action={
+          <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Sócio
+          </Button>
+        }
+      />
 
-      {/* Filtros */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nome..."
-                  value={searchNome}
-                  onChange={(e) => setSearchNome(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-            </div>
+      <ListingFilterCard>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder="Buscar por nome..."
+              value={searchNome}
+              onChange={(e) => setSearchNome(e.target.value)}
+              className={`${listingFilterFieldClassName} pl-10`}
+            />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ListingFilterCard>
 
-      <Card>
+      <ListingTableCard>
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Telefone</TableHead>
-                <TableHead>CPF</TableHead>
-                <TableHead>Data Nascimento</TableHead>
-                <TableHead className="w-[100px]">Ações</TableHead>
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                <TableHead className={listingTableHeadClassName}>Nome</TableHead>
+                <TableHead className={listingTableHeadClassName}>Email</TableHead>
+                <TableHead className={listingTableHeadClassName}>Telefone</TableHead>
+                <TableHead className={listingTableHeadClassName}>CPF</TableHead>
+                <TableHead className={listingTableHeadClassName}>Data Nascimento</TableHead>
+                <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {socios?.map((socio: any) => (
-                <TableRow key={socio.id} className="hover:bg-muted/50">
-                  <TableCell className="font-medium">
+                <TableRow key={socio.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                  <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>
                     {socio.nome}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={listingTableCellClassName}>
                     {socio.email || '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={listingTableCellClassName}>
                     {socio.telefone || '-'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={listingTableCellClassName}>
                     {socio.cpf || '-'}
                   </TableCell>
-                  <TableCell>
-                    {socio.data_nascimento ? new Date(socio.data_nascimento).toLocaleDateString() : '-'}
+                  <TableCell className={listingTableCellClassName}>
+                    {socio.data_nascimento ? new Date(socio.data_nascimento).toLocaleDateString('pt-BR') : '-'}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(socio)}
-                        title="Editar"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(socio)}
-                        title="Excluir"
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                  <TableCell className={`${listingTableCellClassName} text-right`}>
+                    <div className="flex justify-end gap-2">
+                      <FinanceActionButton icon={Edit} title="Editar" onClick={() => handleEdit(socio)} tone="brand" />
+                      <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(socio)} tone="danger" />
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
               {socios?.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12">
-                    <div className="flex flex-col items-center">
-                      <User className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">Nenhum sócio cadastrado</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Comece criando seu primeiro sócio.
-                      </p>
-                      <Button onClick={() => setShowForm(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Criar primeiro sócio
-                      </Button>
-                    </div>
+                  <TableCell colSpan={6} className="px-4">
+                    <ListingEmptyState
+                      icon={User}
+                      title="Nenhum sócio cadastrado"
+                      description="Comece criando seu primeiro sócio."
+                      action={
+                        <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Criar primeiro sócio
+                        </Button>
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </ListingTableCard>
     </div>
   );
 }

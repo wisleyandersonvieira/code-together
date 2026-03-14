@@ -4,17 +4,12 @@ import { useState, useMemo } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Edit, 
   Trash2, 
   Plus,
   Calculator,
-  TrendingUp,
-  TrendingDown,
-  Banknote,
-  Share,
   ArrowUp,
   ArrowDown,
   ArrowUpDown
@@ -23,6 +18,16 @@ import { GrupoContabilForm } from './GrupoContabilForm';
 import { useToast } from '@/hooks/use-toast';
 import loadGruposContabeisAction from '@/actions/loadGruposContabeis';
 import deleteGrupoContabilAction from '@/actions/deleteGrupoContabil';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingPageHeader,
+  ListingTableCard,
+  listingPrimaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 type SortColumn = 'descricao' | 'tipo';
 type SortDirection = 'asc' | 'desc';
@@ -119,36 +124,6 @@ export function GrupoContabilList() {
       : <ArrowDown className="h-4 w-4 ml-2" />;
   };
 
-  const getTipoIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'Receita':
-        return <TrendingUp className="h-4 w-4" />;
-      case 'Despesa':
-        return <TrendingDown className="h-4 w-4" />;
-      case 'Investimento':
-        return <Banknote className="h-4 w-4" />;
-      case 'Distribuição':
-        return <Share className="h-4 w-4" />;
-      default:
-        return <Calculator className="h-4 w-4" />;
-    }
-  };
-
-  const getTipoColor = (tipo: string) => {
-    switch (tipo) {
-      case 'Receita':
-        return 'bg-green-100 text-green-800';
-      case 'Despesa':
-        return 'bg-red-100 text-red-800';
-      case 'Investimento':
-        return 'bg-blue-100 text-blue-800';
-      case 'Distribuição':
-        return 'bg-purple-100 text-purple-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   if (showForm) {
     return (
       <GrupoContabilForm
@@ -183,26 +158,24 @@ export function GrupoContabilList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Grupos Contábeis</h2>
-          <p className="text-muted-foreground">
-            Gerencie os grupos contábeis por tipo
-          </p>
-        </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Grupo
-        </Button>
-      </div>
+      <ListingPageHeader
+        title="Grupos Contábeis"
+        description="Gerencie grupos por tipo com o mesmo padrão premium das listagens financeiras."
+        action={
+          <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Grupo
+          </Button>
+        }
+      />
 
-      <Card>
+      <ListingTableCard>
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
-              <TableRow>
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className={`${listingTableHeadClassName} cursor-pointer hover:bg-slate-100/70`}
                   onClick={() => handleSort('descricao')}
                 >
                   <div className="flex items-center">
@@ -211,7 +184,7 @@ export function GrupoContabilList() {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className={`${listingTableHeadClassName} cursor-pointer hover:bg-slate-100/70`}
                   onClick={() => handleSort('tipo')}
                 >
                   <div className="flex items-center">
@@ -219,62 +192,47 @@ export function GrupoContabilList() {
                     {getSortIcon('tipo')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[100px]">Ações</TableHead>
+                <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedGrupos.map((grupo: any) => (
-                <TableRow key={grupo.id} className="hover:bg-muted/50">
-                  <TableCell className="font-medium">
+                <TableRow key={grupo.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                  <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>
                     {grupo.descricao}
                   </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={getTipoColor(grupo.tipo)}>
-                      {getTipoIcon(grupo.tipo)}
-                      <span className="ml-1">{grupo.tipo}</span>
-                    </Badge>
+                  <TableCell className={listingTableCellClassName}>
+                    <FinanceStatusBadge label={grupo.tipo} tone={grupo.tipo === 'Receita' ? 'success' : grupo.tipo === 'Despesa' ? 'danger' : 'neutral'} />
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(grupo)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(grupo.id, grupo.descricao)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                  <TableCell className={`${listingTableCellClassName} text-right`}>
+                    <div className="flex justify-end gap-2">
+                      <FinanceActionButton icon={Edit} title="Editar" onClick={() => handleEdit(grupo)} tone="brand" />
+                      <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(grupo.id, grupo.descricao)} tone="danger" />
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
               {sortedGrupos.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-12">
-                    <div className="flex flex-col items-center">
-                      <Calculator className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">Nenhum grupo cadastrado</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Comece criando seu primeiro grupo contábil.
-                      </p>
-                      <Button onClick={() => setShowForm(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Criar primeiro grupo
-                      </Button>
-                    </div>
+                  <TableCell colSpan={3} className="px-4">
+                    <ListingEmptyState
+                      icon={Calculator}
+                      title="Nenhum grupo contábil cadastrado"
+                      description="Comece criando seu primeiro grupo contábil."
+                      action={
+                        <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Criar primeiro grupo
+                        </Button>
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </ListingTableCard>
     </div>
   );
 }

@@ -16,6 +16,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useCurrency } from '@/hooks/use-currency';
 import loadContasAction from '@/actions/loadContas';
 import deleteContaAction from '@/actions/deleteConta';
+import {
+  FinanceActionButton,
+  FinanceStatusBadge,
+  ListingEmptyState,
+  ListingPageHeader,
+  listingPrimaryButtonClassName,
+  listingTableCardClassName,
+} from '@/components/finance/listing-ui';
 
 export function ContaList() {
   const { toast } = useToast();
@@ -105,67 +113,50 @@ export function ContaList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Contas Correntes</h2>
-          <p className="text-muted-foreground">
-            Gerencie as contas bancárias da organização
-          </p>
-        </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nova Conta
-        </Button>
-      </div>
+      <ListingPageHeader
+        title="Contas"
+        description="Gerencie contas bancárias em um layout leve, premium e coerente com o módulo financeiro."
+        action={
+          <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Conta
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         {contas.map((conta: any) => {
           return (
-            <Card key={conta.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center text-lg">
-                    <CreditCard className="mr-2 h-5 w-5 text-blue-600" />
-                    {conta.nome}
-                  </CardTitle>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEdit(conta)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(conta.id, conta.nome)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+            <Card key={conta.id} className={listingTableCardClassName}>
+              <CardHeader className="border-b border-slate-200/80 bg-slate-50/70 pb-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <CardTitle className="flex items-center text-lg font-semibold text-slate-900">
+                      <CreditCard className="mr-2 h-5 w-5 text-sky-600" />
+                      {conta.nome}
+                    </CardTitle>
+                    <p className="text-sm text-slate-500">{conta.banco}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <FinanceActionButton icon={Edit} title="Editar" onClick={() => handleEdit(conta)} tone="brand" />
+                    <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(conta.id, conta.nome)} tone="danger" />
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Banco:</span>
-                    <span className="font-medium">{conta.banco}</span>
+              <CardContent className="space-y-4 p-5">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-1">
+                    <span className="text-slate-500">Número</span>
+                    <div className="font-medium text-slate-800">{conta.numero}</div>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Número:</span>
-                    <span className="font-medium">{conta.numero}</span>
+                  <div className="space-y-1">
+                    <span className="text-slate-500">Data Saldo</span>
+                    <div className="font-medium text-slate-800">{formatDate(conta.data_saldo_inicial)}</div>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Saldo Inicial:</span>
-                    <span className="font-medium text-green-600">
-                      {formatCurrency(conta.saldo_inicial)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Data Saldo:</span>
-                    <span className="font-medium">{formatDate(conta.data_saldo_inicial)}</span>
-                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                  <span className="text-sm font-medium text-slate-600">Saldo Inicial</span>
+                  <FinanceStatusBadge label={formatCurrency(conta.saldo_inicial)} tone="success" />
                 </div>
               </CardContent>
             </Card>
@@ -174,17 +165,19 @@ export function ContaList() {
       </div>
 
       {contas.length === 0 && (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <CreditCard className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Nenhuma conta cadastrada</h3>
-            <p className="text-muted-foreground mb-4">
-              Comece criando sua primeira conta corrente.
-            </p>
-            <Button onClick={() => setShowForm(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Criar primeira conta
-            </Button>
+        <Card className={listingTableCardClassName}>
+          <CardContent className="p-0">
+            <ListingEmptyState
+              icon={CreditCard}
+              title="Nenhuma conta cadastrada"
+              description="Comece criando sua primeira conta corrente."
+              action={
+                <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Criar primeira conta
+                </Button>
+              }
+            />
           </CardContent>
         </Card>
       )}

@@ -5,12 +5,20 @@ import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { formatDateForDisplay } from '@/utils/timezone';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import deleteEstruturaDreAction from '@/actions/deleteEstruturaDre';
+import {
+  FinanceActionButton,
+  ListingEmptyState,
+  ListingPageHeader,
+  ListingTableCard,
+  listingPrimaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 interface EstruturaDre {
   id: number;
@@ -55,73 +63,62 @@ export function EstruturasDreList({ onCreateNew, onEdit }: EstruturasDreListProp
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Estruturas DRE</h2>
-          <p className="text-muted-foreground">
-            Gerencie as estruturas do Demonstrativo de Resultado do Exercício
-          </p>
-        </div>
-        <Button onClick={onCreateNew}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nova Estrutura
-        </Button>
-      </div>
+      <ListingPageHeader
+        title="Estrutura DRE"
+        description="Gerencie estruturas do demonstrativo com o mesmo padrão visual das demais áreas do sistema."
+        action={
+          <Button className={listingPrimaryButtonClassName} onClick={onCreateNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Estrutura
+          </Button>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
+      <ListingTableCard>
+        <CardHeader className="border-b border-slate-200/80 bg-slate-50/70">
+          <CardTitle className="flex items-center gap-2 text-lg text-slate-900">
+            <FileText className="h-5 w-5 text-slate-500" />
             Estruturas Cadastradas
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {estruturasLoading ? (
-            <div className="text-center py-8">Carregando estruturas...</div>
+            <div className="py-10 text-center text-sm text-slate-500">Carregando estruturas...</div>
           ) : estruturasError ? (
-            <div className="text-center py-8 text-red-500">Erro ao carregar estruturas</div>
+            <div className="py-10 text-center text-sm text-rose-600">Erro ao carregar estruturas</div>
           ) : !estruturas || estruturas.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nenhuma estrutura DRE cadastrada.
-              <br />
-              <Button variant="link" onClick={onCreateNew} className="mt-2">
-                Criar primeira estrutura
-              </Button>
-            </div>
+            <ListingEmptyState
+              icon={FileText}
+              title="Nenhuma estrutura DRE cadastrada"
+              description="Crie a primeira estrutura para começar."
+              action={
+                <Button className={listingPrimaryButtonClassName} onClick={onCreateNew}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Criar primeira estrutura
+                </Button>
+              }
+            />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome da Estrutura</TableHead>
-                    <TableHead>Data de Criação</TableHead>
-                    <TableHead>Última Atualização</TableHead>
-                    <TableHead className="w-[120px]">Ações</TableHead>
+                <TableHeader className="bg-slate-50/80">
+                  <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                    <TableHead className={listingTableHeadClassName}>Nome da Estrutura</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Data de Criação</TableHead>
+                    <TableHead className={listingTableHeadClassName}>Última Atualização</TableHead>
+                    <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {estruturas.map((estrutura: EstruturaDre) => (
-                    <TableRow key={estrutura.id}>
-                      <TableCell className="font-medium">{estrutura.nome}</TableCell>
-                      <TableCell>{formatDateForDisplay(estrutura.created_at)}</TableCell>
-                      <TableCell>{formatDateForDisplay(estrutura.updated_at)}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => onEdit(estrutura)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(estrutura.id, estrutura.nome)}
-                            disabled={isDeletingEstrutura}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                    <TableRow key={estrutura.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                      <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{estrutura.nome}</TableCell>
+                      <TableCell className={listingTableCellClassName}>{formatDateForDisplay(estrutura.created_at)}</TableCell>
+                      <TableCell className={listingTableCellClassName}>{formatDateForDisplay(estrutura.updated_at)}</TableCell>
+                      <TableCell className={`${listingTableCellClassName} text-right`}>
+                        <div className="flex justify-end gap-2">
+                          <FinanceActionButton icon={Edit} title="Editar" onClick={() => onEdit(estrutura)} tone="brand" />
+                          <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(estrutura.id, estrutura.nome)} tone="danger" />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -131,7 +128,7 @@ export function EstruturasDreList({ onCreateNew, onEdit }: EstruturasDreListProp
             </div>
           )}
         </CardContent>
-      </Card>
+      </ListingTableCard>
     </div>
   );
 }

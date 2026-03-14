@@ -5,7 +5,6 @@ import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FileText, Download } from 'lucide-react';
@@ -14,6 +13,13 @@ import { useCurrency } from '@/hooks/use-currency';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import { DreDataLoader } from '@/components/DreDataLoader';
+import {
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingPrimaryButtonClassName,
+  listingSecondaryButtonClassName,
+} from '@/components/finance/listing-ui';
 
 
 interface DreParams {
@@ -66,119 +72,112 @@ export function RelatorioDre() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center">
-            <FileText className="mr-3 h-6 w-6" />
-            Relatório DRE
-          </h2>
-          <p className="text-muted-foreground">
-            Demonstrativo de Resultado do Exercício
-          </p>
-        </div>
-      </div>
+      <ListingPageHeader
+        title="Relatório DRE"
+        description="Configure e gere o demonstrativo de resultado em um layout alinhado ao padrão premium do sistema."
+      />
 
-      {/* Parameters Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Parâmetros do Relatório</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Estrutura DRE *</label>
-              <Select
-                value={params.estruturaId.toString()}
-                onValueChange={(value) => handleParamChange('estruturaId', parseInt(value))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a estrutura" />
-                </SelectTrigger>
-                <SelectContent>
-                  {estruturas?.map((estrutura: any) => (
-                    <SelectItem key={estrutura.id} value={estrutura.id.toString()}>
-                      {estrutura.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <ListingFilterCard>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="mb-4 text-sm font-semibold text-slate-700">Parâmetros do Relatório</div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Estrutura DRE *</label>
+                <Select
+                  value={params.estruturaId.toString()}
+                  onValueChange={(value) => handleParamChange('estruturaId', parseInt(value))}
+                >
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
+                    <SelectValue placeholder="Selecione a estrutura" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {estruturas?.map((estrutura: any) => (
+                      <SelectItem key={estrutura.id} value={estrutura.id.toString()}>
+                        {estrutura.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Matriz *</label>
-              <Select
-                value={params.matrizId.toString()}
-                onValueChange={(value) => handleParamChange('matrizId', parseInt(value))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a matriz" />
-                </SelectTrigger>
-                <SelectContent>
-                  {matrizes?.map((matriz: any) => (
-                    <SelectItem key={matriz.id} value={matriz.id.toString()}>
-                      {matriz.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Matriz *</label>
+                <Select
+                  value={params.matrizId.toString()}
+                  onValueChange={(value) => handleParamChange('matrizId', parseInt(value))}
+                >
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
+                    <SelectValue placeholder="Selecione a matriz" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {matrizes?.map((matriz: any) => (
+                      <SelectItem key={matriz.id} value={matriz.id.toString()}>
+                        {matriz.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Emitir por *</label>
-              <Select
-                value={params.tipoData}
-                onValueChange={(value) => handleParamChange('tipoData', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="competencia">Data de Competência</SelectItem>
-                  <SelectItem value="pagamento">Data de Pagamento</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Emitir por *</label>
+                <Select
+                  value={params.tipoData}
+                  onValueChange={(value) => handleParamChange('tipoData', value)}
+                >
+                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="competencia">Data de Competência</SelectItem>
+                    <SelectItem value="pagamento">Data de Pagamento</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Data Início *</label>
-              <Input
-                type="date"
-                value={params.dataInicio}
-                onChange={(e) => handleParamChange('dataInicio', e.target.value)}
-              />
-            </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Data Início *</label>
+                <Input
+                  type="date"
+                  value={params.dataInicio}
+                  onChange={(e) => handleParamChange('dataInicio', e.target.value)}
+                  className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Data Fim *</label>
-              <Input
-                type="date"
-                value={params.dataFim}
-                onChange={(e) => handleParamChange('dataFim', e.target.value)}
-              />
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Data Fim *</label>
+                <Input
+                  type="date"
+                  value={params.dataFim}
+                  onChange={(e) => handleParamChange('dataFim', e.target.value)}
+                  className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-2 mt-4">
-            <Button onClick={generateDre}>
+          <div className="flex gap-2">
+            <Button className={listingPrimaryButtonClassName} onClick={generateDre}>
               <FileText className="mr-2 h-4 w-4" />
               Gerar DRE
             </Button>
             {showReport && (
-              <Button variant="outline" onClick={() => setShowReport(false)}>
+              <Button className={listingSecondaryButtonClassName} onClick={() => setShowReport(false)}>
                 Ocultar Relatório
               </Button>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </ListingFilterCard>
 
-      {/* DRE Report */}
       {showReport && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Demonstrativo de Resultado do Exercício</CardTitle>
+        <ListingTableCard>
+          <CardHeader className="border-b border-slate-200/80 bg-slate-50/70">
+            <CardTitle className="text-lg text-slate-900">Demonstrativo de Resultado do Exercício</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-6">
             <DreDataLoader
               estruturaId={params.estruturaId}
               matrizId={params.matrizId}
@@ -194,7 +193,7 @@ export function RelatorioDre() {
               }}
             />
           </CardContent>
-        </Card>
+        </ListingTableCard>
       )}
     </div>
   );

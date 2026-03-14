@@ -21,6 +21,18 @@ import { TipoDocumentoForm } from './TipoDocumentoForm';
 import { useToast } from '@/hooks/use-toast';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import deleteTipoDocumentoAction from '@/actions/deleteTipoDocumento';
+import {
+  FinanceActionButton,
+  ListingEmptyState,
+  ListingFilterCard,
+  ListingPageHeader,
+  ListingTableCard,
+  listingFilterFieldClassName,
+  listingPrimaryButtonClassName,
+  listingSecondaryButtonClassName,
+  listingTableCellClassName,
+  listingTableHeadClassName,
+} from '@/components/finance/listing-ui';
 
 type SortColumn = 'codigo' | 'descricao' | 'mascara';
 type SortDirection = 'asc' | 'desc';
@@ -165,50 +177,45 @@ export function TipoDocumentoList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Tipos de Documento</h2>
-          <p className="text-muted-foreground">
-            Gerencie os tipos de documento para contas a pagar e receber
-          </p>
-        </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Tipo de Documento
-        </Button>
-      </div>
+      <ListingPageHeader
+        title="Tipos de Documentos"
+        description="Gerencie tipos de documento com a mesma consistência visual das listagens já modernizadas."
+        action={
+          <Button className={listingPrimaryButtonClassName} onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Tipo de Documento
+          </Button>
+        }
+      />
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex gap-4 items-end">
-            <div className="flex-1 min-w-[200px]">
-              <label className="text-sm font-medium mb-1 block">Descrição</label>
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Filtrar por descrição..."
-                  value={searchDescricao}
-                  onChange={(e) => setSearchDescricao(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
+      <ListingFilterCard>
+        <div className="flex gap-4 items-end rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+          <div className="flex-1 min-w-[200px]">
+            <label className="mb-2 block text-sm font-medium text-slate-700">Descrição</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Filtrar por descrição..."
+                value={searchDescricao}
+                onChange={(e) => setSearchDescricao(e.target.value)}
+                className={`${listingFilterFieldClassName} pl-10`}
+              />
             </div>
-            <Button variant="outline" onClick={clearFilters}>
-              <X className="h-4 w-4 mr-2" />
-              Limpar Filtros
-            </Button>
           </div>
-        </CardContent>
-      </Card>
+          <Button className={listingSecondaryButtonClassName} onClick={clearFilters}>
+            <X className="mr-2 h-4 w-4" />
+            Limpar Filtros
+          </Button>
+        </div>
+      </ListingFilterCard>
 
-      <Card>
+      <ListingTableCard>
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
-              <TableRow>
+            <TableHeader className="bg-slate-50/80">
+              <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50 w-[120px]"
+                  className={`${listingTableHeadClassName} w-[120px] cursor-pointer hover:bg-slate-100/70`}
                   onClick={() => handleSort('codigo')}
                 >
                   <div className="flex items-center">
@@ -217,7 +224,7 @@ export function TipoDocumentoList() {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className={`${listingTableHeadClassName} cursor-pointer hover:bg-slate-100/70`}
                   onClick={() => handleSort('descricao')}
                 >
                   <div className="flex items-center">
@@ -226,7 +233,7 @@ export function TipoDocumentoList() {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="cursor-pointer hover:bg-muted/50"
+                  className={`${listingTableHeadClassName} cursor-pointer hover:bg-slate-100/70`}
                   onClick={() => handleSort('mascara')}
                 >
                   <div className="flex items-center">
@@ -234,62 +241,44 @@ export function TipoDocumentoList() {
                     {getSortIcon('mascara')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[100px]">Ações</TableHead>
+                <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedTiposDocumento.map((tipoDocumento: any) => (
-                <TableRow key={tipoDocumento.id} className="hover:bg-muted/50">
-                  <TableCell className="font-mono font-medium">
+                <TableRow key={tipoDocumento.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                  <TableCell className={`${listingTableCellClassName} font-mono font-medium text-slate-800`}>
                     {tipoDocumento.codigo}
                   </TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>
                     {tipoDocumento.descricao}
                   </TableCell>
-                  <TableCell className="font-mono">
+                  <TableCell className={`${listingTableCellClassName} font-mono`}>
                     {tipoDocumento.mascara}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(tipoDocumento)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDelete(tipoDocumento.id, tipoDocumento.descricao)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                  <TableCell className={`${listingTableCellClassName} text-right`}>
+                    <div className="flex justify-end gap-2">
+                      <FinanceActionButton icon={Edit} title="Editar" onClick={() => handleEdit(tipoDocumento)} tone="brand" />
+                      <FinanceActionButton icon={Trash2} title="Excluir" onClick={() => handleDelete(tipoDocumento.id, tipoDocumento.descricao)} tone="danger" />
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
               {sortedTiposDocumento.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-12">
-                    <div className="flex flex-col items-center">
-                      <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-medium mb-2">Nenhum tipo de documento cadastrado</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Comece criando seu primeiro tipo de documento.
-                      </p>
-                      <Button onClick={() => setShowForm(true)}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Criar primeiro tipo de documento
-                      </Button>
-                    </div>
+                  <TableCell colSpan={4} className="px-4">
+                    <ListingEmptyState
+                      icon={FileText}
+                      title="Nenhum tipo de documento cadastrado"
+                      description="Crie o primeiro tipo de documento para começar."
+                    />
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </ListingTableCard>
     </div>
   );
 }
