@@ -88,7 +88,7 @@ export function DatePickerWithYearSelector({
         <Button
           variant={'outline'}
           className={cn(
-            'w-full justify-start text-left font-normal',
+            'h-11 w-full justify-start rounded-xl border-slate-200 bg-white px-4 text-left text-sm font-medium text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 focus-visible:ring-4 focus-visible:ring-slate-200/60',
             !safeDate && 'text-muted-foreground',
             triggerClassName,
           )}
@@ -98,15 +98,15 @@ export function DatePickerWithYearSelector({
           {safeDate ? format(safeDate, 'dd/MM/yyyy', { locale: ptBR }) : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <div className="p-3">
+      <PopoverContent className="w-auto rounded-[24px] border border-slate-200 bg-white p-0 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.32)]" align="start">
+        <div className="p-4">
           {/* Cabeçalho customizado com navegação */}
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex items-center justify-between">
             <Button
               variant="outline"
               size="icon"
               onClick={handlePreviousMonth}
-              className="h-7 w-7"
+              className="h-9 w-9 rounded-xl border-slate-200 bg-white text-slate-600 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -120,7 +120,7 @@ export function DatePickerWithYearSelector({
                   open={showMonthSelector}
                   onOpenChange={setShowMonthSelector}
                 >
-                  <SelectTrigger className="w-[120px] h-7 text-sm">
+                  <SelectTrigger className="h-9 w-[132px] rounded-xl border-slate-200 bg-white text-sm text-slate-700 shadow-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -136,7 +136,7 @@ export function DatePickerWithYearSelector({
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowMonthSelector(true)}
-                  className="h-7 px-2 text-sm font-medium"
+                  className="h-9 rounded-xl px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                 >
                   {format(month, 'MMMM', { locale: ptBR })}
                 </Button>
@@ -150,7 +150,7 @@ export function DatePickerWithYearSelector({
                   open={showYearSelector}
                   onOpenChange={setShowYearSelector}
                 >
-                  <SelectTrigger className="w-[80px] h-7 text-sm">
+                  <SelectTrigger className="h-9 w-[92px] rounded-xl border-slate-200 bg-white text-sm text-slate-700 shadow-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -166,7 +166,7 @@ export function DatePickerWithYearSelector({
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowYearSelector(true)}
-                  className="h-7 px-2 text-sm font-medium"
+                  className="h-9 rounded-xl px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-950"
                 >
                   {month.getFullYear()}
                 </Button>
@@ -177,7 +177,7 @@ export function DatePickerWithYearSelector({
               variant="outline"
               size="icon"
               onClick={handleNextMonth}
-              className="h-7 w-7"
+              className="h-9 w-9 rounded-xl border-slate-200 bg-white text-slate-600 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

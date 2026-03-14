@@ -9,17 +9,18 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { YearMonthDayPicker } from '@/components/ui/year-month-day-picker';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { FileManager } from './FileManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Link } from 'lucide-react';
+import { FileText, Link, UserRound, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { ClienteVinculos } from './ClienteVinculos';
 import { useMutateAction } from '@uibakery/data';
 import createClienteAction from '@/actions/createCliente';
 import updateClienteAction from '@/actions/updateCliente';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: 'Nome deve ter pelo menos 2 caracteres.' }),
@@ -51,6 +52,27 @@ interface ClienteFormProps {
   onCancel?: () => void;
   modalMode?: boolean; // Se true, é no modal, se false é página direta
 }
+
+const clienteFieldClassName =
+  'h-11 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm transition-all duration-200 placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-slate-400 focus-visible:ring-4 focus-visible:ring-slate-200/60';
+
+const clienteTextareaClassName =
+  'min-h-[126px] rounded-2xl border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition-all duration-200 placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-slate-400 focus-visible:ring-4 focus-visible:ring-slate-200/60';
+
+const clienteTabsListClassName =
+  'grid h-auto w-full grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-2 shadow-sm sm:grid-cols-3';
+
+const clienteTabsTriggerClassName =
+  'min-h-[46px] rounded-xl border border-transparent bg-transparent px-4 py-2.5 text-sm font-semibold text-slate-600 transition-all duration-200 hover:border-slate-200 hover:bg-white hover:text-slate-900 data-[state=active]:border-slate-200 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm';
+
+const clientePrimaryButtonClassName =
+  'h-11 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-[0_16px_30px_-20px_rgba(15,23,42,0.55)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-[0_20px_36px_-20px_rgba(15,23,42,0.55)] focus-visible:ring-4 focus-visible:ring-slate-200';
+
+const clienteSecondaryButtonClassName =
+  'h-11 rounded-xl border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900';
+
+const clienteMutedPanelClassName =
+  'rounded-2xl border border-slate-200 bg-slate-50/80 p-5 shadow-sm';
 
 export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }: ClienteFormProps) {
   const { toast } = useToast();
@@ -130,38 +152,65 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
   }
 
   return (
-    <Card className="w-full max-w-4xl">
-      <CardHeader>
-        <CardTitle className="text-2xl">
-          {cliente ? 'Editar Cliente' : 'Cadastrar Novo Cliente'}
-        </CardTitle>
+    <Card className="w-full max-w-4xl overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/95 shadow-[0_22px_60px_-32px_rgba(15,23,42,0.35)]">
+      <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-white via-slate-50/70 to-white px-6 py-5 sm:px-7">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+              <UserRound className="h-5 w-5 text-slate-700" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Provision</p>
+              <CardTitle className="text-2xl font-semibold tracking-tight text-slate-950">
+                {cliente ? 'Editar Cliente' : 'Cadastrar Novo Cliente'}
+              </CardTitle>
+              <CardDescription className="max-w-2xl text-sm leading-6 text-slate-500">
+                Organize os dados cadastrais, documentos e vinculos do cliente com um fluxo mais leve e elegante.
+              </CardDescription>
+            </div>
+          </div>
+
+          {modalMode && onCancel ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onCancel}
+              className="h-10 w-10 rounded-xl border-slate-200 bg-white text-slate-500 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-6 py-6 sm:px-7">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
             <Tabs defaultValue="main" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="main">Informações Principais</TabsTrigger>
-                <TabsTrigger value="documents" className="flex items-center gap-2">
+              <TabsList className={clienteTabsListClassName}>
+                <TabsTrigger value="main" className={clienteTabsTriggerClassName}>
+                  Informações Principais
+                </TabsTrigger>
+                <TabsTrigger value="documents" className={cn(clienteTabsTriggerClassName, 'flex items-center gap-2')}>
                   <FileText className="h-4 w-4" />
                   Documentos
                 </TabsTrigger>
-                <TabsTrigger value="vinculos" className="flex items-center gap-2">
+                <TabsTrigger value="vinculos" className={cn(clienteTabsTriggerClassName, 'flex items-center gap-2')}>
                   <Link className="h-4 w-4" />
                   Vínculos
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="main" className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TabsContent value="main" className="mt-5 space-y-6">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="name"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nome *</FormLabel>
+                      <FormItem className="space-y-2.5">
+                        <FormLabel className="text-sm font-semibold text-slate-700">Nome *</FormLabel>
                         <FormControl>
-                          <Input placeholder="João Silva" {...field} />
+                          <Input className={clienteFieldClassName} placeholder="João Silva" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -172,10 +221,10 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                     control={form.control}
                     name="email"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
+                      <FormItem className="space-y-2.5">
+                        <FormLabel className="text-sm font-semibold text-slate-700">Email</FormLabel>
                         <FormControl>
-                          <Input type="email" placeholder="joao@exemplo.com" {...field} />
+                          <Input className={clienteFieldClassName} type="email" placeholder="joao@exemplo.com" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -183,15 +232,15 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="phone"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Telefone</FormLabel>
+                      <FormItem className="space-y-2.5">
+                        <FormLabel className="text-sm font-semibold text-slate-700">Telefone</FormLabel>
                         <FormControl>
-                          <Input placeholder="(11) 99999-9999" {...field} />
+                          <Input className={clienteFieldClassName} placeholder="(11) 99999-9999" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -202,10 +251,10 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                     control={form.control}
                     name="cpf"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>CPF</FormLabel>
+                      <FormItem className="space-y-2.5">
+                        <FormLabel className="text-sm font-semibold text-slate-700">CPF</FormLabel>
                         <FormControl>
-                          <Input placeholder="000.000.000-00" {...field} />
+                          <Input className={clienteFieldClassName} placeholder="000.000.000-00" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -213,18 +262,19 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                   <FormField
                     control={form.control}
                     name="birthDate"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Data de Nascimento</FormLabel>
+                      <FormItem className="space-y-2.5">
+                        <FormLabel className="text-sm font-semibold text-slate-700">Data de Nascimento</FormLabel>
                         <FormControl>
-                          <YearMonthDayPicker
+                          <DatePickerWithYearSelector
                             date={field.value}
                             onDateChange={field.onChange}
                             placeholder="Selecionar data de nascimento"
+                            triggerClassName={clienteFieldClassName}
                           />
                         </FormControl>
                         <FormMessage />
@@ -236,10 +286,10 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                     control={form.control}
                     name="active"
                     render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">Cliente Ativo</FormLabel>
-                          <div className="text-sm text-muted-foreground">
+                      <FormItem className="flex min-h-[76px] flex-row items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-5 py-4 shadow-sm">
+                        <div className="space-y-1">
+                          <FormLabel className="text-sm font-semibold text-slate-800">Cliente Ativo</FormLabel>
+                          <div className="text-sm leading-6 text-slate-500">
                             Desative para ocultar da lista principal
                           </div>
                         </div>
@@ -258,10 +308,10 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                   control={form.control}
                   name="address"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Endereço</FormLabel>
+                    <FormItem className="space-y-2.5">
+                      <FormLabel className="text-sm font-semibold text-slate-700">Endereço</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="Rua, número, bairro, cidade, estado" {...field} />
+                        <Textarea className={clienteTextareaClassName} placeholder="Rua, número, bairro, cidade, estado" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -269,7 +319,7 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                 />
               </TabsContent>
 
-              <TabsContent value="documents" className="space-y-6">
+              <TabsContent value="documents" className="mt-5 space-y-6">
                 {(savedClienteId || cliente?.id) ? (
                   <FileManager
                     entityType="cliente_document"
@@ -278,20 +328,20 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
                     title="Documentos do Cliente"
                   />
                 ) : (
-                  <Card>
-                    <CardContent className="p-8 text-center text-muted-foreground">
+                  <Card className={clienteMutedPanelClassName}>
+                    <CardContent className="p-0 text-center text-sm leading-6 text-slate-500">
                       <p>Salve o cliente primeiro para fazer upload de documentos.</p>
                     </CardContent>
                   </Card>
                 )}
               </TabsContent>
 
-              <TabsContent value="vinculos" className="space-y-6">
+              <TabsContent value="vinculos" className="mt-5 space-y-6">
                 {(savedClienteId || cliente?.id) ? (
                   <ClienteVinculos clienteId={savedClienteId || cliente!.id} />
                 ) : (
-                  <Card>
-                    <CardContent className="p-8 text-center text-muted-foreground">
+                  <Card className={clienteMutedPanelClassName}>
+                    <CardContent className="p-0 text-center text-sm leading-6 text-slate-500">
                       <p>Salve o cliente primeiro para visualizar vínculos.</p>
                     </CardContent>
                   </Card>
@@ -299,13 +349,13 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
               </TabsContent>
             </Tabs>
 
-            <div className="flex gap-4 justify-end">
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-6 sm:flex-row sm:justify-end">
               {onCancel && (
-                <Button type="button" variant="outline" onClick={onCancel}>
+                <Button type="button" variant="outline" onClick={onCancel} className={clienteSecondaryButtonClassName}>
                   Cancelar
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" disabled={isSubmitting} className={clientePrimaryButtonClassName}>
                 {isSubmitting ? 'Salvando...' : cliente ? 'Atualizar' : 'Criar Cliente'}
               </Button>
             </div>
