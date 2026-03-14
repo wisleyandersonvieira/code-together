@@ -1,4 +1,4 @@
-'use client';
+/* ClienteList */ 'use client';
 
 import { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
