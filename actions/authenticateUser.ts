@@ -1,5 +1,5 @@
 import { directAction } from '@uibakery/data';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '../src/integrations/supabase/client';
 
 /**
  * Authenticates a user by email using a parameterised Supabase query.
