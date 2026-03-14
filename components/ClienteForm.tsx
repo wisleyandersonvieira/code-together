@@ -116,8 +116,14 @@ export function ClienteForm({ cliente, onSuccess, onCancel, modalMode = false }:
       onSuccess();
     } catch (error) {
       console.error('Erro ao salvar cliente:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Tente novamente.';
       toast({
-        description: 'Erro ao salvar cliente. Tente novamente.',
+        description: `Erro ao salvar cliente: ${errorMessage}`,
         variant: 'destructive',
       });
     }
