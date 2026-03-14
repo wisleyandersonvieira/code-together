@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toaster';
