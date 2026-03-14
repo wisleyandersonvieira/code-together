@@ -10,7 +10,9 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    // sessionStorage limits token exposure: cleared automatically when the tab
+    // is closed, reducing the window for XSS-based token theft vs localStorage.
+    storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
     persistSession: true,
     autoRefreshToken: true,
   }

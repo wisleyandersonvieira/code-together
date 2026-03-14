@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useMutateAction } from '@uibakery/data';
+import { hashPassword } from '@/lib/crypto';
 import createUserAction from '@/actions/createUser';
 import createUserWithPasswordAction from '@/actions/createUserWithPassword';
 import updateUserAction from '@/actions/updateUser';
@@ -89,8 +90,7 @@ export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: Use
         const hasPassword = values.password && values.password.length > 0;
         
         if (hasPassword) {
-          // Hash da senha (simplificado - em produção use bcrypt)
-          const passwordHash = btoa(values.password);
+          const passwordHash = await hashPassword(values.password!);
           
           await createUserWithPassword({
             name: values.name,

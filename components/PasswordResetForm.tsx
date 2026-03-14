@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useMutateAction } from '@uibakery/data';
 import generatePasswordResetTokenAction from '@/actions/generatePasswordResetToken';
 import resetPasswordAction from '@/actions/resetPassword';
+import { hashPassword } from '@/lib/crypto';
 import { useToast } from '@/hooks/use-toast';
 import {
   AuthShell,
@@ -64,8 +65,9 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
 
   async function onSubmitEmail(values: EmailFormData) {
     try {
-      // Gerar token único
-      const resetToken = btoa(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+      // Gerar token único com entropia criptográfica
+      const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+      const resetToken = btoa(String.fromCharCode(...tokenBytes)).replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' }[c]!));
       const expiresAt = new Date(Date.now() + 3600000); // 1 hora
 
       const result = await generateToken({
@@ -75,9 +77,7 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
       });
 
       if (result && result.length > 0) {
-        // Em produção, aqui você enviaria um email
-        console.log('Token de reset:', resetToken);
-        console.log('Link de reset:', `${window.location.origin}/reset-password?token=${resetToken}`);
+        // TODO: enviar email com o link de reset em produção
         
         setEmailSent(true);
         toast({
@@ -101,7 +101,7 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
     if (!token) return;
 
     try {
-      const passwordHash = btoa(values.password); // Simplificado - use bcrypt em produção
+      const passwordHash = await hashPassword(values.password);
       
       const result = await resetPassword({
         token: token,

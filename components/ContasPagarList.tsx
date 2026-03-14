@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useDebounce } from '@/hooks/use-debounce';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -64,7 +65,7 @@ export function ContasPagarList() {
   const [sortColumn, setSortColumn] = useState<SortColumn>('data_vencimento');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   
-  // Temporary filters (form state)
+  // Temporary filters (form state — bound directly to inputs)
   const [tempSearchFornecedor, setTempSearchFornecedor] = useState('');
   const [tempSearchStatus, setTempSearchStatus] = useState('all');
   const [tempSearchNumeroDocumento, setTempSearchNumeroDocumento] = useState('');
@@ -74,6 +75,12 @@ export function ContasPagarList() {
   const [tempDataVencimentoFim, setTempDataVencimentoFim] = useState<Date | undefined>();
   const [tempDataPagamentoInicio, setTempDataPagamentoInicio] = useState<Date | undefined>();
   const [tempDataPagamentoFim, setTempDataPagamentoFim] = useState<Date | undefined>();
+
+  // Debounced text values — auto-apply after 450ms idle without needing "Buscar"
+  const debouncedFornecedor = useDebounce(tempSearchFornecedor, 450);
+  const debouncedNumeroDocumento = useDebounce(tempSearchNumeroDocumento, 450);
+  const debouncedProjeto = useDebounce(tempSearchProjeto, 450);
+  const debouncedMatriz = useDebounce(tempSearchMatriz, 450);
 
   // Applied filters (sent to API)
   const [searchFornecedor, setSearchFornecedor] = useState('');
@@ -85,6 +92,12 @@ export function ContasPagarList() {
   const [dataVencimentoFim, setDataVencimentoFim] = useState<Date | undefined>();
   const [dataPagamentoInicio, setDataPagamentoInicio] = useState<Date | undefined>();
   const [dataPagamentoFim, setDataPagamentoFim] = useState<Date | undefined>();
+
+  // Sync debounced text values to applied state (resets page to 1)
+  useEffect(() => { setSearchFornecedor(debouncedFornecedor); setCurrentPage(1); }, [debouncedFornecedor]);
+  useEffect(() => { setSearchNumeroDocumento(debouncedNumeroDocumento); setCurrentPage(1); }, [debouncedNumeroDocumento]);
+  useEffect(() => { setSearchProjeto(debouncedProjeto); setCurrentPage(1); }, [debouncedProjeto]);
+  useEffect(() => { setSearchMatriz(debouncedMatriz); setCurrentPage(1); }, [debouncedMatriz]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);

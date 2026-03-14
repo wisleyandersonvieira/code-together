@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { useMutateAction } from '@uibakery/data';
 import authenticateUserAction from '@/actions/authenticateUser';
 import updateLastLoginAction from '@/actions/updateLastLogin';
+import { verifyPassword } from '@/lib/crypto';
 import { useToast } from '@/hooks/use-toast';
 import { PasswordResetForm } from './PasswordResetForm';
 import {
@@ -32,20 +33,6 @@ interface LoginFormProps {
   onLogin: (user: User) => void;
 }
 
-const LOCAL_DEV_USER: User = {
-  id: 1,
-  name: 'Admin Test',
-  email: 'admin@provison.com',
-  role: 'admin',
-  status: 'active',
-  created_at: new Date(0).toISOString(),
-  updated_at: new Date(0).toISOString(),
-  password_hash: btoa('secret'),
-};
-
-function isLocalDevLogin(email: string, password: string) {
-  return import.meta.env.DEV && email === LOCAL_DEV_USER.email && password === 'secret';
-}
 
 export function LoginForm({ onLogin }: LoginFormProps) {
   const { toast } = useToast();
@@ -63,73 +50,34 @@ export function LoginForm({ onLogin }: LoginFormProps) {
 
   async function onSubmit(values: FormData) {
     try {
-      console.log('Tentando autenticar usuário:', values.email);
-      
-      const users = await authenticateUser({
-        email: values.email,
-      });
-
-      console.log('Resultado da autenticação:', users);
+      const users = await authenticateUser({ email: values.email });
 
       if (users && users.length > 0) {
         const user = users[0];
-        
-        console.log('Usuário encontrado:', { id: user.id, name: user.name, email: user.email, status: user.status });
-        
-        // Verificar senha (simplificado - use bcrypt em produção)
-        const inputPasswordHash = btoa(values.password);
-        
-        if (user.password_hash && user.password_hash === inputPasswordHash) {
-          // Atualizar último login
+
+        const passwordOk = await verifyPassword(values.password, user.password_hash ?? '');
+
+        if (passwordOk) {
           await updateLastLogin({ userId: user.id });
-          
-          toast({
-            description: 'Login realizado com sucesso!',
-          });
-          
+          toast({ description: 'Login realizado com sucesso!' });
           onLogin(user);
         } else if (!user.password_hash) {
-          console.log('Usuário sem senha definida');
           toast({
             description: 'Usuário não possui senha cadastrada. Entre em contato com o administrador.',
             variant: 'destructive',
           });
         } else {
-          console.log('Senha incorreta');
-          toast({
-            description: 'Senha incorreta.',
-            variant: 'destructive',
-          });
+          toast({ description: 'Senha incorreta.', variant: 'destructive' });
         }
       } else {
-        console.log('Nenhum usuário encontrado ou usuário inativo');
-        if (isLocalDevLogin(values.email, values.password)) {
-          toast({
-            description: 'Login local de desenvolvimento realizado com sucesso!',
-          });
-          onLogin(LOCAL_DEV_USER);
-          return;
-        }
-
         toast({
           description: 'Email não encontrado ou usuário inativo.',
           variant: 'destructive',
         });
       }
     } catch (error) {
-      console.error('Erro na autenticação:', error);
-      console.error('Detalhes do erro:', JSON.stringify(error, null, 2));
-
-      if (isLocalDevLogin(values.email, values.password)) {
-        toast({
-          description: 'Login local de desenvolvimento realizado com sucesso!',
-        });
-        onLogin(LOCAL_DEV_USER);
-        return;
-      }
-
       toast({
-        description: `Erro ao fazer login: ${(error as any)?.message || JSON.stringify(error) || 'Erro desconhecido'}`,
+        description: `Erro ao fazer login: ${(error as any)?.message || 'Erro desconhecido'}`,
         variant: 'destructive',
       });
     }

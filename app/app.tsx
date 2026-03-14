@@ -45,6 +45,7 @@ import { ProvisonLogo } from '@/components/ProvisonLogo';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types/user';
 import { authSecondaryButtonClassName } from '@/components/AuthShell';
+import { UserProvider } from '@/lib/userContext';
 
 type TabType =
   | 'dashboard'
@@ -823,7 +824,9 @@ function App() {
       </div>
 
       <div className="container mx-auto px-4 py-8">
-        <Suspense fallback={<LoadingPage />}>{renderContent()}</Suspense>
+        <UserProvider user={currentUser}>
+          <Suspense fallback={<LoadingPage />}>{renderContent()}</Suspense>
+        </UserProvider>
       </div>
 
       <Toaster />

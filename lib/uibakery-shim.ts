@@ -1,6 +1,12 @@
 /**
  * Compatibility shim for @uibakery/data
- * Routes SQL actions through Supabase Edge Function
+ * Routes SQL actions through Supabase Edge Function.
+ *
+ * Security layer: all string params are sanitised before being sent to the
+ * edge function (escape single-quotes, strip null bytes).  Complex or
+ * auth-critical actions can opt-in to "SUPABASE_DIRECT" to bypass the edge
+ * function entirely and use the Supabase JS client with proper parameterised
+ * queries.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../src/integrations/supabase/client';
@@ -14,39 +20,77 @@ interface ActionResult {
   _type: 'uibakery_action';
   name: string;
   actionType: string;
-  config: ActionConfig;
+  config?: ActionConfig;
+  /** Used by SUPABASE_DIRECT actions instead of a raw SQL string */
+  directFn?: (params?: Record<string, any>) => Promise<any[]>;
 }
+
+// ─── SQL injection mitigation ────────────────────────────────────────────────
+/**
+ * Escape every string value in a params map so single-quotes and null bytes
+ * cannot escape the surrounding SQL literal that the edge function builds.
+ * This is a defence-in-depth measure; the proper fix for each critical query
+ * is to migrate it to SUPABASE_DIRECT (see authenticateUser.ts).
+ */
+function sanitiseParams(params: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v === 'string') {
+      out[k] = v.replace(/\x00/g, '').replace(/'/g, "''");
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Creates an action descriptor (replaces @uibakery/data's `action`)
  */
 export function action(name: string, type: string, config: ActionConfig): ActionResult {
-  return {
-    _type: 'uibakery_action',
-    name,
-    actionType: type,
-    config,
-  };
+  return { _type: 'uibakery_action', name, actionType: type, config };
 }
 
 /**
- * Executes a SQL action via Supabase Edge Function
+ * Creates a SUPABASE_DIRECT action that bypasses the edge function entirely.
+ * Use this for auth-critical or write operations where SQL injection is
+ * unacceptable.
+ */
+export function directAction(
+  name: string,
+  fn: (params?: Record<string, any>) => Promise<any[]>,
+): ActionResult {
+  return { _type: 'uibakery_action', name, actionType: 'SUPABASE_DIRECT', directFn: fn };
+}
+
+/**
+ * Executes an action (SQL via edge function or direct Supabase call)
  */
 async function executeAction(actionResult: ActionResult, params?: Record<string, any>): Promise<any[]> {
+  // SUPABASE_DIRECT: bypass edge function, use parameterised Supabase queries
+  if (actionResult.actionType === 'SUPABASE_DIRECT' && actionResult.directFn) {
+    return actionResult.directFn(params);
+  }
+
+  if (!actionResult.config) {
+    throw new Error(`[Action ${actionResult.name}] Missing config for SQL action`);
+  }
+
+  const safeParams = params ? sanitiseParams(params) : {};
+
   const { data, error } = await supabase.functions.invoke('execute-sql', {
     body: {
       query: actionResult.config.query,
-      params: params || {},
+      params: safeParams,
     },
   });
 
   if (error) {
-    console.error(`[Action ${actionResult.name}] Edge function error:`, error);
     throw new Error(error.message || 'Edge function error');
   }
 
   if (data?.error) {
-    console.error(`[Action ${actionResult.name}] SQL error:`, data.error);
     throw new Error(data.error);
   }
 
@@ -61,15 +105,13 @@ async function executeAction(actionResult: ActionResult, params?: Record<string,
 export function useLoadAction(
   actionFn: () => ActionResult,
   defaultValue: any[] = [],
-  params?: Record<string, any>
+  params?: Record<string, any>,
 ): [any, boolean, any, () => void] {
   const [data, setData] = useState<any>(defaultValue);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<any>(null);
-  const paramsRef = useRef(params);
   const mountedRef = useRef(true);
 
-  // Track if params actually changed
   const paramsKey = JSON.stringify(params);
 
   const load = useCallback(async () => {
@@ -78,19 +120,13 @@ export function useLoadAction(
     try {
       const actionResult = actionFn();
       const result = await executeAction(actionResult, params);
-      if (mountedRef.current) {
-        setData(result);
-      }
+      if (mountedRef.current) setData(result);
     } catch (err: any) {
-      if (mountedRef.current) {
-        setError(err);
-        console.error('[useLoadAction] Error:', err);
-      }
+      if (mountedRef.current) setError(err);
     } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-      }
+      if (mountedRef.current) setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsKey]);
 
   useEffect(() => {
@@ -110,20 +146,22 @@ export function useLoadAction(
  * Returns: [mutate, isLoading]
  */
 export function useMutateAction(
-  actionFn: () => ActionResult
+  actionFn: () => ActionResult,
 ): [(params?: Record<string, any>) => Promise<any>, boolean] {
   const [isLoading, setIsLoading] = useState(false);
 
-  const mutate = useCallback(async (params?: Record<string, any>) => {
-    setIsLoading(true);
-    try {
-      const actionResult = actionFn();
-      const result = await executeAction(actionResult, params);
-      return result;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [actionFn]);
+  const mutate = useCallback(
+    async (params?: Record<string, any>) => {
+      setIsLoading(true);
+      try {
+        const actionResult = actionFn();
+        return await executeAction(actionResult, params);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [actionFn],
+  );
 
   return [mutate, isLoading];
 }

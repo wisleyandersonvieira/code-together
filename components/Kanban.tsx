@@ -16,6 +16,7 @@ import loadProjetosByColumnAction from '@/actions/loadProjetosByColumn';
 import createKanbanColumnAction from '@/actions/createKanbanColumn';
 import moveProjetoToColumnAction from '@/actions/moveProjetoToColumn';
 import deleteKanbanColumnAction from '@/actions/deleteKanbanColumn';
+import { useCurrentUser } from '@/lib/userContext';
 
 interface Projeto {
   id: number;
@@ -40,6 +41,9 @@ interface KanbanColumnData {
 
 export function Kanban() {
   const { toast } = useToast();
+  const currentUser = useCurrentUser();
+  const userId = currentUser?.id ?? null;
+
   const [newColumnName, setNewColumnName] = useState('');
   const [newColumnColor, setNewColumnColor] = useState('#4F46E5');
   const [showNewColumnDialog, setShowNewColumnDialog] = useState(false);
@@ -49,17 +53,10 @@ export function Kanban() {
   // Load kanban data
   const [columns, loadingColumns, , refreshColumns] = useLoadAction(loadKanbanColumnsAction, []);
   const [projetos, loadingProjetos, , refreshProjetos] = useLoadAction(
-    loadProjetosByColumnAction, 
-    [], 
+    loadProjetosByColumnAction,
+    [],
     { columnId: 0 }
   );
-
-  // Debug logs
-  console.log('Kanban - Columns:', columns);
-  console.log('Kanban - Projetos:', projetos);
-  console.log('Kanban - Loading columns:', loadingColumns);
-  console.log('Kanban - Loading projetos:', loadingProjetos);
-
   // Actions
   const [createColumn] = useMutateAction(createKanbanColumnAction);
   const [moveProjeto] = useMutateAction(moveProjetoToColumnAction);
@@ -140,7 +137,7 @@ export function Kanban() {
         projetoId,
         columnId: newColumnId,
         position: 0,
-        userId: 1, // TODO: Get from user context
+        userId,
       });
 
       refreshProjetos();
@@ -191,7 +188,6 @@ export function Kanban() {
 
   const getProjetosByColumn = (columnId: number) => {
     const filtered = projetos?.filter(p => p.kanban_column_id === columnId) || [];
-    console.log(`Projetos na coluna ${columnId}:`, filtered);
     return filtered;
   };
 

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useMutateAction } from '@uibakery/data';
 import setUserPasswordAction from '@/actions/setUserPassword';
+import { hashPassword } from '@/lib/crypto';
 import { useToast } from '@/hooks/use-toast';
 
 const formSchema = z.object({
@@ -37,7 +38,7 @@ export function SetPasswordForm() {
 
   async function onSubmit(values: FormData) {
     try {
-      const passwordHash = btoa(values.password); // Simplificado - use bcrypt em produção
+      const passwordHash = await hashPassword(values.password);
       
       const result = await setPassword({
         email: values.email,

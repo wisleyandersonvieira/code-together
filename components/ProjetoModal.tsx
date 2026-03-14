@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { MessageCircle, CheckSquare, History, Plus, Calendar, User, TrendingUp } from 'lucide-react';
+import { MessageCircle, CheckSquare, History, Plus, User, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import loadProjetoCommentsAction from '@/actions/loadProjetoComments';
@@ -21,6 +21,7 @@ import createProjetoTaskAction from '@/actions/createProjetoTask';
 import toggleProjetoTaskAction from '@/actions/toggleProjetoTask';
 import loadProjetoColumnHistoryAction from '@/actions/loadProjetoColumnHistory';
 import { ProjetoEvolucao } from '@/components/ProjetoEvolucao';
+import { useCurrentUser } from '@/lib/userContext';
 
 interface Projeto {
   id: number;
@@ -42,26 +43,43 @@ interface ProjetoModalProps {
 
 export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModalProps) {
   const { toast } = useToast();
+  const currentUser = useCurrentUser();
+  const userId = currentUser?.id ?? null;
+
   const [newComment, setNewComment] = useState('');
   const [newTask, setNewTask] = useState('');
 
-  // Load projeto data
+  // Track which tabs have been visited to avoid loading data before needed
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['comments']));
+
+  const handleTabChange = useCallback((tab: string) => {
+    setVisitedTabs((prev) => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  }, []);
+
+  // Load data only when the corresponding tab has been visited
+  const projetoParams = { projetoId: projeto.id };
+
   const [comments, loadingComments, , refreshComments] = useLoadAction(
     loadProjetoCommentsAction,
     [],
-    { projetoId: projeto.id }
+    visitedTabs.has('comments') ? projetoParams : undefined,
   );
 
   const [tasks, loadingTasks, , refreshTasks] = useLoadAction(
     loadProjetoTasksAction,
     [],
-    { projetoId: projeto.id }
+    visitedTabs.has('tasks') ? projetoParams : undefined,
   );
 
   const [history, loadingHistory] = useLoadAction(
     loadProjetoColumnHistoryAction,
     [],
-    { projetoId: projeto.id }
+    visitedTabs.has('history') ? projetoParams : undefined,
   );
 
   // Actions
@@ -69,83 +87,46 @@ export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModa
   const [createTask] = useMutateAction(createProjetoTaskAction);
   const [toggleTask] = useMutateAction(toggleProjetoTaskAction);
 
-  const handleAddComment = async () => {
-    if (!newComment.trim()) return;
+  const handleAddComment = useCallback(async () => {
+    if (!newComment.trim() || !userId) return;
 
     try {
-      await createComment({
-        projetoId: projeto.id,
-        userId: 1, // TODO: Get from user context
-        comment: newComment,
-      });
-
+      await createComment({ projetoId: projeto.id, userId, comment: newComment });
       setNewComment('');
       refreshComments();
-      // Não chama onUpdate() para manter o modal aberto
-
-      toast({
-        title: 'Sucesso',
-        description: 'Comentário adicionado com sucesso.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Erro',
-        description: 'Erro ao adicionar comentário.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Sucesso', description: 'Comentário adicionado com sucesso.' });
+    } catch {
+      toast({ title: 'Erro', description: 'Erro ao adicionar comentário.', variant: 'destructive' });
     }
-  };
+  }, [newComment, userId, projeto.id, createComment, refreshComments, toast]);
 
-  const handleAddTask = async () => {
-    if (!newTask.trim()) return;
+  const handleAddTask = useCallback(async () => {
+    if (!newTask.trim() || !userId) return;
 
     try {
-      await createTask({
-        projetoId: projeto.id,
-        userId: 1, // TODO: Get from user context
-        taskName: newTask,
-      });
-
+      await createTask({ projetoId: projeto.id, userId, taskName: newTask });
       setNewTask('');
       refreshTasks();
-      // Não chama onUpdate() para manter o modal aberto
-
-      toast({
-        title: 'Sucesso',
-        description: 'Tarefa adicionada com sucesso.',
-      });
-    } catch (error) {
-      toast({
-        title: 'Erro',
-        description: 'Erro ao adicionar tarefa.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Sucesso', description: 'Tarefa adicionada com sucesso.' });
+    } catch {
+      toast({ title: 'Erro', description: 'Erro ao adicionar tarefa.', variant: 'destructive' });
     }
-  };
+  }, [newTask, userId, projeto.id, createTask, refreshTasks, toast]);
 
-  const handleToggleTask = async (taskId: number, isCompleted: boolean) => {
+  const handleToggleTask = useCallback(async (taskId: number, isCompleted: boolean) => {
+    if (!userId) return;
+
     try {
-      await toggleTask({
-        taskId,
-        isCompleted,
-        userId: 1, // TODO: Get from user context
-      });
-
+      await toggleTask({ taskId, isCompleted, userId });
       refreshTasks();
-      // Não chama onUpdate() para manter o modal aberto
-
       toast({
         title: 'Sucesso',
         description: `Tarefa ${isCompleted ? 'concluída' : 'reativada'} com sucesso.`,
       });
-    } catch (error) {
-      toast({
-        title: 'Erro',
-        description: 'Erro ao atualizar tarefa.',
-        variant: 'destructive',
-      });
+    } catch {
+      toast({ title: 'Erro', description: 'Erro ao atualizar tarefa.', variant: 'destructive' });
     }
-  };
+  }, [userId, toggleTask, refreshTasks, toast]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -169,7 +150,7 @@ export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModa
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="comments" className="w-full">
+        <Tabs defaultValue="comments" className="w-full" onValueChange={handleTabChange}>
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="comments" className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4" />
@@ -280,9 +261,9 @@ export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModa
           </TabsContent>
 
           <TabsContent value="evolucao" className="space-y-4 mt-4">
-            <ProjetoEvolucao 
-              projetoId={projeto.id} 
-              projetoName={projeto.name} 
+            <ProjetoEvolucao
+              projetoId={projeto.id}
+              projetoName={projeto.name}
             />
           </TabsContent>
 
@@ -302,14 +283,14 @@ export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModa
                     </div>
                     <div className="flex items-center gap-2 text-sm">
                       <span>Moveu de</span>
-                      <Badge 
+                      <Badge
                         style={{ backgroundColor: move.from_column_color }}
                         className="text-white text-xs"
                       >
                         {move.from_column_name}
                       </Badge>
                       <span>para</span>
-                      <Badge 
+                      <Badge
                         style={{ backgroundColor: move.to_column_color }}
                         className="text-white text-xs"
                       >
