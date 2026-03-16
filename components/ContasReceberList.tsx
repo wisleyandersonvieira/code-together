@@ -26,7 +26,7 @@ import {
   ChevronsLeft,
   ChevronsRight
 } from 'lucide-react';
-import { DatePicker } from '@/components/ui/date-picker';
+import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ContasReceberForm } from './ContasReceberForm';
 import { useToast } from '@/hooks/use-toast';
@@ -429,7 +429,7 @@ export function ContasReceberList() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="text-sm font-medium mb-1 block">Vencimento - De</label>
-                <DatePicker
+                <DatePickerWithYearSelector
                   date={tempDataVencimentoInicio}
                   onDateChange={setTempDataVencimentoInicio}
                   placeholder="Data inicial"
@@ -438,7 +438,7 @@ export function ContasReceberList() {
               
               <div>
                 <label className="text-sm font-medium mb-1 block">Vencimento - Até</label>
-                <DatePicker
+                <DatePickerWithYearSelector
                   date={tempDataVencimentoFim}
                   onDateChange={setTempDataVencimentoFim}
                   placeholder="Data final"
@@ -447,7 +447,7 @@ export function ContasReceberList() {
               
               <div>
                 <label className="text-sm font-medium mb-1 block">Recebimento - De</label>
-                <DatePicker
+                <DatePickerWithYearSelector
                   date={tempDataRecebimentoInicio}
                   onDateChange={setTempDataRecebimentoInicio}
                   placeholder="Data inicial"
@@ -456,7 +456,7 @@ export function ContasReceberList() {
               
               <div>
                 <label className="text-sm font-medium mb-1 block">Recebimento - Até</label>
-                <DatePicker
+                <DatePickerWithYearSelector
                   date={tempDataRecebimentoFim}
                   onDateChange={setTempDataRecebimentoFim}
                   placeholder="Data final"
@@ -885,7 +885,7 @@ function ReceiptModalContent({ conta, contas, onClose, onSuccess }: ReceiptModal
 
         <div>
           <label className="text-sm font-medium mb-1 block">Data do Recebimento</label>
-          <DatePicker
+          <DatePickerWithYearSelector
             date={receiptForm.data_recebimento}
             onDateChange={(date) => setReceiptForm({...receiptForm, data_recebimento: date || new Date()})}
             placeholder="Selecione a data"
