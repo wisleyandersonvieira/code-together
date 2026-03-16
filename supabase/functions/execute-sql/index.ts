@@ -14,10 +14,14 @@ function getSqlClient() {
     throw new Error("SUPABASE_DB_URL not configured");
   }
 
-  sqlClient = postgres(dbUrl, {
+  // Use the Supabase connection pooler (port 6543, transaction mode)
+  // instead of direct connection (port 5432) to avoid exhausting DB slots
+  const poolerUrl = dbUrl.replace(/:5432\//, ":6543/");
+
+  sqlClient = postgres(poolerUrl, {
     max: 1,
     idle_timeout: 20,
-    connect_timeout: 10,
+    connect_timeout: 15,
     prepare: false,
   });
 
