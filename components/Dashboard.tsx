@@ -66,82 +66,81 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
 
 
-  if (statsLoading) {
-    return (
-      <div className="grid gap-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <div className="animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-16 mb-2"></div>
-                  <div className="h-8 bg-gray-200 rounded w-12"></div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+  const statsSkeleton = (
+    <div className="animate-pulse flex items-center gap-4">
+      <div className="p-2 bg-gray-200 rounded-lg w-10 h-10" />
+      <div>
+        <div className="h-3 bg-gray-200 rounded w-24 mb-2" />
+        <div className="h-7 bg-gray-200 rounded w-12" />
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <div className="grid gap-6">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate('projetos')}>
+        <Card className={!statsLoading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!statsLoading ? () => onNavigate('projetos') : undefined}>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Home className="h-6 w-6 text-purple-600" />
+            {statsLoading ? statsSkeleton : (
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Home className="h-6 w-6 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Projetos em Andamento</p>
+                  <p className="text-2xl font-bold">{stats.projetos_em_andamento}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Projetos em Andamento</p>
-                <p className="text-2xl font-bold">{stats.projetos_em_andamento}</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate('projetos')}>
+        <Card className={!statsLoading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!statsLoading ? () => onNavigate('projetos') : undefined}>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle className="h-6 w-6 text-green-600" />
+            {statsLoading ? statsSkeleton : (
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Projetos Concluídos</p>
+                  <p className="text-2xl font-bold">{stats.projetos_concluidos}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Projetos Concluídos</p>
-                <p className="text-2xl font-bold">{stats.projetos_concluidos}</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
-        
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate('clientes')}>
+
+        <Card className={!statsLoading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!statsLoading ? () => onNavigate('clientes') : undefined}>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <UserCheck className="h-6 w-6 text-blue-600" />
+            {statsLoading ? statsSkeleton : (
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <UserCheck className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Clientes</p>
+                  <p className="text-2xl font-bold">{stats.total_clientes}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Clientes</p>
-                <p className="text-2xl font-bold">{stats.total_clientes}</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
-        
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate('empresas')}>
+
+        <Card className={!statsLoading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!statsLoading ? () => onNavigate('empresas') : undefined}>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <Building className="h-6 w-6 text-yellow-600" />
+            {statsLoading ? statsSkeleton : (
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-yellow-100 rounded-lg">
+                  <Building className="h-6 w-6 text-yellow-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Empresas</p>
+                  <p className="text-2xl font-bold">{stats.total_empresas}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Empresas</p>
-                <p className="text-2xl font-bold">{stats.total_empresas}</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -150,43 +149,49 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <Building2 className="h-6 w-6 text-orange-600" />
+            {statsLoading ? statsSkeleton : (
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <Building2 className="h-6 w-6 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Grupos</p>
+                  <p className="text-2xl font-bold">{stats.total_grupos}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Grupos</p>
-                <p className="text-2xl font-bold">{stats.total_grupos}</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <Truck className="h-6 w-6 text-red-600" />
+            {statsLoading ? statsSkeleton : (
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <Truck className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Fornecedores</p>
+                  <p className="text-2xl font-bold">{stats.total_fornecedores}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Fornecedores</p>
-                <p className="text-2xl font-bold">{stats.total_fornecedores}</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <DollarSign className="h-6 w-6 text-green-600" />
+            {statsLoading ? statsSkeleton : (
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <DollarSign className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">VGV Previsto</p>
+                  <p className="text-lg font-bold">{formatCurrency(stats.vgv_previsto)}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">VGV Previsto</p>
-                <p className="text-lg font-bold">{formatCurrency(stats.vgv_previsto)}</p>
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>

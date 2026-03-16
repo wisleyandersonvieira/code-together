@@ -6,7 +6,7 @@ function loadProjetos() {
     query: `
       SELECT 
         p.id, p.name, p.address, p.city, p.construction_sqft, p.land_sqft, 
-        p.details, p.predicted_sale_value, p.status, p.photo_urls, p.document_urls, p.created_at, p.updated_at,
+        p.details, p.predicted_sale_value, p.status, p.created_at, p.updated_at,
         COALESCE(
           (SELECT JSON_AGG(sub.orc ORDER BY sub.id) FROM (
             SELECT DISTINCT ON (o.id) JSON_BUILD_OBJECT(
@@ -45,7 +45,7 @@ function loadProjetos() {
           '[]'::json
         ) AS members
       FROM projetos p
-      ORDER BY p.created_at DESC;
+      ORDER BY p.name ASC;
     `,
   });
 }
