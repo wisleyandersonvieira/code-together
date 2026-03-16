@@ -1,0 +1,1 @@
+SELECT setval('projeto_column_history_id_seq', (SELECT COALESCE(MAX(id), 0) FROM projeto_column_history) + 1, false)
