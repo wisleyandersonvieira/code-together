@@ -539,19 +539,21 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <Tabs defaultValue="main" className="w-full">
-              <TabsList className={`grid w-full ${readOnly ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                <TabsTrigger value="main">Informações Principais</TabsTrigger>
+              <TabsList className={`grid h-auto w-full gap-2 rounded-2xl border border-slate-200 bg-slate-50/85 p-2 shadow-sm ${readOnly ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                <TabsTrigger value="main" className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
+                  Informações Principais
+                </TabsTrigger>
                 {readOnly && (
-                  <TabsTrigger value="evolucao" className="flex items-center gap-2">
+                  <TabsTrigger value="evolucao" className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm flex items-center gap-2">
                     <TrendingUp className="h-4 w-4" />
                     Evolução
                   </TabsTrigger>
                 )}
-                <TabsTrigger value="photos" className="flex items-center gap-2">
+                <TabsTrigger value="photos" className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm flex items-center gap-2">
                   <FileImage className="h-4 w-4" />
                   Fotos
                 </TabsTrigger>
-                <TabsTrigger value="documents" className="flex items-center gap-2">
+                <TabsTrigger value="documents" className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   Documentos
                 </TabsTrigger>

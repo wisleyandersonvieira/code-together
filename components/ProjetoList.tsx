@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, Pencil, Trash2, Eye, ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMutateAction } from '@uibakery/data';
@@ -70,6 +71,7 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
 
   const [filterName, setFilterName] = useState('');
   const [filterMember, setFilterMember] = useState('');
+  const [filterStatus, setFilterStatus] = useState('Em andamento');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -183,14 +185,16 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
             (m.empresa_name || '').toLowerCase().includes(memberFilter) ||
             (m.grupo_name || '').toLowerCase().includes(memberFilter),
           );
-        return matchName && matchMember;
+        const projectStatus = p.status || 'Em andamento';
+        const matchStatus = filterStatus === 'Todos' || projectStatus === filterStatus;
+        return matchName && matchMember && matchStatus;
       })
       .sort((a, b) =>
         sortOrder === 'asc'
           ? a.name.localeCompare(b.name, 'pt-BR')
           : b.name.localeCompare(a.name, 'pt-BR'),
       );
-  }, [projetos, filterName, filterMember, sortOrder]);
+  }, [projetos, filterName, filterMember, filterStatus, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(processedProjetos.length / PAGE_SIZE));
   const paginatedProjetos = processedProjetos.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -222,7 +226,6 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
       <div className="space-y-6">
         <ListingPageHeader
           title="Projetos"
-          description="Acompanhe portfólio, membros e documentação em uma listagem padronizada com o módulo financeiro."
           action={
             <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
               <DialogTrigger asChild>
@@ -276,6 +279,21 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
               className="pl-9"
             />
           </div>
+          <div className="sm:w-48">
+            <Select
+              value={filterStatus}
+              onValueChange={(v) => { setFilterStatus(v); setCurrentPage(1); }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Em andamento">Em andamento</SelectItem>
+                <SelectItem value="Concluído">Concluído</SelectItem>
+                <SelectItem value="Todos">Todos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <ListingTableCard>
@@ -285,7 +303,7 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                 icon={Plus}
                 title="Nenhum projeto encontrado"
                 description={
-                  filterName || filterMember
+                  filterName || filterMember || filterStatus !== 'Todos'
                     ? 'Nenhum projeto corresponde aos filtros aplicados.'
                     : 'Clique em "Novo Projeto" para começar.'
                 }
@@ -296,15 +314,14 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                   <Table>
                     <TableHeader className="bg-slate-50/80">
                       <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                        <TableHead className={listingTableHeadClassName}>
-                          <button
-                            type="button"
-                            onClick={handleToggleSort}
-                            className="flex items-center gap-1 font-semibold hover:text-slate-900 transition-colors"
-                          >
+                        <TableHead
+                          className={`${listingTableHeadClassName} cursor-pointer select-none hover:text-slate-900`}
+                          onClick={handleToggleSort}
+                        >
+                          <span className="flex items-center gap-1">
                             Nome
                             <SortIcon className="h-4 w-4" />
-                          </button>
+                          </span>
                         </TableHead>
                         <TableHead className={listingTableHeadClassName}>Status</TableHead>
                         <TableHead className={listingTableHeadClassName}>Cidade</TableHead>
@@ -317,7 +334,6 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                     <TableBody>
                       {paginatedProjetos.map((projeto: Projeto) => {
                         const totalOrcamento = projeto.orcamentos.reduce((sum, orc) => sum + orc.value, 0);
-                        const totalPercentage = projeto.members.reduce((sum, m) => sum + m.percentage, 0);
 
                         return (
                           <TableRow key={projeto.id} className="border-b border-slate-100 hover:bg-slate-50/70">
@@ -334,14 +350,9 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                                 {projeto.members.map((member, idx) => (
                                   <div key={idx} className="text-sm text-slate-700">
                                     {member.cliente_name || member.empresa_name || member.grupo_name}
-                                    <span className="ml-2 text-xs text-slate-500">
-                                      ({member.cliente_name ? 'Cliente' : member.empresa_name ? 'Empresa' : 'Grupo'} - {member.percentage}%)
-                                    </span>
+                                    <span className="ml-2 text-xs text-slate-500">({member.percentage}%)</span>
                                   </div>
                                 ))}
-                                <div className="text-xs font-medium text-slate-500">
-                                  Total: {totalPercentage.toFixed(2)}%
-                                </div>
                               </div>
                             </TableCell>
                             <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
@@ -349,15 +360,10 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                                 ? `$ ${projeto.predicted_sale_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
                                 : '-'}
                             </TableCell>
-                            <TableCell className={listingTableCellClassName}>
-                              <div className="space-y-1">
-                                <FinanceStatusBadge label={`${projeto.orcamentos.length} itens`} tone="neutral" />
-                                {totalOrcamento > 0 && (
-                                  <div className="text-xs text-slate-500">
-                                    Total: $ {totalOrcamento.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                  </div>
-                                )}
-                              </div>
+                            <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
+                              {totalOrcamento > 0
+                                ? `$ ${totalOrcamento.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                                : '-'}
                             </TableCell>
                             <TableCell className={`${listingTableCellClassName} text-right`}>
                               <div className="flex justify-end gap-2">
