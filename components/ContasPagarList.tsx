@@ -51,14 +51,13 @@ export function ContasPagarList() {
 
   // Helper function to format dates correctly with timezone
   const formatDateWithTimezone = (dateString: string) => {
-    if (!dateString) return '-';
-    // Create date object treating the string as local date to avoid timezone issues
-    const date = new Date(dateString + 'T00:00:00');
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    if (!dateString || dateString === 'null' || dateString === 'undefined') return '-';
+    const clean = dateString.toString().trim().split('T')[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return '-';
+    const [year, month, day] = clean.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
   const [showForm, setShowForm] = useState(false);
   const [editingConta, setEditingConta] = useState<any>(null);
