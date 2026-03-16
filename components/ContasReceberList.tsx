@@ -885,7 +885,7 @@ function ReceiptModalContent({ conta, contas, onClose, onSuccess }: ReceiptModal
 
         <div>
           <label className="text-sm font-medium mb-1 block">Data do Recebimento</label>
-          <DatePicker
+          <DatePickerWithYearSelector
             date={receiptForm.data_recebimento}
             onDateChange={(date) => setReceiptForm({...receiptForm, data_recebimento: date || new Date()})}
             placeholder="Selecione a data"
