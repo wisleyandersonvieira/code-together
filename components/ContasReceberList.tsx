@@ -438,7 +438,7 @@ export function ContasReceberList() {
               
               <div>
                 <label className="text-sm font-medium mb-1 block">Vencimento - Até</label>
-                <DatePicker
+                <DatePickerWithYearSelector
                   date={tempDataVencimentoFim}
                   onDateChange={setTempDataVencimentoFim}
                   placeholder="Data final"
