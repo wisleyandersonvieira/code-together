@@ -85,19 +85,27 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Use the Supabase connection pooler (port 6543) if available
+    const poolerUrl = dbUrl.replace(/:5432\//, ':6543/') + (dbUrl.includes('?') ? '&' : '?') + 'pgbouncer=true';
+
     const postgres = (await import("https://deno.land/x/postgresjs@v3.4.5/mod.js")).default;
-    const sql = postgres(dbUrl, { max: 1 });
+    const sql = postgres(poolerUrl, {
+      max: 1,
+      idle_timeout: 2,
+      connect_timeout: 10,
+      prepare: false, // required for pgbouncer transaction mode
+    });
 
     try {
       const result = await sql.unsafe(cleanQuery);
-      await sql.end();
+      await sql.end({ timeout: 2 });
 
       return new Response(
         JSON.stringify({ data: Array.from(result), error: null }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     } catch (pgError: any) {
-      await sql.end();
+      await sql.end({ timeout: 2 }).catch(() => {});
       console.error(`[execute-sql] SQL error:`, pgError.message);
       console.error(`[execute-sql] Failed query:`, cleanQuery.substring(0, 500));
       return new Response(
