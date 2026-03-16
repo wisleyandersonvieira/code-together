@@ -29,6 +29,7 @@ interface Projeto {
   total_tasks: number;
   completed_tasks: number;
   comment_count: number;
+  percentual_realizado?: number;
 }
 
 interface KanbanColumnData {

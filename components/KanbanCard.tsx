@@ -1,13 +1,9 @@
-'use client';
-
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 import { CheckCircle, MessageCircle, User, DollarSign } from 'lucide-react';
-import loadProjetoOrcamentoPercentualAction from '@/actions/loadProjetoOrcamentoPercentual';
 
 interface Projeto {
   id: number;
@@ -20,6 +16,7 @@ interface Projeto {
   total_tasks: number;
   completed_tasks: number;
   comment_count: number;
+  percentual_realizado?: number;
 }
 
 interface KanbanCardProps {
@@ -39,12 +36,6 @@ export function KanbanCard({ projeto, onClick, isDragging = false }: KanbanCardP
     id: projeto.id.toString(),
   });
 
-  const [orcamentoData] = useLoadAction(
-    loadProjetoOrcamentoPercentualAction,
-    [],
-    { projetoId: projeto.id }
-  );
-
   const style = transform ? {
     transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
   } : undefined;
@@ -53,9 +44,7 @@ export function KanbanCard({ projeto, onClick, isDragging = false }: KanbanCardP
     ? Math.round((projeto.completed_tasks / projeto.total_tasks) * 100)
     : 0;
 
-  const orcamentoPercentual = orcamentoData && orcamentoData.length > 0 
-    ? orcamentoData[0].percentual_realizado || 0
-    : 0;
+  const orcamentoPercentual = projeto.percentual_realizado || 0;
 
   return (
     <Card
