@@ -26,7 +26,7 @@ import {
   ChevronsLeft,
   ChevronsRight
 } from 'lucide-react';
-import { DatePicker } from '@/components/ui/date-picker';
+import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ContasReceberForm } from './ContasReceberForm';
 import { useToast } from '@/hooks/use-toast';
