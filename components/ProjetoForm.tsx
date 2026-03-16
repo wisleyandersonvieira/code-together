@@ -106,7 +106,7 @@ interface ProjetoFormProps {
 
 export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: ProjetoFormProps) {
   const { toast } = useToast();
-  const { formatCurrency } = useCurrency();
+  const { formatCurrency, currencySymbol } = useCurrency();
   const [createProjeto, isCreating] = useMutateAction(createProjetoAction);
   const [updateProjeto, isUpdating] = useMutateAction(updateProjetoAction);
   const [createProjetoMember] = useMutateAction(createProjetoMemberAction);
@@ -626,14 +626,24 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                       <FormItem>
                         <FormLabel>Valor Previsto de Venda</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            {...field}
-                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                            disabled={readOnly}
-                          />
+                          {readOnly ? (
+                            <div className="flex h-10 w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm text-slate-700">
+                              {formatCurrency(field.value || 0)}
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500 select-none">{currencySymbol}</span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                className="pl-9"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </div>
+                          )}
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1011,15 +1021,24 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormControl>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          min="0"
-                                          placeholder="0.00"
-                                          {...field}
-                                          onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                                          disabled={readOnly}
-                                        />
+                                        {readOnly ? (
+                                          <div className="flex h-10 w-full rounded-md border border-input bg-muted/50 px-3 py-2 text-sm text-slate-700 min-w-[120px]">
+                                            {formatCurrency(field.value || 0)}
+                                          </div>
+                                        ) : (
+                                          <div className="relative min-w-[120px]">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500 select-none">{currencySymbol}</span>
+                                            <Input
+                                              type="number"
+                                              step="0.01"
+                                              min="0"
+                                              placeholder="0.00"
+                                              className="pl-9"
+                                              {...field}
+                                              onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                            />
+                                          </div>
+                                        )}
                                       </FormControl>
                                       <FormMessage />
                                     </FormItem>
