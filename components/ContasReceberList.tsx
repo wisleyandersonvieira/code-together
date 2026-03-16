@@ -447,7 +447,7 @@ export function ContasReceberList() {
               
               <div>
                 <label className="text-sm font-medium mb-1 block">Recebimento - De</label>
-                <DatePicker
+                <DatePickerWithYearSelector
                   date={tempDataRecebimentoInicio}
                   onDateChange={setTempDataRecebimentoInicio}
                   placeholder="Data inicial"
