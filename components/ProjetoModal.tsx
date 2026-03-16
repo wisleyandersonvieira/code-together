@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -50,7 +50,8 @@ export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModa
   const [newTask, setNewTask] = useState('');
 
   // Track which tabs have been visited to avoid loading data before needed
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['comments']));
+  // History is pre-loaded immediately so it's ready when the user navigates to the tab
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(['comments', 'history']));
 
   const handleTabChange = useCallback((tab: string) => {
     setVisitedTabs((prev) => {
@@ -132,22 +133,18 @@ export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModa
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span>{projeto.name}</span>
-              <Badge variant={projeto.status === 'Concluído' ? 'default' : 'secondary'}>
-                {projeto.status}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {projeto.client_name && (
-                <>
-                  <User className="h-4 w-4" />
-                  {projeto.client_name}
-                </>
-              )}
-            </div>
+          <DialogTitle className="flex items-center gap-3 pr-8">
+            <span>{projeto.name}</span>
+            <Badge variant={projeto.status === 'Concluído' ? 'default' : 'secondary'}>
+              {projeto.status}
+            </Badge>
           </DialogTitle>
+          {projeto.client_name && (
+            <DialogDescription className="flex items-center gap-2">
+              <User className="h-4 w-4" />
+              {projeto.client_name}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         <Tabs defaultValue="comments" className="w-full" onValueChange={handleTabChange}>
