@@ -85,15 +85,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Use the Supabase connection pooler (port 6543) if available
-    const poolerUrl = dbUrl.replace(/:5432\//, ':6543/') + (dbUrl.includes('?') ? '&' : '?') + 'pgbouncer=true';
-
     const postgres = (await import("https://deno.land/x/postgresjs@v3.4.5/mod.js")).default;
-    const sql = postgres(poolerUrl, {
+    const sql = postgres(dbUrl, {
       max: 1,
       idle_timeout: 2,
       connect_timeout: 10,
-      prepare: false, // required for pgbouncer transaction mode
+      prepare: false,
     });
 
     try {
