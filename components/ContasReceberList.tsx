@@ -429,7 +429,7 @@ export function ContasReceberList() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="text-sm font-medium mb-1 block">Vencimento - De</label>
-                <DatePicker
+                <DatePickerWithYearSelector
                   date={tempDataVencimentoInicio}
                   onDateChange={setTempDataVencimentoInicio}
                   placeholder="Data inicial"
