@@ -148,20 +148,20 @@ export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModa
         </DialogHeader>
 
         <Tabs defaultValue="comments" className="w-full" onValueChange={handleTabChange}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="comments" className="flex items-center gap-2">
+          <TabsList className="grid h-auto w-full grid-cols-4 gap-2 rounded-2xl border border-slate-200 bg-slate-50/85 p-2 shadow-sm">
+            <TabsTrigger value="comments" className="min-h-[42px] flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
               <MessageCircle className="h-4 w-4" />
               Comentários
             </TabsTrigger>
-            <TabsTrigger value="tasks" className="flex items-center gap-2">
+            <TabsTrigger value="tasks" className="min-h-[42px] flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
               <CheckSquare className="h-4 w-4" />
               Tarefas
             </TabsTrigger>
-            <TabsTrigger value="evolucao" className="flex items-center gap-2">
+            <TabsTrigger value="evolucao" className="min-h-[42px] flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
               <TrendingUp className="h-4 w-4" />
               Evolução
             </TabsTrigger>
-            <TabsTrigger value="history" className="flex items-center gap-2">
+            <TabsTrigger value="history" className="min-h-[42px] flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-800 data-[state=active]:border-slate-300 data-[state=active]:bg-slate-100 data-[state=active]:text-slate-900 data-[state=active]:shadow-sm">
               <History className="h-4 w-4" />
               Histórico
             </TabsTrigger>
