@@ -1,5 +1,29 @@
 import { corsHeaders } from "../_shared/cors.ts";
 
+const postgres = (await import("https://deno.land/x/postgresjs@v3.4.5/mod.js")).default;
+
+let sqlClient: ReturnType<typeof postgres> | null = null;
+
+function getSqlClient() {
+  if (sqlClient) {
+    return sqlClient;
+  }
+
+  const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+  if (!dbUrl) {
+    throw new Error("SUPABASE_DB_URL not configured");
+  }
+
+  sqlClient = postgres(dbUrl, {
+    max: 1,
+    idle_timeout: 20,
+    connect_timeout: 10,
+    prepare: false,
+  });
+
+  return sqlClient;
+}
+
 /**
  * Evaluates UIBakery-style template expressions in SQL queries.
  * Handles both:
@@ -65,56 +89,36 @@ Deno.serve(async (req) => {
     if (!query || typeof query !== "string") {
       return new Response(
         JSON.stringify({ error: "Missing or invalid 'query' parameter" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Process all template expressions
     const processedQuery = processTemplate(query, params || {});
-
-    // Clean up any trailing semicolons followed by whitespace issues
     const cleanQuery = processedQuery.replace(/;\s*$/, "").trim();
 
     console.log(`[execute-sql] Running query: ${cleanQuery.substring(0, 200)}...`);
 
-    const dbUrl = Deno.env.get("SUPABASE_DB_URL");
-    if (!dbUrl) {
-      return new Response(
-        JSON.stringify({ error: "SUPABASE_DB_URL not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const postgres = (await import("https://deno.land/x/postgresjs@v3.4.5/mod.js")).default;
-    const sql = postgres(dbUrl, {
-      max: 1,
-      idle_timeout: 2,
-      connect_timeout: 10,
-      prepare: false,
-    });
-
     try {
+      const sql = getSqlClient();
       const result = await sql.unsafe(cleanQuery);
-      await sql.end({ timeout: 2 });
 
       return new Response(
         JSON.stringify({ data: Array.from(result), error: null }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     } catch (pgError: any) {
-      await sql.end({ timeout: 2 }).catch(() => {});
       console.error(`[execute-sql] SQL error:`, pgError.message);
       console.error(`[execute-sql] Failed query:`, cleanQuery.substring(0, 500));
       return new Response(
         JSON.stringify({ data: null, error: pgError.message }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
   } catch (error: any) {
     console.error(`[execute-sql] Error:`, error.message);
     return new Response(
       JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
