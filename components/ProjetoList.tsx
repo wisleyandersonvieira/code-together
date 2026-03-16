@@ -15,6 +15,7 @@ import deleteProjetoAction from '@/actions/deleteProjeto';
 import checkProjetoRestrictiveRelationshipsAction from '@/actions/checkProjetoRestrictiveRelationships';
 import { ProjetoForm } from './ProjetoForm';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrency } from '@/hooks/use-currency';
 import {
   FinanceActionButton,
   FinanceStatusBadge,
@@ -61,6 +62,7 @@ interface ProjetoListProps {
 
 export function ProjetoList({ onCreateNew }: ProjetoListProps) {
   const { toast } = useToast();
+  const { formatCurrency } = useCurrency();
   const [projetos, loading, error, refresh] = useLoadAction(loadProjetosAction, []);
   const [selectedProjeto, setSelectedProjeto] = useState<Projeto | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -354,14 +356,10 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                               </div>
                             </TableCell>
                             <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
-                              {projeto.predicted_sale_value
-                                ? `$ ${projeto.predicted_sale_value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                                : '-'}
+                              {projeto.predicted_sale_value ? formatCurrency(projeto.predicted_sale_value) : '-'}
                             </TableCell>
                             <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
-                              {totalOrcamento > 0
-                                ? `$ ${totalOrcamento.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                                : '-'}
+                              {totalOrcamento > 0 ? formatCurrency(totalOrcamento) : '-'}
                             </TableCell>
                             <TableCell className={`${listingTableCellClassName} text-right`}>
                               <div className="flex justify-end gap-2">

@@ -862,7 +862,7 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                     <div>
                       <h3 className="text-lg font-medium">Orçamento do Projeto</h3>
                       <p className="text-sm text-muted-foreground">
-                        Total: $ {totalOrcamento.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        Total: {formatCurrency(totalOrcamento)}
                       </p>
                     </div>
                     {!readOnly && (
