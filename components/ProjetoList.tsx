@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, Pencil, Trash2, Eye, ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMutateAction } from '@uibakery/data';
 import loadProjetosAction from '@/actions/loadProjetos';
@@ -235,7 +235,7 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                 </Button>
               </DialogTrigger>
               <DialogContent
-                className="max-w-7xl max-h-[90vh] overflow-y-auto"
+                className="max-w-7xl max-h-[90vh] overflow-y-auto p-0 [&>button]:hidden"
                 onInteractOutside={(e) => {
                   const target = e.target as Element;
                   if (target.closest('.file-manager-content') || target.tagName === 'A') {
@@ -243,11 +243,9 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                   }
                 }}
               >
-                <DialogHeader>
-                  <DialogTitle>
-                    {isViewMode ? 'Visualizar Projeto' : isEditMode ? 'Editar Projeto' : 'Criar Novo Projeto'}
-                  </DialogTitle>
-                </DialogHeader>
+                <DialogTitle className="sr-only">
+                  {isViewMode ? 'Visualizar Projeto' : isEditMode ? 'Editar Projeto' : 'Criar Novo Projeto'}
+                </DialogTitle>
                 <ProjetoForm
                   projeto={selectedProjeto || undefined}
                   onSuccess={handleFormSuccess}

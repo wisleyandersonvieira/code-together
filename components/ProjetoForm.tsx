@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { FileManager } from './FileManager';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trash2, Plus, FileImage, FileText, Calculator, DollarSign, TrendingUp } from 'lucide-react';
+import { Trash2, Plus, FileImage, FileText, Calculator, DollarSign, TrendingUp, X } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
 import { useMutateAction, useLoadAction } from '@uibakery/data';
 import createProjetoAction from '@/actions/createProjeto';
@@ -528,12 +528,20 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
 
   return (
     <Card className="w-full max-w-6xl">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between pb-4">
         <CardTitle className="text-2xl">
-          {projeto ? 'Editar Projeto' : 
-           isNewProjectSaved ? 'Projeto Criado - Configure Previsão' : 
+          {projeto ? 'Editar Projeto' :
+           isNewProjectSaved ? 'Projeto Criado - Configure Previsão' :
            'Cadastrar Novo Projeto'}
         </CardTitle>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Fechar"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </CardHeader>
       <CardContent>
         <Form {...form}>
