@@ -1002,7 +1002,7 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                                               className="h-8 text-sm"
                                             />
                                           </div>
-                                          <SelectItem value="">Nenhum</SelectItem>
+                                          <SelectItem value="none">Nenhum</SelectItem>
                                           {filteredFornecedores.map((fornecedor: any) => (
                                             <SelectItem key={fornecedor.id} value={fornecedor.id.toString()}>
                                               {fornecedor.name}
