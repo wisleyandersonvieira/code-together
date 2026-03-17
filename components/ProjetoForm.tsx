@@ -111,44 +111,26 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
   const [deleteOrcamentos] = useMutateAction(deleteOrcamentosAction);
   const [deleteOrcamentoSemAlocacao] = useMutateAction(deleteOrcamentoSemAlocacaoAction);
   const [updateOrcamento] = useMutateAction(updateOrcamentoAction);
-  const [clientes, loadingClientes, errorClientes] = useLoadAction(loadClientesAction, [], { searchTerm: null });
+  // Single consolidated query for all dropdown data (clientes, empresas, grupos, fornecedores)
+  const [formDataRaw, loadingFormData] = useLoadAction(loadProjetoFormDataAction, [{ data: { clientes: [], empresas: [], grupos: [], fornecedores: [] } }]);
+  const formData = formDataRaw?.[0]?.data || { clientes: [], empresas: [], grupos: [], fornecedores: [] };
+  const clientes = formData.clientes || [];
+  const empresas = formData.empresas || [];
+  const grupos = formData.grupos || [];
+  const fornecedores = formData.fornecedores || [];
+  const loadingClientes = loadingFormData;
+  const loadingEmpresas = loadingFormData;
+  const loadingGrupos = loadingFormData;
 
-  // Debug log para verificar o carregamento dos clientes
-  React.useEffect(() => {
-    console.log('Debug ProjetoForm - Clientes:', { clientes, loadingClientes, errorClientes });
-  }, [clientes, loadingClientes, errorClientes]);
-  
-  // Load existing orcamentos with allocation info when editing
-  const [orcamentosExistentes] = useLoadAction(
-    loadOrcamentosComAlocacoesAction, 
-    [], 
+  // Single consolidated query for project-specific edit data (orcamentos + previsao)
+  const [editDataRaw] = useLoadAction(
+    loadProjetoEditDataAction,
+    [{ data: { orcamentos: [], previsao: { total_aportes: 0 } } }],
     { projetoId: projeto?.id || null }
   );
-  const [empresas, loadingEmpresas, errorEmpresas] = useLoadAction(loadEmpresasAction, [], { clienteId: null, searchTerm: null });
-  const [grupos, loadingGrupos, errorGrupos] = useLoadAction(loadGruposAction, []);
-  
-  // Debug logs para verificar carregamento
-  React.useEffect(() => {
-    console.log('Debug ProjetoForm - Empresas:', { empresas, loadingEmpresas, errorEmpresas });
-    console.log('Debug ProjetoForm - Grupos:', { grupos, loadingGrupos, errorGrupos });
-  }, [empresas, loadingEmpresas, errorEmpresas, grupos, loadingGrupos, errorGrupos]);
-  const [fornecedores] = useLoadAction(loadFornecedoresAction, [], { searchTerm: null });
-  const [fornecedorSearch, setFornecedorSearch] = useState('');
-  const filteredFornecedores = (fornecedores as any[]).filter((f: any) =>
-    f.name.toLowerCase().includes(fornecedorSearch.toLowerCase())
-  );
-  const [savedProjetoId, setSavedProjetoId] = useState<number | null>(null);
-  const [showPrevisaoAportes, setShowPrevisaoAportes] = useState(false);
-  const [showPrevisaoModal, setShowPrevisaoModal] = useState(false);
-  const [isNewProjectSaved, setIsNewProjectSaved] = useState(false);
-  const [showPrevisaoAportesEdit, setShowPrevisaoAportesEdit] = useState(false);
-
-  // Check if existing project has previsão de aportes
-  const [previsaoExists] = useLoadAction(
-    checkPrevisaoAportesExistsAction,
-    [{ total_aportes: 0 }],
-    { projetoId: projeto?.id || null }
-  );
+  const editData = editDataRaw?.[0]?.data || { orcamentos: [], previsao: { total_aportes: 0 } };
+  const orcamentosExistentes = editData.orcamentos || [];
+  const previsaoExists = [editData.previsao || { total_aportes: 0 }];
   const hasExistingPrevisao = previsaoExists[0]?.total_aportes > 0;
 
   // Set saved projeto ID when editing
