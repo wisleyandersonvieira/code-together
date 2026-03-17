@@ -1,0 +1,1 @@
+SELECT setval('contas_pagar_itens_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM contas_pagar_itens), false);
