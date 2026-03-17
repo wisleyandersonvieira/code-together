@@ -98,8 +98,10 @@ Deno.serve(async (req) => {
 
     console.log(`[execute-sql] Running query: ${cleanQuery.substring(0, 200)}...`);
 
+    let sql: any = null;
     try {
-      const sql = await getSqlClient();
+      const pg = await getPostgres();
+      sql = createSqlClient(pg);
       const result = await sql.unsafe(cleanQuery);
 
       return new Response(
@@ -113,6 +115,10 @@ Deno.serve(async (req) => {
         JSON.stringify({ data: null, error: pgError.message }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
+    } finally {
+      if (sql) {
+        try { await sql.end({ timeout: 3 }); } catch (_) { /* ignore */ }
+      }
     }
   } catch (error: any) {
     console.error(`[execute-sql] Error:`, error.message);
