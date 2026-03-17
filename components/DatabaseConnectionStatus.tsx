@@ -3,33 +3,36 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { useLoadAction } from '@uibakery/data';
-import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
-import loadParametrosAction from '@/actions/loadParametros';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
+/**
+ * Lightweight connection check using the Supabase REST API directly,
+ * avoiding an extra edge function call on every page load.
+ */
 export function DatabaseConnectionStatus() {
   const [isRetrying, setIsRetrying] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-  
-  const [parametros, loading, error] = useLoadAction(
-    loadParametrosAction,
-    [],
-    {}
-  );
-  const reload = () => setRetryKey(prev => prev + 1);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showLoading, setShowLoading] = useState(false);
 
-  const handleRetry = () => {
-    setIsRetrying(true);
-    setRetryKey(prev => prev + 1);
-    setTimeout(() => {
-      reload();
-      setIsRetrying(false);
-    }, 1000);
+  const checkConnection = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { error: err } = await supabase.from('parametros').select('id').limit(1);
+      if (err) setError(err.message);
+    } catch (e: any) {
+      setError(e.message || 'Erro desconhecido');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Só mostra loading se estiver demorando mais de 2 segundos
-  const [showLoading, setShowLoading] = useState(false);
-  
+  useEffect(() => {
+    checkConnection();
+  }, []);
+
   useEffect(() => {
     if (loading && !isRetrying) {
       const timer = setTimeout(() => setShowLoading(true), 2000);
@@ -38,6 +41,11 @@ export function DatabaseConnectionStatus() {
       setShowLoading(false);
     }
   }, [loading, isRetrying]);
+
+  const handleRetry = () => {
+    setIsRetrying(true);
+    checkConnection().finally(() => setIsRetrying(false));
+  };
 
   if (loading && !isRetrying && showLoading) {
     return (
@@ -52,11 +60,10 @@ export function DatabaseConnectionStatus() {
   }
 
   if (error) {
-    const errorMessage = String(error);
-    const isConnectionReset = errorMessage.includes('connection was reset') || 
-                              errorMessage.includes('can\'t be reached') ||
-                              errorMessage.includes('ECONNRESET') ||
-                              errorMessage.includes('ETIMEDOUT');
+    const isConnectionReset = error.includes('connection was reset') || 
+                              error.includes('can\'t be reached') ||
+                              error.includes('ECONNRESET') ||
+                              error.includes('ETIMEDOUT');
 
     return (
       <Alert variant="destructive">
@@ -66,19 +73,11 @@ export function DatabaseConnectionStatus() {
           <div className="space-y-2">
             <p>
               {isConnectionReset 
-                ? 'A conexão com o banco de dados foi perdida. Isso pode acontecer por:'
+                ? 'A conexão com o banco de dados foi perdida.'
                 : 'Erro ao conectar:'}
             </p>
-            {isConnectionReset && (
-              <ul className="list-disc list-inside text-sm space-y-1 ml-2">
-                <li>Timeout de conexão (banco sobrecarregado)</li>
-                <li>Banco de dados reiniciando</li>
-                <li>Problema temporário de rede</li>
-                <li>Limite de conexões atingido</li>
-              </ul>
-            )}
             {!isConnectionReset && (
-              <p className="text-sm font-mono bg-gray-100 p-2 rounded">{errorMessage}</p>
+              <p className="text-sm font-mono bg-muted p-2 rounded">{error}</p>
             )}
             <Button 
               variant="outline" 
@@ -96,7 +95,5 @@ export function DatabaseConnectionStatus() {
     );
   }
 
-  // Só mostra algo quando há erro ou está carregando
-  // Quando está OK, não mostra nada
   return null;
 }
