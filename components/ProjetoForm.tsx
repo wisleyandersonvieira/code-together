@@ -131,6 +131,16 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
   const editData = editDataRaw?.[0]?.data || { orcamentos: [], previsao: { total_aportes: 0 } };
   const orcamentosExistentes = editData.orcamentos || [];
   const previsaoExists = [editData.previsao || { total_aportes: 0 }];
+  const [fornecedorSearch, setFornecedorSearch] = useState('');
+  const filteredFornecedores = (fornecedores as any[]).filter((f: any) =>
+    f.name?.toLowerCase().includes(fornecedorSearch.toLowerCase())
+  );
+  const [savedProjetoId, setSavedProjetoId] = useState<number | null>(null);
+  const [showPrevisaoAportes, setShowPrevisaoAportes] = useState(false);
+  const [showPrevisaoModal, setShowPrevisaoModal] = useState(false);
+  const [isNewProjectSaved, setIsNewProjectSaved] = useState(false);
+  const [showPrevisaoAportesEdit, setShowPrevisaoAportesEdit] = useState(false);
+
   const hasExistingPrevisao = previsaoExists[0]?.total_aportes > 0;
 
   // Set saved projeto ID when editing
