@@ -25,18 +25,14 @@ import createProjetoMemberAction from '@/actions/createProjetoMember';
 import deleteProjetoMembersAction from '@/actions/deleteProjetoMembers';
 import createOrcamentoAction from '@/actions/createOrcamento';
 import deleteOrcamentosAction from '@/actions/deleteOrcamentos';
-import loadOrcamentosComAlocacoesAction from '@/actions/loadOrcamentosComAlocacoes';
 import deleteOrcamentoSemAlocacaoAction from '@/actions/deleteOrcamentoSemAlocacao';
 import updateOrcamentoAction from '@/actions/updateOrcamento';
-import loadClientesAction from '@/actions/loadClientes';
-import loadEmpresasAction from '@/actions/loadEmpresas';
-import loadGruposAction from '@/actions/loadGrupos';
-import loadFornecedoresAction from '@/actions/loadFornecedores';
+import loadProjetoFormDataAction from '@/actions/loadProjetoFormData';
+import loadProjetoEditDataAction from '@/actions/loadProjetoEditData';
 import { useToast } from '@/hooks/use-toast';
 import { PrevisaoAportesManager } from './PrevisaoAportesManager';
 import { ProjetoEvolucao } from './ProjetoEvolucao';
 import { PrevisaoAportesEditModal } from './PrevisaoAportesEditModal';
-import checkPrevisaoAportesExistsAction from '@/actions/checkPrevisaoAportesExists';
 
 const memberSchema = z.object({
   type: z.enum(['cliente', 'empresa', 'grupo'], { required_error: 'Selecione o tipo' }),
