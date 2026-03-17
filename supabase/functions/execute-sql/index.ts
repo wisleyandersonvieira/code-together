@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
     console.log(`[execute-sql] Running query: ${cleanQuery.substring(0, 200)}...`);
 
     try {
-      const sql = getSqlClient();
+      const sql = await getSqlClient();
       const result = await sql.unsafe(cleanQuery);
 
       return new Response(
