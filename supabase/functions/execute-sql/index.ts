@@ -1,12 +1,16 @@
 import { corsHeaders } from "../_shared/cors.ts";
 
-const postgres = (await import("https://deno.land/x/postgresjs@v3.4.5/mod.js")).default;
+let postgres: any = null;
+let sqlClient: any = null;
 
-let sqlClient: ReturnType<typeof postgres> | null = null;
-
-function getSqlClient() {
+async function getSqlClient() {
   if (sqlClient) {
     return sqlClient;
+  }
+
+  if (!postgres) {
+    const mod = await import("https://deno.land/x/postgresjs@v3.4.5/mod.js");
+    postgres = mod.default;
   }
 
   const dbUrl = Deno.env.get("SUPABASE_DB_URL");
@@ -15,7 +19,6 @@ function getSqlClient() {
   }
 
   // Use the Supabase connection pooler (port 6543, transaction mode)
-  // instead of direct connection (port 5432) to avoid exhausting DB slots
   const poolerUrl = dbUrl.replace(/:5432\//, ":6543/");
 
   sqlClient = postgres(poolerUrl, {
