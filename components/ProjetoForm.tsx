@@ -982,8 +982,8 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                                   render={({ field }) => (
                                     <FormItem>
                                       <Select
-                                        onValueChange={field.onChange}
-                                        value={field.value}
+                                        onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
+                                        value={field.value || "none"}
                                         disabled={readOnly}
                                         onOpenChange={() => setFornecedorSearch('')}
                                       >
