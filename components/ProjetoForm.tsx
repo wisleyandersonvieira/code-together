@@ -10,7 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DatePicker } from '@/components/ui/date-picker';
+import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FileManager } from './FileManager';
@@ -137,6 +137,10 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
     console.log('Debug ProjetoForm - Grupos:', { grupos, loadingGrupos, errorGrupos });
   }, [empresas, loadingEmpresas, errorEmpresas, grupos, loadingGrupos, errorGrupos]);
   const [fornecedores] = useLoadAction(loadFornecedoresAction, [], { searchTerm: null });
+  const [fornecedorSearch, setFornecedorSearch] = useState('');
+  const filteredFornecedores = (fornecedores as any[]).filter((f: any) =>
+    f.name.toLowerCase().includes(fornecedorSearch.toLowerCase())
+  );
   const [savedProjetoId, setSavedProjetoId] = useState<number | null>(null);
   const [showPrevisaoAportes, setShowPrevisaoAportes] = useState(false);
   const [showPrevisaoModal, setShowPrevisaoModal] = useState(false);
@@ -977,14 +981,29 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                                   name={`orcamentos.${index}.fornecedorId`}
                                   render={({ field }) => (
                                     <FormItem>
-                                      <Select onValueChange={field.onChange} value={field.value} disabled={readOnly}>
+                                      <Select
+                                        onValueChange={field.onChange}
+                                        value={field.value}
+                                        disabled={readOnly}
+                                        onOpenChange={() => setFornecedorSearch('')}
+                                      >
                                         <FormControl>
                                           <SelectTrigger>
                                             <SelectValue placeholder="Fornecedor" />
                                           </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                          {fornecedores.map((fornecedor: any) => (
+                                          <div className="p-2">
+                                            <Input
+                                              placeholder="Buscar fornecedor..."
+                                              value={fornecedorSearch}
+                                              onChange={(e) => setFornecedorSearch(e.target.value)}
+                                              onKeyDown={(e) => e.stopPropagation()}
+                                              className="h-8 text-sm"
+                                            />
+                                          </div>
+                                          <SelectItem value="">Nenhum</SelectItem>
+                                          {filteredFornecedores.map((fornecedor: any) => (
                                             <SelectItem key={fornecedor.id} value={fornecedor.id.toString()}>
                                               {fornecedor.name}
                                             </SelectItem>
@@ -1003,7 +1022,7 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormControl>
-                                        <DatePicker
+                                        <DatePickerWithYearSelector
                                           date={field.value}
                                           onDateChange={field.onChange}
                                           disabled={readOnly}

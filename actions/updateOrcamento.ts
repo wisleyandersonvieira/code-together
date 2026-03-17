@@ -4,11 +4,11 @@ function updateOrcamento() {
   return action('updateOrcamento', 'SQL', {
     databaseName: 'provision',
     query: `
-      UPDATE orcamentos 
-      SET 
+      UPDATE orcamentos
+      SET
         description = '{{params.description}}',
-        fornecedor_id = {{params.fornecedorId}},
-        predicted_date = '{{params.predictedDate}}',
+        fornecedor_id = {{ params.fornecedorId !== null && params.fornecedorId !== undefined ? params.fornecedorId : "NULL" }},
+        predicted_date = {{ params.predictedDate ? "'" + new Date(params.predictedDate).toISOString().split('T')[0] + "'" : "NULL" }},
         value = {{params.value}},
         updated_at = CURRENT_TIMESTAMP
       WHERE id = {{params.id}}
