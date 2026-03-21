@@ -63,6 +63,32 @@ export function exportToExcel(
   XLSX.writeFile(wb, `${filename}.xlsx`);
 }
 
+export function exportExtratoClienteExcel(
+  data: any[],
+  filename: string,
+  clienteNome: string,
+  formatCurrency: (value: number) => string
+) {
+  const excelData = data.map(item => ({
+    'Data Pagamento': item.data_pagamento ? new Date(item.data_pagamento).toLocaleDateString('pt-BR') : '',
+    'Cliente': item.cliente_nome || clienteNome || '',
+    'Nº Documento': item.numero_documento || '',
+    'Projeto': item.projeto_nome || '',
+    'Valor': Number(item.valor) || 0,
+    'Conta Corrente': item.conta_corrente || '',
+    'Observações': item.observacoes || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(excelData);
+  ws['!cols'] = [
+    { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 30 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Extrato');
+  XLSX.writeFile(wb, `${filename}.xlsx`);
+}
+
 export function exportToPDF(
   despesasData: ExportData[], 
   receitasData: ExportData[],

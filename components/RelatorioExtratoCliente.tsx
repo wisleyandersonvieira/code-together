@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { FileText, Filter, Download, FileSpreadsheet, UserCheck, Building, Building2, Search } from 'lucide-react';
 import { useLoadAction } from '@uibakery/data';
 import { useCurrency } from '@/hooks/use-currency';
-import { exportToExcel, exportToPDF, exportExtratoClientePDF } from '@/utils/export';
+import { exportExtratoClientePDF, exportExtratoClienteExcel } from '@/utils/export';
 import loadExtratoClienteAction from '@/actions/loadExtratoCliente';
 import loadClientesAction from '@/actions/loadClientes';
 import loadEmpresasAction from '@/actions/loadEmpresas';
@@ -67,9 +67,8 @@ function ExtratoClienteResults({ filtros, projetos, getEntityName }: ExtratoClie
     const filename = `extrato-cliente-${clienteNome.replace(/\s+/g, '_')}-${new Date().toISOString().split('T')[0]}`;
     
     if (format === 'excel') {
-      exportToExcel(extrato, filename, 'receitas', formatCurrency);
+      exportExtratoClienteExcel(extrato, filename, clienteNome, formatCurrency);
     } else {
-      // Usar função específica para PDF do extrato cliente
       const projetoNome = filtros.projetoIds.length > 0 
         ? projetos.find((p: any) => p.id === filtros.projetoIds[0])?.name 
         : undefined;
@@ -147,24 +146,28 @@ function ExtratoClienteResults({ filtros, projetos, getEntityName }: ExtratoClie
           ) : (
             <>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[700px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Data de Pagamento</TableHead>
-                      <TableHead>Projeto</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                      <TableHead>Conta Corrente</TableHead>
+                      <TableHead className="w-[110px] whitespace-nowrap">Data Pagamento</TableHead>
+                      <TableHead className="w-[80px]">Documento</TableHead>
+                      <TableHead className="min-w-[120px]">Projeto</TableHead>
+                      <TableHead className="text-right w-[110px]">Valor</TableHead>
+                      <TableHead className="w-[120px]">Conta Corrente</TableHead>
+                      <TableHead className="min-w-[100px]">Observações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {extrato.map((item: any, index: number) => (
                       <TableRow key={index}>
-                        <TableCell>{formatDate(item.data_pagamento)}</TableCell>
-                        <TableCell className="font-medium">{item.projeto_nome || '-'}</TableCell>
-                        <TableCell className="text-right font-mono text-green-600">
+                        <TableCell className="whitespace-nowrap">{formatDate(item.data_pagamento)}</TableCell>
+                        <TableCell className="text-sm">{item.numero_documento || '-'}</TableCell>
+                        <TableCell className="font-medium truncate max-w-[200px]">{item.projeto_nome || '-'}</TableCell>
+                        <TableCell className="text-right font-mono text-green-600 whitespace-nowrap">
                           {formatCurrency(parseFloat(item.valor))}
                         </TableCell>
-                        <TableCell>{item.conta_corrente || '-'}</TableCell>
+                        <TableCell className="truncate max-w-[150px]">{item.conta_corrente || '-'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{item.observacoes || '-'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
