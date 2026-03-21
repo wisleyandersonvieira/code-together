@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { FileText, Filter, Download, FileSpreadsheet, UserCheck, Building, Building2, Search } from 'lucide-react';
 import { useLoadAction } from '@uibakery/data';
 import { useCurrency } from '@/hooks/use-currency';
-import { exportToExcel, exportToPDF, exportExtratoClientePDF } from '@/utils/export';
+import { exportExtratoClientePDF, exportExtratoClienteExcel } from '@/utils/export';
 import loadExtratoClienteAction from '@/actions/loadExtratoCliente';
 import loadClientesAction from '@/actions/loadClientes';
 import loadEmpresasAction from '@/actions/loadEmpresas';
