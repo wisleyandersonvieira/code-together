@@ -67,9 +67,8 @@ function ExtratoClienteResults({ filtros, projetos, getEntityName }: ExtratoClie
     const filename = `extrato-cliente-${clienteNome.replace(/\s+/g, '_')}-${new Date().toISOString().split('T')[0]}`;
     
     if (format === 'excel') {
-      exportToExcel(extrato, filename, 'receitas', formatCurrency);
+      exportExtratoClienteExcel(extrato, filename, clienteNome, formatCurrency);
     } else {
-      // Usar função específica para PDF do extrato cliente
       const projetoNome = filtros.projetoIds.length > 0 
         ? projetos.find((p: any) => p.id === filtros.projetoIds[0])?.name 
         : undefined;
