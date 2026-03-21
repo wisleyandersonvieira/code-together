@@ -32,3 +32,8 @@ SELECT setval('contas_receber_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM con
 SELECT setval('contas_receber_itens_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM contas_receber_itens), false);
 SELECT setval('contas_receber_projetos_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM contas_receber_projetos), false);
 SELECT setval('titulos_receber_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM titulos_receber), false);
+SELECT setval('fornecedores_subcontratados_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM fornecedores_subcontratados), false);
+SELECT setval('auditorias_fornecedores_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM auditorias_fornecedores), false);
+SELECT setval('auditoria_fornecedor_itens_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM auditoria_fornecedor_itens), false);
+SELECT setval('auditoria_fornecedor_item_parcelas_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM auditoria_fornecedor_item_parcelas), false);
+SELECT setval('auditoria_fornecedor_historico_pagamentos_id_seq', (SELECT COALESCE(MAX(id), 0) + 1 FROM auditoria_fornecedor_historico_pagamentos), false);

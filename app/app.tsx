@@ -83,6 +83,9 @@ type TabType =
   | 'create-estrutura-dre'
   | 'relatorio-dre'
   | 'relatorio-dre-projeto'
+  | 'auditoria-fornecedores-subcontratados'
+  | 'auditoria-fornecedores'
+  | 'auditoria-fornecedores-relatorios'
   | 'supabase-migration'
   | 'rds-migration'
   | 'incremental-sync'
@@ -129,6 +132,9 @@ const routes: Record<TabType, RouteDefinition> = {
   'create-estrutura-dre': { path: '/matriz/estrutura-dre/editar', title: 'Editar Estrutura DRE' },
   'relatorio-dre': { path: '/matriz/relatorio-dre', title: 'Relatorio DRE' },
   'relatorio-dre-projeto': { path: '/matriz/relatorio-dre-projeto', title: 'Relatorio DRE Projeto' },
+  'auditoria-fornecedores-subcontratados': { path: '/matriz/auditoria/fornecedores-subcontratados', title: 'Auditoria Fornecedores Subcontratados' },
+  'auditoria-fornecedores': { path: '/matriz/auditoria', title: 'Auditorias de Fornecedores' },
+  'auditoria-fornecedores-relatorios': { path: '/matriz/auditoria/relatorios', title: 'Relatorios Auditoria Fornecedores' },
   'supabase-migration': { path: '/sistema/supabase-migration', title: 'Migracao Supabase' },
   'rds-migration': { path: '/sistema/rds-migration', title: 'Migracao RDS' },
   'incremental-sync': { path: '/sistema/incremental-sync', title: 'Sincronizacao Incremental' },
@@ -176,6 +182,9 @@ const matrizTabs: TabType[] = [
   'create-estrutura-dre',
   'relatorio-dre',
   'relatorio-dre-projeto',
+  'auditoria-fornecedores-subcontratados',
+  'auditoria-fornecedores',
+  'auditoria-fornecedores-relatorios',
   'export-project',
 ];
 
@@ -241,6 +250,9 @@ const EstruturasDreList = lazy(() => import('@/components/EstruturasDreList').th
 const EstruturaDreForm = lazy(() => import('@/components/EstruturaDreForm').then((module) => ({ default: module.EstruturaDreForm })));
 const RelatorioDre = lazy(() => import('@/components/RelatorioDre').then((module) => ({ default: module.RelatorioDre })));
 const RelatorioDreProjeto = lazy(() => import('@/components/RelatorioDreProjeto').then((module) => ({ default: module.RelatorioDreProjeto })));
+const FornecedorSubcontratadoList = lazy(() => import('@/components/FornecedorSubcontratadoList').then((module) => ({ default: module.FornecedorSubcontratadoList })));
+const AuditoriaFornecedoresModule = lazy(() => import('@/components/AuditoriaFornecedoresModule').then((module) => ({ default: module.AuditoriaFornecedoresModule })));
+const AuditoriaFornecedorReports = lazy(() => import('@/components/AuditoriaFornecedorReports').then((module) => ({ default: module.AuditoriaFornecedorReports })));
 const FullSupabaseMigration = lazy(() => import('@/components/FullSupabaseMigration').then((module) => ({ default: module.FullSupabaseMigration })));
 const IncrementalSync = lazy(() => import('@/components/IncrementalSync').then((module) => ({ default: module.IncrementalSync })));
 const ExportProject = lazy(() => import('@/components/ExportProject').then((module) => ({ default: module.ExportProject })));
@@ -427,6 +439,12 @@ function App() {
         return <RelatorioDre />;
       case 'relatorio-dre-projeto':
         return <RelatorioDreProjeto />;
+      case 'auditoria-fornecedores-subcontratados':
+        return <FornecedorSubcontratadoList />;
+      case 'auditoria-fornecedores':
+        return <AuditoriaFornecedoresModule />;
+      case 'auditoria-fornecedores-relatorios':
+        return <AuditoriaFornecedorReports />;
       case 'supabase-migration':
         return <FullSupabaseMigration />;
       case 'rds-migration':
@@ -812,6 +830,18 @@ function App() {
                 <DropdownMenuItem onClick={() => navigateTo('relatorio-dre')}>
                   <PieChart className="mr-2 h-4 w-4" />
                   Relatório DRE
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores-subcontratados')}>
+                  <Receipt className="mr-2 h-4 w-4" />
+                  Auditoria {'>'} Fornecedores
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores')}>
+                  <Receipt className="mr-2 h-4 w-4" />
+                  Auditoria {'>'} Auditorias
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores-relatorios')}>
+                  <PieChart className="mr-2 h-4 w-4" />
+                  Auditoria {'>'} Relatórios
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigateTo('export-project')}>
                   <Github className="mr-2 h-4 w-4" />
