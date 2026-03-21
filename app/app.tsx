@@ -34,6 +34,7 @@ import {
   User as UserIcon,
   UserCheck,
   UserPlus,
+  TrendingUp,
   Users,
 } from 'lucide-react';
 import { LoginForm } from '@/components/LoginForm';
