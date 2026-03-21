@@ -112,10 +112,10 @@ export function RelatorioCliente() {
   };
 
   // Calculate totals
-  const totalDespesas = despesas.filter(item => item.situacao_pagamento === 'Pendente').reduce((sum, item) => sum + (item.valor || 0), 0);
-  const totalReceitas = receitas.filter(item => item.situacao_pagamento === 'Pendente').reduce((sum, item) => sum + (item.valor || 0), 0);
-  const totalQuitadoDespesas = despesas.filter(item => item.situacao_pagamento === 'Quitada').reduce((sum, item) => sum + (item.valor || 0), 0);
-  const totalQuitadoReceitas = receitas.filter(item => item.situacao_pagamento === 'Quitada').reduce((sum, item) => sum + (item.valor || 0), 0);
+  const totalDespesas = despesas.filter(item => item.situacao_pagamento === 'Pendente').reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
+  const totalReceitas = receitas.filter(item => item.situacao_pagamento === 'Pendente').reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
+  const totalQuitadoDespesas = despesas.filter(item => item.situacao_pagamento === 'Quitada').reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
+  const totalQuitadoReceitas = receitas.filter(item => item.situacao_pagamento === 'Quitada').reduce((sum, item) => sum + (Number(item.valor) || 0), 0);
 
   const getStatusBadge = (situacao: string) => {
     return situacao === 'Quitada' 

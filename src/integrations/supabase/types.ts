@@ -95,6 +95,251 @@ export type Database = {
         }
         Relationships: []
       }
+      auditoria_fornecedor_historico_pagamentos: {
+        Row: {
+          auditoria_item_id: number
+          auditoria_item_parcela_id: number | null
+          created_at: string
+          data_pagamento: string
+          id: number
+          numero_parcela: number
+          observacao: string | null
+          status: string
+          usuario_id: number | null
+          valor_pago: number
+        }
+        Insert: {
+          auditoria_item_id: number
+          auditoria_item_parcela_id?: number | null
+          created_at?: string
+          data_pagamento: string
+          id?: number
+          numero_parcela: number
+          observacao?: string | null
+          status?: string
+          usuario_id?: number | null
+          valor_pago: number
+        }
+        Update: {
+          auditoria_item_id?: number
+          auditoria_item_parcela_id?: number | null
+          created_at?: string
+          data_pagamento?: string
+          id?: number
+          numero_parcela?: number
+          observacao?: string | null
+          status?: string
+          usuario_id?: number | null
+          valor_pago?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auditoria_fornecedor_historico_p_auditoria_item_parcela_id_fkey"
+            columns: ["auditoria_item_parcela_id"]
+            isOneToOne: false
+            referencedRelation: "auditoria_fornecedor_item_parcelas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "auditoria_fornecedor_historico_pagamento_auditoria_item_id_fkey"
+            columns: ["auditoria_item_id"]
+            isOneToOne: false
+            referencedRelation: "auditoria_fornecedor_itens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "auditoria_fornecedor_historico_pagamentos_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      auditoria_fornecedor_item_parcelas: {
+        Row: {
+          auditoria_item_id: number
+          created_at: string
+          data_pagamento: string | null
+          data_registro_baixa: string | null
+          id: number
+          numero_parcela: number
+          observacao: string | null
+          status: string
+          updated_at: string
+          usuario_id: number | null
+          valor_parcela: number
+        }
+        Insert: {
+          auditoria_item_id: number
+          created_at?: string
+          data_pagamento?: string | null
+          data_registro_baixa?: string | null
+          id?: number
+          numero_parcela: number
+          observacao?: string | null
+          status?: string
+          updated_at?: string
+          usuario_id?: number | null
+          valor_parcela?: number
+        }
+        Update: {
+          auditoria_item_id?: number
+          created_at?: string
+          data_pagamento?: string | null
+          data_registro_baixa?: string | null
+          id?: number
+          numero_parcela?: number
+          observacao?: string | null
+          status?: string
+          updated_at?: string
+          usuario_id?: number | null
+          valor_parcela?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auditoria_fornecedor_item_parcelas_auditoria_item_id_fkey"
+            columns: ["auditoria_item_id"]
+            isOneToOne: false
+            referencedRelation: "auditoria_fornecedor_itens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "auditoria_fornecedor_item_parcelas_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      auditoria_fornecedor_itens: {
+        Row: {
+          auditoria_id: number
+          created_at: string
+          data_emissao: string | null
+          fornecedor_subcontratado_id: number
+          id: number
+          observacoes: string | null
+          parcelas: number
+          projeto_id: number | null
+          status_pagamento: string
+          updated_at: string
+          valor_a_pagar: number
+          valor_pago: number
+          valor_total: number
+        }
+        Insert: {
+          auditoria_id: number
+          created_at?: string
+          data_emissao?: string | null
+          fornecedor_subcontratado_id: number
+          id?: number
+          observacoes?: string | null
+          parcelas?: number
+          projeto_id?: number | null
+          status_pagamento?: string
+          updated_at?: string
+          valor_a_pagar?: number
+          valor_pago?: number
+          valor_total?: number
+        }
+        Update: {
+          auditoria_id?: number
+          created_at?: string
+          data_emissao?: string | null
+          fornecedor_subcontratado_id?: number
+          id?: number
+          observacoes?: string | null
+          parcelas?: number
+          projeto_id?: number | null
+          status_pagamento?: string
+          updated_at?: string
+          valor_a_pagar?: number
+          valor_pago?: number
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auditoria_fornecedor_itens_auditoria_id_fkey"
+            columns: ["auditoria_id"]
+            isOneToOne: false
+            referencedRelation: "auditorias_fornecedores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "auditoria_fornecedor_itens_fornecedor_subcontratado_id_fkey"
+            columns: ["fornecedor_subcontratado_id"]
+            isOneToOne: false
+            referencedRelation: "fornecedores_subcontratados"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "auditoria_fornecedor_itens_projeto_id_fkey"
+            columns: ["projeto_id"]
+            isOneToOne: false
+            referencedRelation: "projetos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      auditorias_fornecedores: {
+        Row: {
+          created_at: string
+          created_by_user_id: number | null
+          data_auditoria: string
+          id: number
+          quantidade_itens: number
+          status: string
+          updated_at: string
+          updated_by_user_id: number | null
+          valor_a_pagar: number
+          valor_pago: number
+          valor_total: number
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id?: number | null
+          data_auditoria: string
+          id?: number
+          quantidade_itens?: number
+          status?: string
+          updated_at?: string
+          updated_by_user_id?: number | null
+          valor_a_pagar?: number
+          valor_pago?: number
+          valor_total?: number
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: number | null
+          data_auditoria?: string
+          id?: number
+          quantidade_itens?: number
+          status?: string
+          updated_at?: string
+          updated_by_user_id?: number | null
+          valor_a_pagar?: number
+          valor_pago?: number
+          valor_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auditorias_fornecedores_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "auditorias_fornecedores_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clientes: {
         Row: {
           active: boolean | null
@@ -731,6 +976,48 @@ export type Database = {
           name?: string | null
           phone?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      fornecedores_subcontratados: {
+        Row: {
+          contato_responsavel: string | null
+          cpf_cnpj: string
+          created_at: string
+          email: string | null
+          id: number
+          nome_fantasia: string | null
+          nome_razao_social: string
+          observacoes: string | null
+          status: string
+          telefone: string | null
+          updated_at: string
+        }
+        Insert: {
+          contato_responsavel?: string | null
+          cpf_cnpj: string
+          created_at?: string
+          email?: string | null
+          id?: number
+          nome_fantasia?: string | null
+          nome_razao_social: string
+          observacoes?: string | null
+          status?: string
+          telefone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contato_responsavel?: string | null
+          cpf_cnpj?: string
+          created_at?: string
+          email?: string | null
+          id?: number
+          nome_fantasia?: string | null
+          nome_razao_social?: string
+          observacoes?: string | null
+          status?: string
+          telefone?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1654,7 +1941,26 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      delete_auditoria_fornecedor: {
+        Args: { p_auditoria_id: number }
+        Returns: undefined
+      }
+      recalc_auditoria_fornecedor: {
+        Args: { p_auditoria_id: number }
+        Returns: undefined
+      }
+      recalc_auditoria_fornecedor_item: {
+        Args: { p_item_id: number }
+        Returns: undefined
+      }
+      save_auditoria_fornecedor: {
+        Args: { p_payload: Json; p_user_id?: number }
+        Returns: Json
+      }
+      sync_auditoria_fornecedor_parcelas_total: {
+        Args: { p_item_id: number }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
