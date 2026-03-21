@@ -196,7 +196,7 @@ export function ContasPagarList() {
   };
 
   const handleDelete = async (conta: any) => {
-    if (conta.titulos_pagos > 0) {
+    if (Number(conta.titulos_pagos) > 0) {
       toast({
         title: "Não é possível excluir",
         description: "Esta conta possui pagamentos efetuados e não pode ser excluída.",
@@ -601,11 +601,11 @@ export function ContasPagarList() {
                   <TableCell className="px-4 py-3.5 align-middle">
                     <div className="flex flex-wrap items-center gap-2">
                       <FinanceActionButton icon={Edit} onClick={() => handleEdit(conta)} title="Editar" tone="brand" />
-                      {conta.titulos_pagos === 0 && (
+                      {Number(conta.titulos_pagos) === 0 && (
                         <FinanceActionButton icon={Trash2} onClick={() => handleDelete(conta)} title="Excluir" tone="danger" />
                       )}
                       <FinanceActionButton icon={CreditCard} onClick={() => handlePayment(conta)} title="Baixar/Pagar" tone="success" />
-                      {conta.titulos_pagos > 0 && (
+                      {Number(conta.titulos_pagos) > 0 && (
                         <FinanceActionButton icon={Undo2} onClick={() => handleReverse(conta)} title="Estornar Pagamento" tone="warning" />
                       )}
                     </div>
