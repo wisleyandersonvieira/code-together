@@ -146,24 +146,28 @@ function ExtratoClienteResults({ filtros, projetos, getEntityName }: ExtratoClie
           ) : (
             <>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[700px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Data de Pagamento</TableHead>
-                      <TableHead>Projeto</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                      <TableHead>Conta Corrente</TableHead>
+                      <TableHead className="w-[110px] whitespace-nowrap">Data Pagamento</TableHead>
+                      <TableHead className="w-[80px]">Documento</TableHead>
+                      <TableHead className="min-w-[120px]">Projeto</TableHead>
+                      <TableHead className="text-right w-[110px]">Valor</TableHead>
+                      <TableHead className="w-[120px]">Conta Corrente</TableHead>
+                      <TableHead className="min-w-[100px]">Observações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {extrato.map((item: any, index: number) => (
                       <TableRow key={index}>
-                        <TableCell>{formatDate(item.data_pagamento)}</TableCell>
-                        <TableCell className="font-medium">{item.projeto_nome || '-'}</TableCell>
-                        <TableCell className="text-right font-mono text-green-600">
+                        <TableCell className="whitespace-nowrap">{formatDate(item.data_pagamento)}</TableCell>
+                        <TableCell className="text-sm">{item.numero_documento || '-'}</TableCell>
+                        <TableCell className="font-medium truncate max-w-[200px]">{item.projeto_nome || '-'}</TableCell>
+                        <TableCell className="text-right font-mono text-green-600 whitespace-nowrap">
                           {formatCurrency(parseFloat(item.valor))}
                         </TableCell>
-                        <TableCell>{item.conta_corrente || '-'}</TableCell>
+                        <TableCell className="truncate max-w-[150px]">{item.conta_corrente || '-'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground truncate max-w-[200px]">{item.observacoes || '-'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
