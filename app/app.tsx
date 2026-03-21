@@ -74,6 +74,7 @@ type TabType =
   | 'relatorio-financeiro-saidas'
   | 'relatorio-financeiro-entradas'
   | 'relatorio-projetos-geral'
+  | 'relatorio-rentabilidade-projeto'
   | 'socios'
   | 'matrizes'
   | 'kanban'
@@ -123,6 +124,7 @@ const routes: Record<TabType, RouteDefinition> = {
   'relatorio-financeiro-saidas': { path: '/relatorios/financeiro-saidas', title: 'Relatorio Financeiro Saidas' },
   'relatorio-financeiro-entradas': { path: '/relatorios/financeiro-entradas', title: 'Relatorio Financeiro Entradas' },
   'relatorio-projetos-geral': { path: '/relatorios/projetos-geral', title: 'Relatorio Projetos Geral' },
+  'relatorio-rentabilidade-projeto': { path: '/relatorios/rentabilidade-projeto', title: 'Rentabilidade do Projeto' },
   socios: { path: '/matriz/socios', title: 'Socios' },
   matrizes: { path: '/matriz/matrizes', title: 'Matrizes' },
   kanban: { path: '/painel', title: 'Painel' },
@@ -171,6 +173,7 @@ const relatorioTabs: TabType[] = [
   'relatorio-financeiro-saidas',
   'relatorio-financeiro-entradas',
   'relatorio-projetos-geral',
+  'relatorio-rentabilidade-projeto',
 ];
 
 const matrizTabs: TabType[] = [
@@ -241,6 +244,7 @@ const RelatorioExtratoCliente = lazy(() => import('@/components/RelatorioExtrato
 const RelatorioFinanceiroSaidas = lazy(() => import('@/components/RelatorioFinanceiroSaidas').then((module) => ({ default: module.RelatorioFinanceiroSaidas })));
 const RelatorioFinanceiroEntradas = lazy(() => import('@/components/RelatorioFinanceiroEntradas').then((module) => ({ default: module.RelatorioFinanceiroEntradas })));
 const RelatorioProjetosGeral = lazy(() => import('@/components/RelatorioProjetosGeral').then((module) => ({ default: module.RelatorioProjetosGeral })));
+const RelatorioRentabilidadeProjeto = lazy(() => import('@/components/RelatorioRentabilidadeProjeto').then((module) => ({ default: module.RelatorioRentabilidadeProjeto })));
 const SociosList = lazy(() => import('@/components/SociosList').then((module) => ({ default: module.SociosList })));
 const MatrizesList = lazy(() => import('@/components/MatrizesList').then((module) => ({ default: module.MatrizesList })));
 const Kanban = lazy(() => import('@/components/Kanban').then((module) => ({ default: module.Kanban })));
@@ -398,6 +402,8 @@ function App() {
         return <RelatorioFinanceiroEntradas />;
       case 'relatorio-projetos-geral':
         return <RelatorioProjetosGeral />;
+      case 'relatorio-rentabilidade-projeto':
+        return <RelatorioRentabilidadeProjeto />;
       case 'socios':
         return <SociosList />;
       case 'matrizes':
@@ -794,6 +800,10 @@ function App() {
                 <DropdownMenuItem onClick={() => navigateTo('relatorio-projetos-geral')}>
                   <BarChart3 className="mr-2 h-4 w-4" />
                   Relatório Projetos Geral
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('relatorio-rentabilidade-projeto')}>
+                  <TrendingUp className="mr-2 h-4 w-4" />
+                  Rentabilidade do Projeto
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
