@@ -192,7 +192,9 @@ const matrizTabs: TabType[] = [
   'export-project',
 ];
 
-function lazyWithRetry<T extends ComponentType<any>>(importer: () => Promise<{ default: T }>) {
+function lazyWithRetry<T extends ComponentType<Record<string, unknown>>>(
+  importer: () => Promise<{ default: T }>,
+) {
   return lazy(async () => {
     try {
       const loadedModule = await importer();
@@ -274,6 +276,17 @@ function LoadingPage() {
   );
 }
 
+function RestrictedAccess() {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-sm">
+      <h2 className="text-lg font-semibold">Acesso restrito</h2>
+      <p className="mt-2 text-sm leading-6">
+        Esta área está disponível apenas para administradores. Volte ao dashboard ou entre com uma conta autorizada.
+      </p>
+    </div>
+  );
+}
+
 function getTabFromLocation() {
   if (typeof window === 'undefined') {
     return 'dashboard' as TabType;
@@ -307,6 +320,7 @@ function App() {
   const isFinanceiroActive = financeiroTabs.includes(activeTab);
   const isRelatorioActive = relatorioTabs.includes(activeTab);
   const isMatrizActive = matrizTabs.includes(activeTab);
+  const isAdmin = currentUser?.role === 'admin';
 
   const navigateTo = (tab: TabType, options?: { replace?: boolean }) => {
     const targetPath = routes[tab].path;
@@ -338,8 +352,10 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'users':
+        if (!isAdmin) return <RestrictedAccess />;
         return <UserList />;
       case 'create-user':
+        if (!isAdmin) return <RestrictedAccess />;
         return (
           <UserForm
             onSuccess={() => navigateTo('users')}
@@ -348,6 +364,7 @@ function App() {
           />
         );
       case 'set-password':
+        if (!isAdmin) return <RestrictedAccess />;
         return <SetPasswordForm />;
       case 'clientes':
         return <ClienteList />;
@@ -692,14 +709,18 @@ function App() {
                   <Truck className="mr-2 h-4 w-4" />
                   Fornecedores
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigateTo('users')}>
-                  <Users className="mr-2 h-4 w-4" />
-                  Usuários
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigateTo('set-password')}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Definir Senha
-                </DropdownMenuItem>
+                {isAdmin ? (
+                  <>
+                    <DropdownMenuItem onClick={() => navigateTo('users')}>
+                      <Users className="mr-2 h-4 w-4" />
+                      Usuários
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigateTo('set-password')}>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Definir Senha
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
                 <DropdownMenuItem onClick={() => navigateTo('contas')}>
                   <CreditCard className="mr-2 h-4 w-4" />
                   Contas

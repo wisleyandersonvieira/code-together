@@ -1,17 +1,24 @@
-import { action } from '@uibakery/data';
+import { directAction } from '@uibakery/data';
+import { supabase } from '@/src/integrations/supabase/client';
 
 function resetPassword() {
-  return action('resetPassword', 'SQL', {
-    databaseName: 'provision',
-    query: `
-      UPDATE users 
-      SET password_hash = '{{params.newPasswordHash}}',
-          password_reset_token = NULL,
-          password_reset_expires = NULL
-      WHERE password_reset_token = '{{params.token}}' 
-        AND password_reset_expires > CURRENT_TIMESTAMP
-      RETURNING id, email;
-    `,
+  return directAction('resetPassword', async (params) => {
+    const token = params?.token as string | undefined;
+    const password = params?.password as string | undefined;
+    if (!token || !password) return [];
+
+    const { data, error } = await supabase.functions.invoke('password-reset', {
+      body: {
+        mode: 'reset',
+        token,
+        password,
+      },
+    });
+
+    if (error) throw new Error(error.message);
+    if (data?.error) throw new Error(data.error);
+
+    return data?.data ?? [];
   });
 }
 

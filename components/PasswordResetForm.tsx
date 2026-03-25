@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input';
 import { useMutateAction } from '@uibakery/data';
 import generatePasswordResetTokenAction from '@/actions/generatePasswordResetToken';
 import resetPasswordAction from '@/actions/resetPassword';
-import { hashPassword } from '@/lib/crypto';
 import { useToast } from '@/hooks/use-toast';
 import {
   AuthShell,
@@ -25,7 +24,7 @@ const emailSchema = z.object({
 });
 
 const resetSchema = z.object({
-  password: z.string().min(6, { message: 'Senha deve ter pelo menos 6 caracteres.' }),
+  password: z.string().min(8, { message: 'Senha deve ter pelo menos 8 caracteres.' }),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Senhas não coincidem.',
@@ -65,31 +64,19 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
 
   async function onSubmitEmail(values: EmailFormData) {
     try {
-      // Gerar token único com entropia criptográfica
-      const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
-      const resetToken = btoa(String.fromCharCode(...tokenBytes)).replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' }[c]!));
-      const expiresAt = new Date(Date.now() + 3600000); // 1 hora
-
       const result = await generateToken({
         email: values.email,
-        token: resetToken,
-        expiresAt: expiresAt.toISOString(),
       });
 
-      if (result && result.length > 0) {
-        // TODO: enviar email com o link de reset em produção
-        
-        setEmailSent(true);
-        toast({
-          description: `Link de recuperação enviado para ${values.email}. Verifique o console para o token (ambiente de desenvolvimento).`,
-        });
-      } else {
-        toast({
-          description: 'Email não encontrado ou usuário inativo.',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
+      const debugToken = result?.[0]?.debugToken as string | undefined;
+
+      setEmailSent(true);
+      toast({
+        description: debugToken
+          ? `Link de recuperação preparado. Token de debug: ${debugToken}`
+          : 'Se o email existir e estiver ativo, o link de recuperação será enviado.',
+      });
+    } catch {
       toast({
         description: 'Erro ao gerar token de recuperação. Tente novamente.',
         variant: 'destructive',
@@ -101,11 +88,9 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
     if (!token) return;
 
     try {
-      const passwordHash = await hashPassword(values.password);
-      
       const result = await resetPassword({
-        token: token,
-        newPasswordHash: passwordHash,
+        token,
+        password: values.password,
       });
 
       if (result && result.length > 0) {
@@ -119,7 +104,7 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
           variant: 'destructive',
         });
       }
-    } catch (error) {
+    } catch {
       toast({
         description: 'Erro ao alterar senha. Tente novamente.',
         variant: 'destructive',

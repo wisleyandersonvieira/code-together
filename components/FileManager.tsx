@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,6 +16,38 @@ interface FileManagerProps {
   entityId: number;
   acceptedTypes?: string;
   title?: string;
+}
+
+interface ManagedFile {
+  id: number;
+  filename: string;
+  content_type: string;
+  file_size: number;
+  created_at: string;
+}
+
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+
+function isAcceptedFileType(file: File, acceptedTypes: string): boolean {
+  const acceptedEntries = acceptedTypes
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (acceptedEntries.length === 0) return true;
+
+  return acceptedEntries.some((entry) => {
+    if (entry.endsWith('/*')) {
+      const category = entry.slice(0, -1);
+      return file.type.startsWith(category);
+    }
+
+    if (entry.startsWith('.')) {
+      return file.name.toLowerCase().endsWith(entry.toLowerCase());
+    }
+
+    return file.type === entry;
+  });
 }
 
 export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pdf,.doc,.docx", title = "Arquivos" }: FileManagerProps) {
@@ -47,14 +78,18 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
 
     for (const file of Array.from(uploadedFiles)) {
       try {
-        console.log('Uploading file:', file.name, 'Size:', file.size, 'Type:', file.type);
-        
-        // Convert file to base64 data URL
+        if (file.size > MAX_FILE_SIZE_BYTES) {
+          throw new Error('O arquivo excede o limite de 10 MB.');
+        }
+
+        if (!isAcceptedFileType(file, acceptedTypes)) {
+          throw new Error('Tipo de arquivo não permitido para este cadastro.');
+        }
+
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve, reject) => {
           reader.onload = () => {
             const result = reader.result as string;
-            // Extract only the base64 part (remove data:type;base64, prefix)
             const base64Data = result.split(',')[1];
             resolve(base64Data);
           };
@@ -63,8 +98,6 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
 
         reader.readAsDataURL(file);
         const base64String = await base64Promise;
-
-        console.log('Base64 string length:', base64String.length);
 
         await uploadFile({
           filename: file.name,
@@ -96,37 +129,25 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
 
   const handleDownload = async (fileId: number, filename: string) => {
     try {
-      console.log('Downloading file:', fileId, filename);
-      
       const result = await getFile({ fileId });
-      console.log('File query result:', result);
-      console.log('Result keys:', result.length > 0 ? Object.keys(result[0]) : 'No results');
       
       if (result.length === 0) {
         throw new Error('File not found');
       }
 
       const fileData = result[0];
-      console.log('File data object:', fileData);
-      console.log('File data length from query:', fileData.data_length);
-      console.log('File data type:', typeof fileData.file_data);
-      console.log('File data length:', fileData.file_data?.length);
       
       if (!fileData.file_data) {
         throw new Error('File data is empty or null');
       }
 
-      // Handle different data formats
       let base64Data: string;
       if (fileData.file_data.startsWith('data:')) {
-        // If it's already a data URL, extract base64 part
         base64Data = fileData.file_data.split(',')[1];
       } else {
-        // If it's just base64 string
         base64Data = fileData.file_data;
       }
 
-      // Convert base64 to blob
       try {
         const binaryString = atob(base64Data);
         const bytes = new Uint8Array(binaryString.length);
@@ -214,8 +235,6 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
     );
   }
 
-  console.log('Files loaded:', files);
-
   return (
     <div className="file-manager-content space-y-4">
       <div className="flex items-center justify-between">
@@ -249,7 +268,7 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {files.map((file: any) => (
+          {files.map((file: ManagedFile) => (
             <Card key={file.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-4">
                 <div className="flex flex-col space-y-3">

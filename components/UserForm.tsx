@@ -87,18 +87,18 @@ export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: Use
           description: 'Usuário atualizado com sucesso!',
         });
       } else {
-        const hasPassword = values.password && values.password.length > 0;
+        const hasPassword = isAdminView && values.password && values.password.length > 0;
         
         if (hasPassword) {
           const passwordHash = await hashPassword(values.password!);
-          
+
           await createUserWithPassword({
             name: values.name,
             email: values.email,
             phone: values.phone || null,
             role: values.role,
             status: values.status,
-            passwordHash: passwordHash,
+            passwordHash,
           });
         } else {
           const userData = {
@@ -118,7 +118,7 @@ export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: Use
       }
       form.reset();
       onSuccess();
-    } catch (error) {
+    } catch {
       toast({
         description: 'Erro ao salvar usuário. Tente novamente.',
         variant: 'destructive',
@@ -232,7 +232,7 @@ export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: Use
               />
             )}
 
-            {!user && (
+            {!user && isAdminView && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField

@@ -9,8 +9,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { useMutateAction } from '@uibakery/data';
 import authenticateUserAction from '@/actions/authenticateUser';
-import updateLastLoginAction from '@/actions/updateLastLogin';
-import { verifyPassword } from '@/lib/crypto';
 import { useToast } from '@/hooks/use-toast';
 import { PasswordResetForm } from './PasswordResetForm';
 import {
@@ -36,9 +34,13 @@ interface LoginFormProps {
 
 export function LoginForm({ onLogin }: LoginFormProps) {
   const { toast } = useToast();
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const initialResetToken =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('reset_token')
+      : null;
+  const [resetToken, setResetToken] = useState<string | null>(initialResetToken);
+  const [showPasswordReset, setShowPasswordReset] = useState(Boolean(initialResetToken));
   const [authenticateUser, isAuthenticating] = useMutateAction(authenticateUserAction);
-  const [updateLastLogin] = useMutateAction(updateLastLoginAction);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -50,43 +52,45 @@ export function LoginForm({ onLogin }: LoginFormProps) {
 
   async function onSubmit(values: FormData) {
     try {
-      const users = await authenticateUser({ email: values.email });
+      const users = await authenticateUser({
+        email: values.email,
+        password: values.password,
+      });
 
       if (users && users.length > 0) {
         const user = users[0];
-
-        const passwordOk = await verifyPassword(values.password, user.password_hash ?? '');
-
-        if (passwordOk) {
-          await updateLastLogin({ userId: user.id });
-          toast({ description: 'Login realizado com sucesso!' });
-          onLogin(user);
-        } else if (!user.password_hash) {
-          toast({
-            description: 'Usuário não possui senha cadastrada. Entre em contato com o administrador.',
-            variant: 'destructive',
-          });
-        } else {
-          toast({ description: 'Senha incorreta.', variant: 'destructive' });
-        }
+        toast({ description: 'Login realizado com sucesso!' });
+        onLogin(user);
       } else {
         toast({
-          description: 'Email não encontrado ou usuário inativo.',
+          description: 'Email ou senha inválidos.',
           variant: 'destructive',
         });
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
       toast({
-        description: `Erro ao fazer login: ${(error as any)?.message || 'Erro desconhecido'}`,
+        description: `Erro ao fazer login: ${message}`,
         variant: 'destructive',
       });
     }
   }
 
   if (showPasswordReset) {
+    const handleCancelReset = () => {
+      if (typeof window !== 'undefined' && resetToken) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('reset_token');
+        window.history.replaceState(window.history.state, '', url.toString());
+      }
+      setResetToken(null);
+      setShowPasswordReset(false);
+    };
+
     return (
-      <PasswordResetForm 
-        onCancel={() => setShowPasswordReset(false)}
+      <PasswordResetForm
+        token={resetToken ?? undefined}
+        onCancel={handleCancelReset}
       />
     );
   }
@@ -145,13 +149,16 @@ export function LoginForm({ onLogin }: LoginFormProps) {
             </Button>
 
             <div className="flex justify-center pt-1">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setShowPasswordReset(true)}
-                className={authGhostButtonClassName}
-              >
-                Esqueci minha senha
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setResetToken(null);
+                    setShowPasswordReset(true);
+                  }}
+                  className={authGhostButtonClassName}
+                >
+                  Esqueci minha senha
               </Button>
             </div>
           </form>
