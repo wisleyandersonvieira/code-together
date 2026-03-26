@@ -165,14 +165,18 @@ export function exportToPDF(
     doc.circle(cx, cy, inner, 'FD');
   };
 
-  const drawSectionTitle = (eyebrow: string, title: string) => {
+  const drawSectionTitle = (eyebrow: string, title: string, show: 'both' | 'eyebrow' | 'title' = 'both') => {
     ensureSpace(16);
-    st(C.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text(eyebrow.toUpperCase(), marginX, y);
-    y += 4;
-    st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-    doc.text(title, marginX, y);
-    y += 4.5;
+    if (show !== 'title' && eyebrow) {
+      st(C.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text(eyebrow.toUpperCase(), marginX, y);
+      y += 4;
+    }
+    if (show !== 'eyebrow' && title) {
+      st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+      doc.text(title, marginX, y);
+      y += 4.5;
+    }
     sd(C.border); doc.setLineWidth(0.35);
     doc.line(marginX, y, pageWidth - marginX, y);
     y += 6;
@@ -202,7 +206,7 @@ export function exportToPDF(
   };
 
   const drawInfoBlock = () => {
-    drawSectionTitle('Identificação', 'Dados do Relatório');
+    drawSectionTitle('Identificação', '', 'eyebrow');
     const labels: { label: string; value: string }[] = [];
     if (projetoInfo?.name) labels.push({ label: 'Projeto', value: projetoInfo.name });
     if (filtros?.situacaoPagamento) labels.push({ label: 'Situação', value: filtros.situacaoPagamento });
@@ -240,7 +244,7 @@ export function exportToPDF(
   };
 
   const drawIndicatorCards = () => {
-    drawSectionTitle('Resumo Financeiro', 'Painel de Indicadores');
+    drawSectionTitle('Resumo Financeiro', '', 'eyebrow');
     type Tone = 'default' | 'positive' | 'highlight' | 'accent' | 'negative';
     const cards: { label: string; value: string; tone: Tone }[] = [
       { label: 'Total Receitas',    value: formatCurrency(totalReceitas),  tone: 'positive' },
@@ -277,7 +281,7 @@ export function exportToPDF(
   };
 
   const drawExtratoTable = () => {
-    drawSectionTitle('Detalhamento', 'Extrato Unificado');
+    drawSectionTitle('Detalhamento', '', 'eyebrow');
     const extratoUnificado = [
       ...despesasData.map(item => ({ ...item, tipo: 'despesa' as const })),
       ...receitasData.map(item => ({ ...item, tipo: 'receita' as const })),
@@ -384,16 +388,16 @@ export function exportToPDF(
 
   const drawOrcamentoSection = () => {
     if (!orcamentoData || orcamentoData.length === 0) return;
-    drawSectionTitle('Orçamento', 'Evolução do Orçamento');
+    drawSectionTitle('', 'Evolução do Orçamento', 'title');
 
     const columns = [
-      { label: 'Descrição',     width: 52, align: 'left'   as const },
+      { label: 'Descrição',     width: 39, align: 'left'   as const },
       { label: 'Data Prevista', width: 22, align: 'center' as const },
       { label: 'Valor Orçado',  width: 27, align: 'right'  as const },
       { label: 'Realizado',     width: 27, align: 'right'  as const },
       { label: 'Saldo',         width: 25, align: 'right'  as const },
       { label: 'Progresso',     width: 17, align: 'center' as const },
-      { label: 'Status',        width: 12, align: 'center' as const },
+      { label: 'Status',        width: 25, align: 'center' as const },
     ];
     const colX: number[] = [];
     let rx = marginX; columns.forEach(c => { colX.push(rx); rx += c.width; });
@@ -459,16 +463,16 @@ export function exportToPDF(
 
   const drawAportesSection = () => {
     if (!aportesData || aportesData.length === 0) return;
-    drawSectionTitle('Aportes', 'Evolução dos Aportes');
+    drawSectionTitle('', 'Evolução dos Aportes', 'title');
 
+    // Columns: no "Tipo"
     const columns = [
-      { label: 'Membro',        width: 46, align: 'left'   as const },
-      { label: 'Tipo',          width: 16, align: 'center' as const },
-      { label: 'Data Previsão', width: 22, align: 'center' as const },
-      { label: 'Previsto',      width: 26, align: 'right'  as const },
-      { label: 'Realizado',     width: 26, align: 'right'  as const },
+      { label: 'Membro',        width: 58, align: 'left'   as const },
+      { label: 'Data Previsão', width: 24, align: 'center' as const },
+      { label: 'Previsto',      width: 28, align: 'right'  as const },
+      { label: 'Realizado',     width: 28, align: 'right'  as const },
       { label: 'Saldo',         width: 24, align: 'right'  as const },
-      { label: 'Progresso',     width: 17, align: 'center' as const },
+      { label: 'Progresso',     width: 15, align: 'center' as const },
       { label: 'Status',        width: 5,  align: 'center' as const },
     ];
     const colX: number[] = [];
@@ -486,51 +490,84 @@ export function exportToPDF(
     };
     drawAportHeader();
 
-    let totalPrevisto = 0, totalRealizadoAp = 0;
-    aportesData.forEach((item, index) => {
-      const memLines = doc.splitTextToSize(String(item.membro_nome || ''), columns[0].width - 4);
-      const rowH = Math.max(7, memLines.length * 4 + 4);
-      if (y + rowH > pageHeight - bottomReserve) { addPage(); drawAportHeader(); }
-
-      const vPrev = Math.abs(Number(item.valor_previsto) || 0);
-      const vReal = Math.abs(Number(item.valor_realizado) || 0);
-      const saldo = vPrev - vReal;
-      const pct = vPrev > 0 ? (vReal / vPrev * 100) : 0;
-      totalPrevisto += vPrev; totalRealizadoAp += vReal;
-
-      sf(index % 2 === 0 ? C.light : C.white); doc.rect(marginX, y, contentWidth, rowH, 'F');
-      sd(C.border); doc.setLineWidth(0.15); doc.line(marginX, y + rowH, pageWidth - marginX, y + rowH);
-
-      const ty = y + 5;
-      st(C.graphite); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-      doc.text(memLines, colX[0] + 2, ty);
-      doc.text(String(item.membro_tipo || ''), colX[1] + columns[1].width / 2, ty, { align: 'center' });
-      doc.text(item.data_previsao ? fmtDate(item.data_previsao) : '-', colX[2] + columns[2].width / 2, ty, { align: 'center' });
-      st(C.navy); doc.setFont('helvetica', 'bold');
-      doc.text(formatCurrency(vPrev), colX[3] + columns[3].width - 2, ty, { align: 'right' });
-      st(C.green);
-      doc.text(formatCurrency(vReal), colX[4] + columns[4].width - 2, ty, { align: 'right' });
-      st(saldo >= 0 ? C.blue : C.rose);
-      doc.text(formatCurrency(saldo), colX[5] + columns[5].width - 2, ty, { align: 'right' });
-      st(C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-      doc.text(`${pct.toFixed(0)}%`, colX[6] + columns[6].width / 2, ty, { align: 'center' });
-      const status = String(item.status || 'PENDENTE');
-      st(status === 'CONCLUÍDO' ? C.green : status === 'EM ANDAMENTO' ? C.gold : C.slate); doc.setFontSize(6.5);
-      doc.text(status.substring(0, 3), colX[7] + columns[7].width / 2, ty, { align: 'center' });
-      y += rowH;
+    // Group by membro_nome (preserve insertion order)
+    const groups = new Map<string, any[]>();
+    (aportesData || []).forEach(item => {
+      const key = String(item.membro_nome || '');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(item);
     });
 
+    const multipleMembers = groups.size > 1;
+    let totalPrevisto = 0, totalRealizadoAp = 0;
+    let globalRowIndex = 0;
+
+    groups.forEach((items, membroNome) => {
+      let groupPrevisto = 0, groupRealizado = 0;
+
+      items.forEach((item) => {
+        const rowH = 7;
+        if (y + rowH > pageHeight - bottomReserve) { addPage(); drawAportHeader(); }
+
+        const vPrev = Math.abs(Number(item.valor_previsto) || 0);
+        const vReal = Math.abs(Number(item.valor_realizado) || 0);
+        const saldo = vPrev - vReal;
+        const pct = vPrev > 0 ? (vReal / vPrev * 100) : 0;
+        groupPrevisto += vPrev; groupRealizado += vReal;
+        totalPrevisto += vPrev; totalRealizadoAp += vReal;
+
+        sf(globalRowIndex % 2 === 0 ? C.light : C.white); doc.rect(marginX, y, contentWidth, rowH, 'F');
+        sd(C.border); doc.setLineWidth(0.15); doc.line(marginX, y + rowH, pageWidth - marginX, y + rowH);
+        globalRowIndex++;
+
+        const ty = y + 5;
+        st(C.graphite); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+        doc.text(doc.splitTextToSize(membroNome, columns[0].width - 4), colX[0] + 2, ty);
+        doc.text(item.data_previsao ? fmtDate(item.data_previsao) : '-', colX[1] + columns[1].width / 2, ty, { align: 'center' });
+        st(C.navy); doc.setFont('helvetica', 'bold');
+        doc.text(formatCurrency(vPrev), colX[2] + columns[2].width - 2, ty, { align: 'right' });
+        st(C.green);
+        doc.text(formatCurrency(vReal), colX[3] + columns[3].width - 2, ty, { align: 'right' });
+        st(saldo >= 0 ? C.blue : C.rose);
+        doc.text(formatCurrency(saldo), colX[4] + columns[4].width - 2, ty, { align: 'right' });
+        st(C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        doc.text(`${pct.toFixed(0)}%`, colX[5] + columns[5].width / 2, ty, { align: 'center' });
+        const status = String(item.status || 'PENDENTE');
+        st(status === 'CONCLUÍDO' ? C.green : status === 'EM ANDAMENTO' ? C.gold : C.slate); doc.setFontSize(6.5);
+        doc.text(status.substring(0, 3), colX[6] + columns[6].width / 2, ty, { align: 'center' });
+        y += rowH;
+      });
+
+      // Subtotal per member (only when multiple members)
+      if (multipleMembers) {
+        ensureSpace(10);
+        sf(C.navySoft); sd(C.border); doc.setLineWidth(0.2);
+        doc.rect(marginX, y, contentWidth, 9, 'FD');
+        st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+        const truncName = membroNome.length > 28 ? membroNome.substring(0, 26) + '..' : membroNome;
+        doc.text(`Subtotal — ${truncName}`, colX[0] + 2, y + 6);
+        doc.text(formatCurrency(groupPrevisto), colX[2] + columns[2].width - 2, y + 6, { align: 'right' });
+        st(C.green);
+        doc.text(formatCurrency(groupRealizado), colX[3] + columns[3].width - 2, y + 6, { align: 'right' });
+        const gSaldo = groupPrevisto - groupRealizado;
+        st(gSaldo >= 0 ? C.blue : C.rose);
+        doc.text(formatCurrency(gSaldo), colX[4] + columns[4].width - 2, y + 6, { align: 'right' });
+        y += 12;
+      }
+    });
+
+    // Grand total
     y += 3; ensureSpace(16);
     sf(C.navySoft); sd(C.border); doc.rect(marginX, y, contentWidth, 14, 'FD');
     st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
-    doc.text('Total Previsto:', colX[3] + columns[3].width - 2, y + 6, { align: 'right' });
-    doc.text(formatCurrency(totalPrevisto), colX[3] + columns[3].width - 2, y + 11, { align: 'right' });
+    doc.text('Total Previsto:', colX[2] + columns[2].width - 2, y + 6, { align: 'right' });
+    doc.text(formatCurrency(totalPrevisto), colX[2] + columns[2].width - 2, y + 11, { align: 'right' });
     st(C.green);
-    doc.text('Realizado:', colX[4] + columns[4].width - 2, y + 6, { align: 'right' });
-    doc.text(formatCurrency(totalRealizadoAp), colX[4] + columns[4].width - 2, y + 11, { align: 'right' });
+    doc.text('Realizado:', colX[3] + columns[3].width - 2, y + 6, { align: 'right' });
+    doc.text(formatCurrency(totalRealizadoAp), colX[3] + columns[3].width - 2, y + 11, { align: 'right' });
     st((totalPrevisto - totalRealizadoAp) >= 0 ? C.blue : C.rose);
-    doc.text('Saldo:', colX[5] + columns[5].width - 2, y + 6, { align: 'right' });
-    doc.text(formatCurrency(totalPrevisto - totalRealizadoAp), colX[5] + columns[5].width - 2, y + 11, { align: 'right' });
+    doc.text('Saldo:', colX[4] + columns[4].width - 2, y + 6, { align: 'right' });
+    doc.text(formatCurrency(totalPrevisto - totalRealizadoAp), colX[4] + columns[4].width - 2, y + 11, { align: 'right' });
     y += 18;
   };
 
