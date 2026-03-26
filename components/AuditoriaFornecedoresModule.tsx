@@ -178,10 +178,6 @@ function ParcelasDialog({
           return parcela;
         }
 
-        if (parcela.status === 'PAGO' && !checked) {
-          return parcela;
-        }
-
         return {
           ...parcela,
           status: checked ? 'PAGO' : 'PENDENTE',
@@ -328,7 +324,6 @@ function ParcelasDialog({
                             type="checkbox"
                             checked={parcela.status === 'PAGO'}
                             onChange={(event) => handleToggle(index, event.target.checked)}
-                            disabled={parcela.status === 'PAGO'}
                           />
                         ) : null}
                       </div>
@@ -464,7 +459,7 @@ function AnexosViewDialog({ files }: { files: AuditoriaItemAttachment[] }) {
           {files.length > 0 ? `${files.length} anexo${files.length !== 1 ? 's' : ''}` : 'Anexos'}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Anexos do item</DialogTitle>
         </DialogHeader>
@@ -518,7 +513,7 @@ function AnexosEditDialog({
           {totalFiles > 0 ? <span className="ml-1">{totalFiles}</span> : null}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Anexos do item</DialogTitle>
         </DialogHeader>
@@ -999,14 +994,16 @@ function AuditoriaFornecedorEditor({
                     {readOnly ? (
                       <span>{formatDateForDisplay(item.data_emissao)}</span>
                     ) : (
-                      <DatePickerWithYearSelector
-                        date={item.data_emissao ? parseLocalDate(item.data_emissao) : undefined}
-                        onDateChange={(date) =>
+                      <Input
+                        type="date"
+                        value={item.data_emissao || ''}
+                        onChange={(e) =>
                           updateItem(item.client_key, (current) => ({
                             ...current,
-                            data_emissao: date ? formatDateForDatabase(date) : '',
+                            data_emissao: e.target.value,
                           }))
                         }
+                        className="h-9 w-36 rounded-xl border-slate-200"
                       />
                     )}
                   </TableCell>
