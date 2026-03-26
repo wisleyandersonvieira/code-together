@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import {
+  Download,
   Edit,
   Eye,
+  FileBarChart2,
+  FileText,
   History,
+  Paperclip,
   Plus,
   Receipt,
   Trash2,
@@ -18,6 +22,7 @@ import loadAuditoriasFornecedoresAction from '@/actions/loadAuditoriasFornecedor
 import loadFornecedoresSubcontratadosAction from '@/actions/loadFornecedoresSubcontratados';
 import loadProjetosAction from '@/actions/loadProjetos';
 import saveAuditoriaFornecedorAction from '@/actions/saveAuditoriaFornecedor';
+import getFileAction from '@/actions/getFile';
 import uploadFileAction from '@/actions/uploadFile';
 import { AuditoriaItemAttachments } from '@/components/AuditoriaItemAttachments';
 import { FinanceActionButton, FinanceStatusBadge, ListingEmptyState, ListingFilterCard, ListingPageHeader, ListingTableCard, listingFilterFieldClassName, listingPrimaryButtonClassName, listingSecondaryButtonClassName, listingTableCellClassName, listingTableHeadClassName } from '@/components/finance/listing-ui';
@@ -49,6 +54,7 @@ import {
   formatDateForInput,
   formatStatusLabel,
   getStatusTone,
+  roundCurrency,
   splitParcelas,
   type AuditoriaFormData,
   type AuditoriaHistoricoPagamento,
@@ -141,8 +147,27 @@ function ParcelasDialog({
   const [open, setOpen] = useState(false);
   const [draftParcelas, setDraftParcelas] = useState<AuditoriaParcelaForm[]>(item.parcelas_detalhes);
 
+  // Track which parcela numbers were already paid when dialog opened
+  const [originalPaidNums] = useState<Set<number>>(
+    () => new Set(item.parcelas_detalhes.filter((p) => p.status === 'PAGO').map((p) => p.numero_parcela)),
+  );
+
+  // Track custom paid amounts per parcela index
+  const [valorPagoMap, setValorPagoMap] = useState<Record<number, number>>(() => {
+    const map: Record<number, number> = {};
+    item.parcelas_detalhes.forEach((p, i) => {
+      map[i] = p.valor_parcela;
+    });
+    return map;
+  });
+
   useEffect(() => {
     setDraftParcelas(item.parcelas_detalhes);
+    const map: Record<number, number> = {};
+    item.parcelas_detalhes.forEach((p, i) => {
+      map[i] = p.valor_parcela;
+    });
+    setValorPagoMap(map);
   }, [item]);
 
   const handleToggle = (index: number, checked: boolean) => {
@@ -163,6 +188,12 @@ function ParcelasDialog({
         };
       }),
     );
+    if (checked) {
+      setValorPagoMap((current) => ({
+        ...current,
+        [index]: current[index] ?? draftParcelas[index]?.valor_parcela ?? 0,
+      }));
+    }
   };
 
   const handleDateChange = (index: number, date?: Date) => {
@@ -177,6 +208,36 @@ function ParcelasDialog({
           : parcela,
       ),
     );
+  };
+
+  const handleSave = () => {
+    const processedParcelas: AuditoriaParcelaForm[] = [];
+    let nextNum = 1;
+
+    for (let i = 0; i < draftParcelas.length; i++) {
+      const parcela = draftParcelas[i];
+      const isNewlyPaid = parcela.status === 'PAGO' && !originalPaidNums.has(parcela.numero_parcela);
+
+      if (isNewlyPaid) {
+        const valorPago = roundCurrency(valorPagoMap[i] ?? parcela.valor_parcela);
+        const valorOriginal = roundCurrency(parcela.valor_parcela);
+
+        if (valorPago > 0 && valorPago < valorOriginal) {
+          // Partial payment: mark this parcela with paid amount, create new pending for the remainder
+          const remainder = roundCurrency(valorOriginal - valorPago);
+          processedParcelas.push({ ...parcela, numero_parcela: nextNum++, valor_parcela: valorPago });
+          processedParcelas.push({ numero_parcela: nextNum++, valor_parcela: remainder, status: 'PENDENTE', data_pagamento: null, observacao: null });
+        } else {
+          // Full or over-payment: use the informed value (or original if zero)
+          processedParcelas.push({ ...parcela, numero_parcela: nextNum++, valor_parcela: valorPago > 0 ? valorPago : valorOriginal });
+        }
+      } else {
+        processedParcelas.push({ ...parcela, numero_parcela: nextNum++ });
+      }
+    }
+
+    onSave(processedParcelas);
+    setOpen(false);
   };
 
   const canSave = draftParcelas.every((parcela) => parcela.status !== 'PAGO' || !!parcela.data_pagamento);
@@ -224,38 +285,55 @@ function ParcelasDialog({
               <TableRow>
                 <TableHead>Parcela</TableHead>
                 <TableHead>Valor</TableHead>
+                {!readOnly && <TableHead>Valor pago</TableHead>}
                 <TableHead>Status</TableHead>
                 <TableHead>Data de pagamento</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {draftParcelas.map((parcela, index) => (
-                <TableRow key={parcela.id || parcela.numero_parcela}>
-                  <TableCell className="font-medium text-slate-900">Parcela {parcela.numero_parcela}</TableCell>
-                  <TableCell>{parcela.valor_parcela.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <FinanceStatusBadge label={formatStatusLabel(parcela.status)} tone={getStatusTone(parcela.status)} />
-                      {!readOnly ? (
-                        <input
-                          type="checkbox"
-                          checked={parcela.status === 'PAGO'}
-                          onChange={(event) => handleToggle(index, event.target.checked)}
-                          disabled={parcela.status === 'PAGO'}
-                        />
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <DatePickerWithYearSelector
-                      date={parcela.data_pagamento ? parseLocalDate(parcela.data_pagamento) : undefined}
-                      onDateChange={(date) => handleDateChange(index, date)}
-                      disabled={readOnly || parcela.status !== 'PAGO'}
-                      triggerClassName="h-10"
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {draftParcelas.map((parcela, index) => {
+                const isNewlyPaid = parcela.status === 'PAGO' && !originalPaidNums.has(parcela.numero_parcela);
+                return (
+                  <TableRow key={parcela.id || parcela.numero_parcela}>
+                    <TableCell className="font-medium text-slate-900">Parcela {parcela.numero_parcela}</TableCell>
+                    <TableCell>{parcela.valor_parcela.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                    {!readOnly && (
+                      <TableCell>
+                        {isNewlyPaid ? (
+                          <CurrencyInput
+                            value={valorPagoMap[index] ?? parcela.valor_parcela}
+                            onValueChange={(value) => setValorPagoMap((current) => ({ ...current, [index]: value }))}
+                            className="h-9 w-36 rounded-xl border-slate-200"
+                          />
+                        ) : (
+                          <span className="text-sm text-slate-400">-</span>
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <FinanceStatusBadge label={formatStatusLabel(parcela.status)} tone={getStatusTone(parcela.status)} />
+                        {!readOnly ? (
+                          <input
+                            type="checkbox"
+                            checked={parcela.status === 'PAGO'}
+                            onChange={(event) => handleToggle(index, event.target.checked)}
+                            disabled={parcela.status === 'PAGO'}
+                          />
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <DatePickerWithYearSelector
+                        date={parcela.data_pagamento ? parseLocalDate(parcela.data_pagamento) : undefined}
+                        onDateChange={(date) => handleDateChange(index, date)}
+                        disabled={readOnly || parcela.status !== 'PAGO'}
+                        triggerClassName="h-10"
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -269,10 +347,7 @@ function ParcelasDialog({
               type="button"
               className="rounded-xl bg-slate-900 hover:bg-slate-800"
               disabled={!canSave}
-              onClick={() => {
-                onSave(draftParcelas);
-                setOpen(false);
-              }}
+              onClick={handleSave}
             >
               Aplicar pagamentos
             </Button>
@@ -335,6 +410,186 @@ function HistoricoDialog({ item }: { item: AuditoriaItemForm }) {
             </TableBody>
           </Table>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AnexosViewDialog({ files }: { files: AuditoriaItemAttachment[] }) {
+  const { toast } = useToast();
+  const [getFile] = useMutateAction(getFileAction);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+
+  const handleDownload = async (fileId: number, filename: string) => {
+    try {
+      setDownloadingId(fileId);
+      const result = await getFile({ fileId });
+      const fileData = result?.[0];
+      if (!fileData?.file_data) throw new Error('Arquivo não encontrado');
+      const base64Data = fileData.file_data.startsWith('data:') ? fileData.file_data.split(',')[1] : fileData.file_data;
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+      const blob = new Blob([bytes], { type: fileData.content_type || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ description: `Não foi possível baixar ${filename}.`, variant: 'destructive' });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" className="h-8 rounded-lg border-slate-200 px-2.5 text-xs">
+          <Paperclip className="mr-1.5 h-3.5 w-3.5" />
+          {files.length > 0 ? `${files.length} anexo${files.length !== 1 ? 's' : ''}` : 'Anexos'}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Anexos do item</DialogTitle>
+        </DialogHeader>
+        {files.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-500">Nenhum anexo cadastrado.</p>
+        ) : (
+          <div className="space-y-2">
+            {files.map((file) => (
+              <div key={file.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <FileText className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="truncate text-sm text-slate-700">{file.filename}</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={downloadingId === file.id}
+                  onClick={() => file.id && handleDownload(file.id, file.filename)}
+                  className="ml-2 h-8 shrink-0 rounded-lg border-slate-200 px-2.5 text-xs"
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  {downloadingId === file.id ? 'Baixando...' : 'Baixar'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RelatorioContent({ auditoriaId }: { auditoriaId: number }) {
+  const { formatCurrency } = useCurrency();
+  const [auditoriaResponse, loading] = useLoadAction(loadAuditoriaFornecedorByIdAction, [], { id: auditoriaId });
+  const auditoria = auditoriaResponse?.[0] ? normalizeAuditoriaPayload(auditoriaResponse[0]) : null;
+
+  if (loading) {
+    return <div className="py-8 text-center text-sm text-slate-500">Carregando...</div>;
+  }
+
+  if (!auditoria) {
+    return <div className="py-8 text-center text-sm text-slate-500">Nenhuma informação encontrada.</div>;
+  }
+
+  const totals = calculateAuditoriaTotals(auditoria.items);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+        <div>
+          <p className="text-xs text-slate-500">Data da auditoria</p>
+          <p className="font-medium text-slate-900">{formatDateForDisplay(auditoria.data_auditoria)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500">Status</p>
+          <div className="mt-1">
+            <FinanceStatusBadge label={formatStatusLabel(auditoria.status)} tone={getStatusTone(auditoria.status)} />
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-slate-500">Total de itens</p>
+          <p className="font-medium text-slate-900">{auditoria.quantidade_itens}</p>
+        </div>
+      </div>
+
+      <div className={financeDetailTableWrapClassName}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fornecedor</TableHead>
+              <TableHead>Projeto</TableHead>
+              <TableHead>Valor Total</TableHead>
+              <TableHead>Valor Pago</TableHead>
+              <TableHead>Valor Pendente</TableHead>
+              <TableHead>Último Pagamento</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {auditoria.items.map((item) => {
+              const lastPayment = item.parcelas_detalhes
+                .filter((p) => p.status === 'PAGO' && p.data_pagamento)
+                .sort((a, b) => (a.data_pagamento! > b.data_pagamento! ? -1 : 1))[0];
+              return (
+                <TableRow key={item.client_key}>
+                  <TableCell className="font-medium text-slate-900">{item.fornecedor_nome || '-'}</TableCell>
+                  <TableCell>{item.projeto_nome || '-'}</TableCell>
+                  <TableCell>{formatCurrency(item.valor_total)}</TableCell>
+                  <TableCell className="text-emerald-600">{formatCurrency(item.valor_pago)}</TableCell>
+                  <TableCell>{formatCurrency(item.valor_a_pagar)}</TableCell>
+                  <TableCell>{lastPayment?.data_pagamento ? formatDateForDisplay(lastPayment.data_pagamento) : '-'}</TableCell>
+                  <TableCell>
+                    <FinanceStatusBadge label={formatStatusLabel(item.status_pagamento)} tone={getStatusTone(item.status_pagamento)} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+          <tfoot>
+            <TableRow className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+              <TableCell colSpan={2} className="text-slate-700">Total geral</TableCell>
+              <TableCell className="text-slate-900">{formatCurrency(totals.valor_total)}</TableCell>
+              <TableCell className="text-emerald-600">{formatCurrency(totals.valor_pago)}</TableCell>
+              <TableCell className="text-slate-900">{formatCurrency(totals.valor_a_pagar)}</TableCell>
+              <TableCell colSpan={2} />
+            </TableRow>
+          </tfoot>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function AuditoriaRelatorioDialog({ auditoriaId }: { auditoriaId: number }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="ghost" size="icon" title="Relatório" className="h-8 w-8 rounded-lg border border-slate-200 p-0 text-slate-600 hover:bg-slate-50">
+          <FileBarChart2 className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogHeader>
+          <div className="flex items-center justify-between pr-8">
+            <DialogTitle>Relatório — Auditoria #{auditoriaId}</DialogTitle>
+            <Button type="button" size="sm" variant="outline" onClick={() => window.print()} className="rounded-lg">
+              Imprimir
+            </Button>
+          </div>
+        </DialogHeader>
+        {open && <RelatorioContent auditoriaId={auditoriaId} />}
       </DialogContent>
     </Dialog>
   );
@@ -668,7 +923,7 @@ function AuditoriaFornecedorEditor({
             <TableBody>
               {readyState.items.map((item) => (
                 <TableRow key={item.client_key} className="align-top">
-                  <TableCell className="min-w-[220px]">
+                  <TableCell className="min-w-[160px]">
                     {readOnly ? (
                       <div className="space-y-1">
                         <p className="font-medium text-slate-900">{item.fornecedor_nome || '-'}</p>
@@ -703,7 +958,7 @@ function AuditoriaFornecedorEditor({
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="min-w-[180px]">
+                  <TableCell className="min-w-[130px]">
                     {readOnly ? (
                       <span>{formatDateForDisplay(item.data_emissao)}</span>
                     ) : (
@@ -718,13 +973,9 @@ function AuditoriaFornecedorEditor({
                       />
                     )}
                   </TableCell>
-                  <TableCell className="min-w-[170px]">
+                  <TableCell className="min-w-[120px]">
                     {readOnly ? (
-                      <div className="space-y-1">
-                        <p className="font-medium text-slate-900">{formatCurrency(item.valor_total)}</p>
-                        <p className="text-xs text-emerald-600">Pago: {formatCurrency(item.valor_pago)}</p>
-                        <p className="text-xs text-slate-500">A pagar: {formatCurrency(item.valor_a_pagar)}</p>
-                      </div>
+                      <p className="font-medium text-slate-900">{formatCurrency(item.valor_total)}</p>
                     ) : (
                       <CurrencyInput
                         value={item.valor_total}
@@ -733,7 +984,7 @@ function AuditoriaFornecedorEditor({
                       />
                     )}
                   </TableCell>
-                  <TableCell className="min-w-[140px]">
+                  <TableCell className="min-w-[80px]">
                     {readOnly ? (
                       <span>{item.parcelas}</span>
                     ) : (
@@ -746,7 +997,7 @@ function AuditoriaFornecedorEditor({
                       />
                     )}
                   </TableCell>
-                  <TableCell className="min-w-[220px]">
+                  <TableCell className="min-w-[150px]">
                     {readOnly ? (
                       <span>{item.projeto_nome || '-'}</span>
                     ) : (
@@ -765,7 +1016,7 @@ function AuditoriaFornecedorEditor({
                       />
                     )}
                   </TableCell>
-                  <TableCell className="min-w-[220px]">
+                  <TableCell className="min-w-[160px]">
                     <div className="space-y-2">
                       <FinanceStatusBadge label={formatStatusLabel(item.status_pagamento)} tone={getStatusTone(item.status_pagamento)} />
                       <div className="text-xs text-slate-500">
@@ -779,37 +1030,41 @@ function AuditoriaFornecedorEditor({
                       />
                     </div>
                   </TableCell>
-                  <TableCell className="min-w-[250px]">
-                    <AuditoriaItemAttachments
-                      itemId={item.id}
-                      files={item.anexos}
-                      pendingFiles={item.pendingFiles}
-                      readOnly={readOnly}
-                      onPendingFilesChange={(pendingFiles) =>
-                        updateItem(item.client_key, (current) => ({
-                          ...current,
-                          pendingFiles,
-                        }))
-                      }
-                      onUploadedFile={(file) =>
-                        updateItem(item.client_key, (current) => ({
-                          ...current,
-                          anexos: [file, ...current.anexos],
-                        }))
-                      }
-                      onDeletedFile={(fileId) =>
-                        updateItem(item.client_key, (current) => ({
-                          ...current,
-                          anexos: current.anexos.filter((attachment) => attachment.id !== fileId),
-                        }))
-                      }
-                    />
+                  <TableCell className={readOnly ? 'min-w-[110px]' : 'min-w-[220px]'}>
+                    {readOnly ? (
+                      <AnexosViewDialog files={item.anexos} />
+                    ) : (
+                      <AuditoriaItemAttachments
+                        itemId={item.id}
+                        files={item.anexos}
+                        pendingFiles={item.pendingFiles}
+                        readOnly={readOnly}
+                        onPendingFilesChange={(pendingFiles) =>
+                          updateItem(item.client_key, (current) => ({
+                            ...current,
+                            pendingFiles,
+                          }))
+                        }
+                        onUploadedFile={(file) =>
+                          updateItem(item.client_key, (current) => ({
+                            ...current,
+                            anexos: [file, ...current.anexos],
+                          }))
+                        }
+                        onDeletedFile={(fileId) =>
+                          updateItem(item.client_key, (current) => ({
+                            ...current,
+                            anexos: current.anexos.filter((attachment) => attachment.id !== fileId),
+                          }))
+                        }
+                      />
+                    )}
                   </TableCell>
-                  <TableCell className="min-w-[120px]">
+                  <TableCell className="min-w-[100px]">
                     <HistoricoDialog item={item} />
                   </TableCell>
                   {!readOnly ? (
-                    <TableCell className="min-w-[90px]">
+                    <TableCell className="min-w-[70px]">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button type="button" variant="ghost" size="icon" className="rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50">
@@ -1088,6 +1343,7 @@ export function AuditoriaFornecedoresModule() {
                             }}
                             tone="brand"
                           />
+                          <AuditoriaRelatorioDialog auditoriaId={auditoria.id} />
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button type="button" variant="ghost" size="icon" className="h-8 w-8 rounded-lg border border-rose-200 p-0 text-rose-600 hover:bg-rose-50">
