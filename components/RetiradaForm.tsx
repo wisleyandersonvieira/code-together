@@ -30,11 +30,11 @@ export function RetiradaForm({ retirada, onSuccess, onCancel }: RetiradaFormProp
   const { formatCurrency, parseCurrencyInput, formatCurrencyInput } = useCurrency();
 
   const [formData, setFormData] = useState({
-    socio_id: retirada?.socio_id || '',
-    matriz_id: retirada?.matriz_id || '',
-    conta_id: retirada?.conta_id || '',
-    data_retirada: retirada?.data_retirada || '',
-    valor: retirada?.valor || '',
+    socio_id: retirada?.socio_id ? String(retirada.socio_id) : '',
+    matriz_id: retirada?.matriz_id ? String(retirada.matriz_id) : '',
+    conta_id: retirada?.conta_id ? String(retirada.conta_id) : '',
+    data_retirada: retirada?.data_retirada ? String(retirada.data_retirada).split('T')[0] : '',
+    valor: retirada?.valor ? String(retirada.valor) : '',
     observacoes: retirada?.observacoes || '',
   });
 
