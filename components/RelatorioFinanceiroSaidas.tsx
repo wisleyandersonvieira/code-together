@@ -1,4 +1,4 @@
-// Change note: Added data_vencimento column, fixed pending value display, added PDF export dropdown with 5 report types
+// Change note: Refactored PDF exports to match rentabilidade visual standard with executive layout, indicator cards, and corrected totals
 
 'use client';
 
@@ -17,7 +17,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
 import loadRelatorioSaidasAction from '@/actions/loadRelatorioSaidas';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadContasAction from '@/actions/loadContas';
@@ -25,24 +24,14 @@ import loadFornecedoresAction from '@/actions/loadFornecedores';
 import loadGruposContabeisAction from '@/actions/loadGruposContabeis';
 import loadSubgruposContabeisAction from '@/actions/loadSubgruposContabeis';
 import loadProjetosAction from '@/actions/loadProjetos';
-
-interface RelatorioSaidaItem {
-  numero_documento?: string;
-  fornecedor_nome: string;
-  matriz_nome?: string;
-  projeto_nomes?: string;
-  valor: number;
-  data_pagamento?: string;
-  status: string;
-  data_vencimento: string;
-  data_competencia?: string;
-  conta_nome?: string;
-  conta_banco?: string;
-  grupo_contabil?: string;
-  subgrupo_contabil?: string;
-  conta_id?: number;
-  observacoes?: string;
-}
+import {
+  exportSaidasGeralPDF,
+  exportSaidasPorFornecedorPDF,
+  exportSaidasPorMesPDF,
+  exportSaidasPorProjetoPDF,
+  exportSaidasPorGrupoPDF,
+} from '@/utils/saidas-export';
+import type { RelatorioSaidaItem } from '@/utils/saidas-export';
 
 export function RelatorioFinanceiroSaidas() {
   const { formatCurrency } = useCurrency();
@@ -134,711 +123,51 @@ export function RelatorioFinanceiroSaidas() {
     XLSX.writeFile(wb, `${filename}.xlsx`);
   };
 
+  const buildFilters = () => {
+    const fornecedor = fornecedorId ? fornecedores.find((f: any) => f.id === parseInt(fornecedorId)) : null;
+    const matriz = matrizId ? matrizes.find((m: any) => m.id === parseInt(matrizId)) : null;
+    const grupo = grupoContabilId ? gruposContabeis.find((g: any) => g.id === parseInt(grupoContabilId)) : null;
+    const projetoNomes = projetoIds.length > 0
+      ? projetoIds.map((id) => projetos.find((p: any) => p.id === id)?.name).filter(Boolean).join(', ')
+      : null;
+    const fmt = (d: Date | null) =>
+      d ? new Intl.DateTimeFormat('pt-BR').format(d) : null;
+    return {
+      periodoInicioLabel: fmt(dataCompetenciaInicio || dataPagamentoInicio) ?? undefined,
+      periodoFimLabel: fmt(dataCompetenciaFim || dataPagamentoFim) ?? undefined,
+      statusLabel: status || undefined,
+      fornecedorLabel: fornecedor?.name ?? undefined,
+      matrizLabel: matriz?.nome ?? undefined,
+      projetosLabel: projetoNomes ?? undefined,
+      grupoContabilLabel: grupo?.descricao ?? undefined,
+    };
+  };
+
   const exportPDFGeral = () => {
     if (!relatorioData || relatorioData.length === 0) return;
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text('PROVISON', 14, 15);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('Sistema de Gestão Financeira', 14, 20);
-
-    doc.setFontSize(18);
-    doc.setFont(undefined, 'bold');
-    const titulo = 'RELATÓRIO FINANCEIRO - SAÍDAS';
-    const tituloWidth = doc.getTextWidth(titulo);
-    doc.text(titulo, (pageWidth - tituloWidth) / 2, 30);
-
-    let yPos = 45;
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-
-    const filtrosAplicados = [];
-    if (status) filtrosAplicados.push(`Status: ${status}`);
-    if (matrizId) {
-      const matriz = matrizes.find((m: any) => m.id === parseInt(matrizId));
-      if (matriz) filtrosAplicados.push(`Matriz: ${matriz.nome}`);
-    }
-
-    filtrosAplicados.forEach(filtro => {
-      doc.text(filtro, 14, yPos);
-      yPos += 5;
-    });
-
-    doc.text(`Relatório gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, yPos);
-    yPos += 15;
-
-    doc.setFillColor(52, 73, 93);
-    doc.rect(14, yPos - 6, pageWidth - 28, 12, 'F');
-
-    doc.setTextColor(255, 255, 255);
-    doc.setFont(undefined, 'bold');
-    doc.setFontSize(8);
-    doc.text('Nº Doc', 18, yPos);
-    doc.text('Fornecedor', 38, yPos);
-    doc.text('Projeto', 65, yPos);
-    doc.text('Valor', 90, yPos);
-    doc.text('Dt Venc', 110, yPos);
-    doc.text('Dt Pag', 130, yPos);
-    doc.text('Status', 150, yPos);
-
-    yPos += 15;
-    doc.setTextColor(0, 0, 0);
-    doc.setFont(undefined, 'normal');
-
-    let totalGeral = 0;
-
-    relatorioData.forEach((item: RelatorioSaidaItem, index) => {
-      if (yPos > 270) {
-        doc.addPage();
-        yPos = 25;
-
-        doc.setFillColor(52, 73, 93);
-        doc.rect(14, yPos - 6, pageWidth - 28, 12, 'F');
-
-        doc.setTextColor(255, 255, 255);
-        doc.setFont(undefined, 'bold');
-        doc.setFontSize(8);
-        doc.text('Nº Doc', 18, yPos);
-        doc.text('Fornecedor', 38, yPos);
-        doc.text('Projeto', 65, yPos);
-        doc.text('Valor', 90, yPos);
-        doc.text('Dt Venc', 110, yPos);
-        doc.text('Dt Pag', 130, yPos);
-        doc.text('Status', 150, yPos);
-
-        yPos += 15;
-        doc.setTextColor(0, 0, 0);
-        doc.setFont(undefined, 'normal');
-      }
-
-      if (index % 2 === 0) {
-        doc.setFillColor(248, 249, 250);
-        doc.rect(14, yPos - 4, pageWidth - 28, 10, 'F');
-      }
-
-      const valor = parseFloat(item.valor?.toString() || '0') || 0;
-      totalGeral += valor;
-
-      doc.setFontSize(7);
-      doc.text(String(item.numero_documento || '').substring(0, 8), 18, yPos);
-      doc.text(String(item.fornecedor_nome || '').substring(0, 12), 38, yPos);
-      doc.text(String(item.projeto_nomes || '').substring(0, 10), 65, yPos);
-
-      doc.setTextColor(220, 53, 69);
-      doc.setFont(undefined, 'bold');
-      doc.text(formatCurrency(-Math.abs(valor)), 90, yPos);
-
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'normal');
-      doc.text(formatDateForDisplay(item.data_vencimento), 110, yPos);
-      doc.text(item.data_pagamento ? formatDateForDisplay(item.data_pagamento) : '-', 130, yPos);
-
-      if (item.status === 'PAGO') {
-        doc.setTextColor(40, 167, 69);
-      } else {
-        doc.setTextColor(255, 193, 7);
-      }
-      doc.text(String(item.status || '').substring(0, 8), 150, yPos);
-
-      doc.setTextColor(0, 0, 0);
-      yPos += 10;
-    });
-
-    yPos += 10;
-    if (yPos > 270) {
-      doc.addPage();
-      yPos = 30;
-    }
-
-    doc.setDrawColor(0, 0, 0);
-    doc.line(14, yPos - 5, pageWidth - 14, yPos - 5);
-
-    doc.setFont(undefined, 'bold');
-    doc.setFontSize(12);
-    doc.text('TOTAL GERAL:', 100, yPos);
-    doc.setTextColor(220, 53, 69);
-    doc.text(formatCurrency(-Math.abs(totalGeral)), 140, yPos);
-
-    yPos += 10;
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'normal');
-    doc.text(`Total de ${relatorioData.length} registro(s) encontrado(s)`, 14, yPos);
-
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(`Página ${i} de ${pageCount}`, pageWidth - 35, doc.internal.pageSize.height - 10);
-      doc.text('PROVISON - Sistema de Gestão Financeira', 14, doc.internal.pageSize.height - 10);
-    }
-
-    const filename = `relatorio_financeiro_saidas_geral_${new Date().toISOString().slice(0, 10)}`;
-    doc.save(`${filename}.pdf`);
+    exportSaidasGeralPDF(relatorioData as RelatorioSaidaItem[], buildFilters(), { formatCurrency });
   };
 
   const exportPDFPorFornecedor = () => {
     if (!relatorioData || relatorioData.length === 0) return;
-
-    const groupedData = relatorioData.reduce((acc: any, item: RelatorioSaidaItem) => {
-      const fornecedor = item.fornecedor_nome || 'Sem Fornecedor';
-      if (!acc[fornecedor]) {
-        acc[fornecedor] = [];
-      }
-      acc[fornecedor].push(item);
-      return acc;
-    }, {});
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text('PROVISON', 14, 15);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('Sistema de Gestão Financeira', 14, 20);
-
-    doc.setFontSize(18);
-    doc.setFont(undefined, 'bold');
-    const titulo = 'RELATÓRIO POR FORNECEDOR';
-    const tituloWidth = doc.getTextWidth(titulo);
-    doc.text(titulo, (pageWidth - tituloWidth) / 2, 30);
-
-    let yPos = 45;
-
-    Object.keys(groupedData).sort().forEach((fornecedor, groupIndex) => {
-      const items = groupedData[fornecedor];
-      const subtotal = items.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-
-      if (yPos > 250) {
-        doc.addPage();
-        yPos = 25;
-      }
-
-      doc.setFillColor(70, 130, 180);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(11);
-      doc.text(fornecedor, 18, yPos);
-      yPos += 12;
-
-      doc.setFillColor(52, 73, 93);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(8);
-      doc.text('Nº Doc', 18, yPos);
-      doc.text('Projeto', 45, yPos);
-      doc.text('Valor', 80, yPos);
-      doc.text('Dt Venc', 105, yPos);
-      doc.text('Dt Pag', 130, yPos);
-      doc.text('Status', 155, yPos);
-      yPos += 12;
-
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'normal');
-
-      items.forEach((item: RelatorioSaidaItem, index: number) => {
-        if (yPos > 270) {
-          doc.addPage();
-          yPos = 25;
-        }
-
-        if (index % 2 === 0) {
-          doc.setFillColor(248, 249, 250);
-          doc.rect(14, yPos - 4, pageWidth - 28, 8, 'F');
-        }
-
-        const valor = parseFloat(item.valor?.toString() || '0') || 0;
-
-        doc.setFontSize(7);
-        doc.text(String(item.numero_documento || '').substring(0, 10), 18, yPos);
-        doc.text(String(item.projeto_nomes || '').substring(0, 15), 45, yPos);
-
-        doc.setTextColor(220, 53, 69);
-        doc.setFont(undefined, 'bold');
-        doc.text(formatCurrency(-Math.abs(valor)), 80, yPos);
-
-        doc.setTextColor(0, 0, 0);
-        doc.setFont(undefined, 'normal');
-        doc.text(formatDateForDisplay(item.data_vencimento), 105, yPos);
-        doc.text(item.data_pagamento ? formatDateForDisplay(item.data_pagamento) : '-', 130, yPos);
-
-        if (item.status === 'PAGO') {
-          doc.setTextColor(40, 167, 69);
-        } else {
-          doc.setTextColor(255, 193, 7);
-        }
-        doc.text(String(item.status || '').substring(0, 8), 155, yPos);
-        doc.setTextColor(0, 0, 0);
-
-        yPos += 8;
-      });
-
-      yPos += 5;
-      doc.setDrawColor(0, 0, 0);
-      doc.line(14, yPos - 2, pageWidth - 14, yPos - 2);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(10);
-      doc.text(`Subtotal ${fornecedor}:`, 18, yPos + 3);
-      doc.setTextColor(220, 53, 69);
-      doc.text(formatCurrency(-Math.abs(subtotal)), 80, yPos + 3);
-      doc.setTextColor(0, 0, 0);
-      yPos += 15;
-    });
-
-    const totalGeral = relatorioData.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-    yPos += 5;
-    if (yPos > 260) {
-      doc.addPage();
-      yPos = 30;
-    }
-    doc.setDrawColor(0, 0, 0);
-    doc.line(14, yPos - 5, pageWidth - 14, yPos - 5);
-    doc.setFont(undefined, 'bold');
-    doc.setFontSize(12);
-    doc.text('TOTAL GERAL:', 100, yPos);
-    doc.setTextColor(220, 53, 69);
-    doc.text(formatCurrency(-Math.abs(totalGeral)), 140, yPos);
-
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(`Página ${i} de ${pageCount}`, pageWidth - 35, doc.internal.pageSize.height - 10);
-      doc.text('PROVISON - Sistema de Gestão Financeira', 14, doc.internal.pageSize.height - 10);
-    }
-
-    const filename = `relatorio_saidas_por_fornecedor_${new Date().toISOString().slice(0, 10)}`;
-    doc.save(`${filename}.pdf`);
+    exportSaidasPorFornecedorPDF(relatorioData as RelatorioSaidaItem[], buildFilters(), { formatCurrency });
   };
 
   const exportPDFPorMes = () => {
     if (!relatorioData || relatorioData.length === 0) return;
-
-    const groupedData = relatorioData.reduce((acc: any, item: RelatorioSaidaItem) => {
-      const date = new Date(item.data_pagamento || item.data_vencimento);
-      const mesAno = `${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
-      if (!acc[mesAno]) {
-        acc[mesAno] = [];
-      }
-      acc[mesAno].push(item);
-      return acc;
-    }, {});
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text('PROVISON', 14, 15);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('Sistema de Gestão Financeira', 14, 20);
-
-    doc.setFontSize(18);
-    doc.setFont(undefined, 'bold');
-    const titulo = 'RELATÓRIO POR MÊS';
-    const tituloWidth = doc.getTextWidth(titulo);
-    doc.text(titulo, (pageWidth - tituloWidth) / 2, 30);
-
-    let yPos = 45;
-
-    Object.keys(groupedData).sort().forEach((mesAno) => {
-      const items = groupedData[mesAno];
-      const subtotal = items.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-
-      if (yPos > 250) {
-        doc.addPage();
-        yPos = 25;
-      }
-
-      doc.setFillColor(70, 130, 180);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(11);
-      doc.text(`Mês: ${mesAno}`, 18, yPos);
-      yPos += 12;
-
-      doc.setFillColor(52, 73, 93);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(8);
-      doc.text('Fornecedor', 18, yPos);
-      doc.text('Projeto', 55, yPos);
-      doc.text('Valor', 90, yPos);
-      doc.text('Dt Venc', 115, yPos);
-      doc.text('Dt Pag', 140, yPos);
-      doc.text('Status', 165, yPos);
-      yPos += 12;
-
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'normal');
-
-      items.forEach((item: RelatorioSaidaItem, index: number) => {
-        if (yPos > 270) {
-          doc.addPage();
-          yPos = 25;
-        }
-
-        if (index % 2 === 0) {
-          doc.setFillColor(248, 249, 250);
-          doc.rect(14, yPos - 4, pageWidth - 28, 8, 'F');
-        }
-
-        const valor = parseFloat(item.valor?.toString() || '0') || 0;
-
-        doc.setFontSize(7);
-        doc.text(String(item.fornecedor_nome || '').substring(0, 15), 18, yPos);
-        doc.text(String(item.projeto_nomes || '').substring(0, 15), 55, yPos);
-
-        doc.setTextColor(220, 53, 69);
-        doc.setFont(undefined, 'bold');
-        doc.text(formatCurrency(-Math.abs(valor)), 90, yPos);
-
-        doc.setTextColor(0, 0, 0);
-        doc.setFont(undefined, 'normal');
-        doc.text(formatDateForDisplay(item.data_vencimento), 115, yPos);
-        doc.text(item.data_pagamento ? formatDateForDisplay(item.data_pagamento) : '-', 140, yPos);
-
-        if (item.status === 'PAGO') {
-          doc.setTextColor(40, 167, 69);
-        } else {
-          doc.setTextColor(255, 193, 7);
-        }
-        doc.text(String(item.status || '').substring(0, 8), 165, yPos);
-        doc.setTextColor(0, 0, 0);
-
-        yPos += 8;
-      });
-
-      yPos += 5;
-      doc.setDrawColor(0, 0, 0);
-      doc.line(14, yPos - 2, pageWidth - 14, yPos - 2);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(10);
-      doc.text(`Subtotal ${mesAno}:`, 18, yPos + 3);
-      doc.setTextColor(220, 53, 69);
-      doc.text(formatCurrency(-Math.abs(subtotal)), 90, yPos + 3);
-      doc.setTextColor(0, 0, 0);
-      yPos += 15;
-    });
-
-    const totalGeral = relatorioData.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-    yPos += 5;
-    if (yPos > 260) {
-      doc.addPage();
-      yPos = 30;
-    }
-    doc.setDrawColor(0, 0, 0);
-    doc.line(14, yPos - 5, pageWidth - 14, yPos - 5);
-    doc.setFont(undefined, 'bold');
-    doc.setFontSize(12);
-    doc.text('TOTAL GERAL:', 100, yPos);
-    doc.setTextColor(220, 53, 69);
-    doc.text(formatCurrency(-Math.abs(totalGeral)), 140, yPos);
-
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(`Página ${i} de ${pageCount}`, pageWidth - 35, doc.internal.pageSize.height - 10);
-      doc.text('PROVISON - Sistema de Gestão Financeira', 14, doc.internal.pageSize.height - 10);
-    }
-
-    const filename = `relatorio_saidas_por_mes_${new Date().toISOString().slice(0, 10)}`;
-    doc.save(`${filename}.pdf`);
+    exportSaidasPorMesPDF(relatorioData as RelatorioSaidaItem[], buildFilters(), { formatCurrency });
   };
 
   const exportPDFPorProjeto = () => {
     if (!relatorioData || relatorioData.length === 0) return;
-
-    const groupedData = relatorioData.reduce((acc: any, item: RelatorioSaidaItem) => {
-      const projeto = item.projeto_nomes || 'Sem Projeto';
-      if (!acc[projeto]) {
-        acc[projeto] = [];
-      }
-      acc[projeto].push(item);
-      return acc;
-    }, {});
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text('PROVISON', 14, 15);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('Sistema de Gestão Financeira', 14, 20);
-
-    doc.setFontSize(18);
-    doc.setFont(undefined, 'bold');
-    const titulo = 'RELATÓRIO POR PROJETO';
-    const tituloWidth = doc.getTextWidth(titulo);
-    doc.text(titulo, (pageWidth - tituloWidth) / 2, 30);
-
-    let yPos = 45;
-
-    Object.keys(groupedData).sort().forEach((projeto) => {
-      const items = groupedData[projeto];
-      const subtotal = items.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-
-      if (yPos > 250) {
-        doc.addPage();
-        yPos = 25;
-      }
-
-      doc.setFillColor(70, 130, 180);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(11);
-      doc.text(projeto, 18, yPos);
-      yPos += 12;
-
-      doc.setFillColor(52, 73, 93);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(8);
-      doc.text('Fornecedor', 18, yPos);
-      doc.text('Nº Doc', 55, yPos);
-      doc.text('Valor', 80, yPos);
-      doc.text('Dt Venc', 105, yPos);
-      doc.text('Dt Pag', 130, yPos);
-      doc.text('Status', 155, yPos);
-      yPos += 12;
-
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'normal');
-
-      items.forEach((item: RelatorioSaidaItem, index: number) => {
-        if (yPos > 270) {
-          doc.addPage();
-          yPos = 25;
-        }
-
-        if (index % 2 === 0) {
-          doc.setFillColor(248, 249, 250);
-          doc.rect(14, yPos - 4, pageWidth - 28, 8, 'F');
-        }
-
-        const valor = parseFloat(item.valor?.toString() || '0') || 0;
-
-        doc.setFontSize(7);
-        doc.text(String(item.fornecedor_nome || '').substring(0, 15), 18, yPos);
-        doc.text(String(item.numero_documento || '').substring(0, 10), 55, yPos);
-
-        doc.setTextColor(220, 53, 69);
-        doc.setFont(undefined, 'bold');
-        doc.text(formatCurrency(-Math.abs(valor)), 80, yPos);
-
-        doc.setTextColor(0, 0, 0);
-        doc.setFont(undefined, 'normal');
-        doc.text(formatDateForDisplay(item.data_vencimento), 105, yPos);
-        doc.text(item.data_pagamento ? formatDateForDisplay(item.data_pagamento) : '-', 130, yPos);
-
-        if (item.status === 'PAGO') {
-          doc.setTextColor(40, 167, 69);
-        } else {
-          doc.setTextColor(255, 193, 7);
-        }
-        doc.text(String(item.status || '').substring(0, 8), 155, yPos);
-        doc.setTextColor(0, 0, 0);
-
-        yPos += 8;
-      });
-
-      yPos += 5;
-      doc.setDrawColor(0, 0, 0);
-      doc.line(14, yPos - 2, pageWidth - 14, yPos - 2);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(10);
-      doc.text(`Subtotal ${projeto}:`, 18, yPos + 3);
-      doc.setTextColor(220, 53, 69);
-      doc.text(formatCurrency(-Math.abs(subtotal)), 80, yPos + 3);
-      doc.setTextColor(0, 0, 0);
-      yPos += 15;
-    });
-
-    const totalGeral = relatorioData.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-    yPos += 5;
-    if (yPos > 260) {
-      doc.addPage();
-      yPos = 30;
-    }
-    doc.setDrawColor(0, 0, 0);
-    doc.line(14, yPos - 5, pageWidth - 14, yPos - 5);
-    doc.setFont(undefined, 'bold');
-    doc.setFontSize(12);
-    doc.text('TOTAL GERAL:', 100, yPos);
-    doc.setTextColor(220, 53, 69);
-    doc.text(formatCurrency(-Math.abs(totalGeral)), 140, yPos);
-
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(`Página ${i} de ${pageCount}`, pageWidth - 35, doc.internal.pageSize.height - 10);
-      doc.text('PROVISON - Sistema de Gestão Financeira', 14, doc.internal.pageSize.height - 10);
-    }
-
-    const filename = `relatorio_saidas_por_projeto_${new Date().toISOString().slice(0, 10)}`;
-    doc.save(`${filename}.pdf`);
+    exportSaidasPorProjetoPDF(relatorioData as RelatorioSaidaItem[], buildFilters(), { formatCurrency });
   };
 
   const exportPDFPorGrupo = () => {
     if (!relatorioData || relatorioData.length === 0) return;
-
-    const groupedData = relatorioData.reduce((acc: any, item: RelatorioSaidaItem) => {
-      const grupo = item.grupo_contabil || 'Sem Grupo Contábil';
-      if (!acc[grupo]) {
-        acc[grupo] = [];
-      }
-      acc[grupo].push(item);
-      return acc;
-    }, {});
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text('PROVISON', 14, 15);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'normal');
-    doc.text('Sistema de Gestão Financeira', 14, 20);
-
-    doc.setFontSize(18);
-    doc.setFont(undefined, 'bold');
-    const titulo = 'RELATÓRIO POR GRUPO CONTÁBIL';
-    const tituloWidth = doc.getTextWidth(titulo);
-    doc.text(titulo, (pageWidth - tituloWidth) / 2, 30);
-
-    let yPos = 45;
-
-    Object.keys(groupedData).sort().forEach((grupo) => {
-      const items = groupedData[grupo];
-      const subtotal = items.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-
-      if (yPos > 250) {
-        doc.addPage();
-        yPos = 25;
-      }
-
-      doc.setFillColor(70, 130, 180);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(11);
-      doc.text(grupo, 18, yPos);
-      yPos += 12;
-
-      doc.setFillColor(52, 73, 93);
-      doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(8);
-      doc.text('Fornecedor', 18, yPos);
-      doc.text('Projeto', 55, yPos);
-      doc.text('Valor', 90, yPos);
-      doc.text('Dt Venc', 115, yPos);
-      doc.text('Dt Pag', 140, yPos);
-      doc.text('Status', 165, yPos);
-      yPos += 12;
-
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'normal');
-
-      items.forEach((item: RelatorioSaidaItem, index: number) => {
-        if (yPos > 270) {
-          doc.addPage();
-          yPos = 25;
-        }
-
-        if (index % 2 === 0) {
-          doc.setFillColor(248, 249, 250);
-          doc.rect(14, yPos - 4, pageWidth - 28, 8, 'F');
-        }
-
-        const valor = parseFloat(item.valor?.toString() || '0') || 0;
-
-        doc.setFontSize(7);
-        doc.text(String(item.fornecedor_nome || '').substring(0, 15), 18, yPos);
-        doc.text(String(item.projeto_nomes || '').substring(0, 15), 55, yPos);
-
-        doc.setTextColor(220, 53, 69);
-        doc.setFont(undefined, 'bold');
-        doc.text(formatCurrency(-Math.abs(valor)), 90, yPos);
-
-        doc.setTextColor(0, 0, 0);
-        doc.setFont(undefined, 'normal');
-        doc.text(formatDateForDisplay(item.data_vencimento), 115, yPos);
-        doc.text(item.data_pagamento ? formatDateForDisplay(item.data_pagamento) : '-', 140, yPos);
-
-        if (item.status === 'PAGO') {
-          doc.setTextColor(40, 167, 69);
-        } else {
-          doc.setTextColor(255, 193, 7);
-        }
-        doc.text(String(item.status || '').substring(0, 8), 165, yPos);
-        doc.setTextColor(0, 0, 0);
-
-        yPos += 8;
-      });
-
-      yPos += 5;
-      doc.setDrawColor(0, 0, 0);
-      doc.line(14, yPos - 2, pageWidth - 14, yPos - 2);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(10);
-      doc.text(`Subtotal ${grupo}:`, 18, yPos + 3);
-      doc.setTextColor(220, 53, 69);
-      doc.text(formatCurrency(-Math.abs(subtotal)), 90, yPos + 3);
-      doc.setTextColor(0, 0, 0);
-      yPos += 15;
-    });
-
-    const totalGeral = relatorioData.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0);
-    yPos += 5;
-    if (yPos > 260) {
-      doc.addPage();
-      yPos = 30;
-    }
-    doc.setDrawColor(0, 0, 0);
-    doc.line(14, yPos - 5, pageWidth - 14, yPos - 5);
-    doc.setFont(undefined, 'bold');
-    doc.setFontSize(12);
-    doc.text('TOTAL GERAL:', 100, yPos);
-    doc.setTextColor(220, 53, 69);
-    doc.text(formatCurrency(-Math.abs(totalGeral)), 140, yPos);
-
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(`Página ${i} de ${pageCount}`, pageWidth - 35, doc.internal.pageSize.height - 10);
-      doc.text('PROVISON - Sistema de Gestão Financeira', 14, doc.internal.pageSize.height - 10);
-    }
-
-    const filename = `relatorio_saidas_por_grupo_${new Date().toISOString().slice(0, 10)}`;
-    doc.save(`${filename}.pdf`);
+    exportSaidasPorGrupoPDF(relatorioData as RelatorioSaidaItem[], buildFilters(), { formatCurrency });
   };
+
 
   const totalGeral = relatorioData?.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0) || 0;
 
