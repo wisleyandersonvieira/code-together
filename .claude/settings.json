@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find /workspaces/code-together -type f -name *report*)",
+      "Bash(find /workspaces/code-together/actions -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(grep -l \"relatorio\\\\|extrato\\\\|rentabilidade\" /workspaces/code-together/components/*.tsx)",
+      "Bash(grep -r \"exportExtratoClientePDF\\\\|exportProjectProfitabilityPDF\" /workspaces/code-together --include=*.ts --include=*.tsx)",
+      "Bash(grep -l \"loadRelatorioClienteDespesas\\\\|loadRelatorioClienteReceitas\\\\|loadRelatorioProjetosGeral\" /workspaces/code-together/actions/*.ts)"
     ]
   }
 }
