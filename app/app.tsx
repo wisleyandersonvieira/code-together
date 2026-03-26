@@ -201,7 +201,7 @@ const matrizTabs: TabType[] = [
   'export-project',
 ];
 
-function lazyWithRetry<T extends ComponentType<Record<string, unknown>>>(
+function lazyWithRetry<T extends ComponentType<any>>(
   importer: () => Promise<{ default: T }>,
 ) {
   return lazy(async () => {
