@@ -215,6 +215,7 @@ export type Database = {
       }
       auditoria_fornecedor_itens: {
         Row: {
+          auditado: boolean | null
           auditoria_id: number
           created_at: string
           data_emissao: string | null
@@ -230,6 +231,7 @@ export type Database = {
           valor_total: number
         }
         Insert: {
+          auditado?: boolean | null
           auditoria_id: number
           created_at?: string
           data_emissao?: string | null
@@ -245,6 +247,7 @@ export type Database = {
           valor_total?: number
         }
         Update: {
+          auditado?: boolean | null
           auditoria_id?: number
           created_at?: string
           data_emissao?: string | null
