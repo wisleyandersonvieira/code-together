@@ -141,7 +141,7 @@ function ParcelasDialog({
   readOnly = false,
 }: {
   item: AuditoriaItemForm;
-  onSave: (parcelas: AuditoriaParcelaForm[]) => void;
+  onSave: (parcelas: AuditoriaParcelaForm[], novoValorTotal?: number) => void;
   readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -213,6 +213,7 @@ function ParcelasDialog({
   const handleSave = () => {
     const processedParcelas: AuditoriaParcelaForm[] = [];
     let nextNum = 1;
+    let valorTotalAdjustment = 0;
 
     for (let i = 0; i < draftParcelas.length; i++) {
       const parcela = draftParcelas[i];
@@ -227,8 +228,12 @@ function ParcelasDialog({
           const remainder = roundCurrency(valorOriginal - valorPago);
           processedParcelas.push({ ...parcela, numero_parcela: nextNum++, valor_parcela: valorPago });
           processedParcelas.push({ numero_parcela: nextNum++, valor_parcela: remainder, status: 'PENDENTE', data_pagamento: null, observacao: null });
+        } else if (valorPago > valorOriginal) {
+          // Over-payment: use the higher value and track the adjustment to update item total
+          valorTotalAdjustment = roundCurrency(valorTotalAdjustment + (valorPago - valorOriginal));
+          processedParcelas.push({ ...parcela, numero_parcela: nextNum++, valor_parcela: valorPago });
         } else {
-          // Full or over-payment: use the informed value (or original if zero)
+          // Full payment at original value (or zero fallback)
           processedParcelas.push({ ...parcela, numero_parcela: nextNum++, valor_parcela: valorPago > 0 ? valorPago : valorOriginal });
         }
       } else {
@@ -236,7 +241,11 @@ function ParcelasDialog({
       }
     }
 
-    onSave(processedParcelas);
+    const novoValorTotal = valorTotalAdjustment > 0
+      ? roundCurrency(item.valor_total + valorTotalAdjustment)
+      : undefined;
+
+    onSave(processedParcelas, novoValorTotal);
     setOpen(false);
   };
 
@@ -1026,7 +1035,16 @@ function AuditoriaFornecedorEditor({
                       <ParcelasDialog
                         item={item}
                         readOnly={readOnly}
-                        onSave={(parcelas) => updateItem(item.client_key, (current) => calculateItemTotals({ ...current, parcelas_detalhes: parcelas }))}
+                        onSave={(parcelas, novoValorTotal) =>
+                          updateItem(item.client_key, (current) =>
+                            calculateItemTotals({
+                              ...current,
+                              ...(novoValorTotal !== undefined ? { valor_total: novoValorTotal } : {}),
+                              parcelas: parcelas.length,
+                              parcelas_detalhes: parcelas,
+                            }),
+                          )
+                        }
                       />
                     </div>
                   </TableCell>
