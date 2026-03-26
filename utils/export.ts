@@ -623,7 +623,7 @@ interface ExtratoBancarioData {
   [key: string]: any;
 }
 
-// Função específica para PDF do extrato bancário
+// Função específica para PDF do extrato bancário — visual premium
 export function exportExtratoBancarioPDF(
   data: ExtratoBancarioData[],
   filename: string,
@@ -639,181 +639,204 @@ export function exportExtratoBancarioPDF(
     matrizNome?: string;
   },
   formatCurrency: (value: number) => string,
-  formatDate: (date: string) => string
+  formatDate: (date: string) => string,
 ) {
-  const doc = new jsPDF();
-  const pageWidth = doc.internal.pageSize.width;
-  
-  // 1. Logo e nome do sistema no canto superior esquerdo
-  doc.setFontSize(14);
-  doc.setFont(undefined, 'bold');
-  doc.text('PROVISON', 14, 15);
-  doc.setFontSize(8);
-  doc.setFont(undefined, 'normal');
-  doc.text('Sistema de Gestão Financeira', 14, 20);
-  
-  // 2. Título centralizado no cabeçalho
-  doc.setFontSize(18);
-  doc.setFont(undefined, 'bold');
-  const titulo = 'EXTRATO BANCÁRIO';
-  const tituloWidth = doc.getTextWidth(titulo);
-  doc.text(titulo, (pageWidth - tituloWidth) / 2, 30);
-  
-  // 3. Informações da conta e filtros aplicados
-  let yPos = 45;
-  doc.setFontSize(12);
-  doc.setFont(undefined, 'bold');
-  doc.text(`Conta: ${contaInfo.conta_nome} - ${contaInfo.conta_banco}`, 14, yPos);
-  
-  yPos += 8;
-  doc.setFontSize(10);
-  doc.setFont(undefined, 'normal');
-  
-  // Período
-  const periodo = `Período: ${filtros.dataInicio} até ${filtros.dataFim}`;
-  doc.text(periodo, 14, yPos);
-  yPos += 5;
-  
-  // Saldo anterior
-  doc.text(`Saldo Anterior: ${formatCurrency(contaInfo.saldo_anterior)}`, 14, yPos);
-  yPos += 5;
-  
-  // Filtros aplicados
-  if (filtros.tipo) {
-    doc.text(`Tipo: ${filtros.tipo}`, 14, yPos);
-    yPos += 5;
-  }
-  
-  if (filtros.matrizNome) {
-    doc.text(`Matriz: ${filtros.matrizNome}`, 14, yPos);
-    yPos += 5;
-  }
-  
-  doc.text(`Relatório gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, 14, yPos);
-  yPos += 15;
-  
-  // 4. Dados em formato tabular igual à tela
-  // Cabeçalho da tabela com cores
-  doc.setFillColor(52, 73, 93);
-  doc.rect(14, yPos - 6, pageWidth - 28, 12, 'F');
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFont(undefined, 'bold');
-  doc.setFontSize(9);
-  doc.text('Data', 18, yPos);
-  doc.text('Tipo', 40, yPos);
-  doc.text('Fornecedor/Credor', 55, yPos);
-  doc.text('Nº Doc', 90, yPos);
-  doc.text('Projeto', 110, yPos);
-  doc.text('Matriz', 145, yPos);
-  doc.text('Valor', 160, yPos);
-  doc.text('Saldo', 180, yPos);
-  
-  yPos += 15;
-  doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, 'normal');
-  
-  // Dados da tabela com linhas alternadas
-  data.forEach((item, index) => {
-    // Verificar se precisa de nova página
-    if (yPos > 270) {
+  type RGB = [number, number, number];
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth  = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 14;
+  const contentW = pageWidth - marginX * 2;
+  let y = 0;
+
+  const P: Record<string, RGB> = {
+    navy:     [17,  31,  59],
+    navySoft: [229, 236, 246],
+    graphite: [59,  68,  82],
+    slate:    [107, 114, 128],
+    border:   [217, 223, 232],
+    light:    [245, 247, 250],
+    white:    [255, 255, 255],
+    green:    [22,  101, 52],
+    rose:     [190, 24,  93],
+  };
+
+  const sf = (c: RGB) => doc.setFillColor(c[0], c[1], c[2]);
+  const sd = (c: RGB) => doc.setDrawColor(c[0], c[1], c[2]);
+  const st = (c: RGB) => doc.setTextColor(c[0], c[1], c[2]);
+
+  const now = new Date();
+  const issuedAt = new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(now);
+
+  // Compute summary from data
+  const saldoAnterior   = Number(contaInfo.saldo_anterior) || 0;
+  const totalEntradas   = data.reduce((s, t) => s + (Number(t.entrada) || (Number(t.valor) > 0 ? Number(t.valor) : 0)), 0);
+  const totalSaidas     = data.reduce((s, t) => s + (Number(t.saida)   || (Number(t.valor) < 0 ? Math.abs(Number(t.valor)) : 0)), 0);
+  const saldoFinal      = data.length > 0 ? (Number(data[data.length - 1].saldo_linha) || 0) : saldoAnterior;
+
+  // Column definitions — total must equal contentW (297 - 28 = 269 mm)
+  const cols = [
+    { label: 'Data',                    width: 22, right: false },
+    { label: 'Tipo',                    width: 24, right: false },
+    { label: 'Histórico / Favorecido',  width: 60, right: false },
+    { label: 'Nº Doc',                  width: 22, right: false },
+    { label: 'Projeto',                 width: 32, right: false },
+    { label: 'Matriz',                  width: 25, right: false },
+    { label: 'Entrada',                 width: 32, right: true  },
+    { label: 'Saída',                   width: 32, right: true  },
+    { label: 'Saldo',                   width: 20, right: true  },
+  ] as const;  // sum = 269 mm ✓
+
+  const ROW_H    = 7.5;
+  const HEADER_H = 8;
+
+  const drawTableHeader = (yh: number): number => {
+    sf(P.navy); doc.rect(marginX, yh, contentW, HEADER_H, 'F');
+    let cx = marginX;
+    cols.forEach((col) => {
+      st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      const xText = col.right ? cx + col.width - 2 : cx + 2;
+      doc.text(col.label, xText, yh + 5.5, { align: col.right ? 'right' : 'left' });
+      cx += col.width;
+    });
+    return yh + HEADER_H;
+  };
+
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageHeight - 14) {
       doc.addPage();
-      yPos = 25;
-      
-      // Repetir cabeçalho na nova página
-      doc.setFillColor(52, 73, 93);
-      doc.rect(14, yPos - 6, pageWidth - 28, 12, 'F');
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(9);
-      doc.text('Data', 18, yPos);
-      doc.text('Tipo', 40, yPos);
-      doc.text('Fornecedor/Credor', 55, yPos);
-      doc.text('Nº Doc', 90, yPos);
-      doc.text('Projeto', 110, yPos);
-      doc.text('Matriz', 145, yPos);
-      doc.text('Valor', 160, yPos);
-      doc.text('Saldo', 180, yPos);
-      
-      yPos += 15;
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'normal');
+      y = 14;
+      y = drawTableHeader(y);
     }
-    
-    // Linha alternada de cor (igual à tela)
-    if (index % 2 === 0) {
-      doc.setFillColor(248, 249, 250);
-      doc.rect(14, yPos - 4, pageWidth - 28, 10, 'F');
-    }
-    
-    const valor = parseFloat(item.valor?.toString() || '0') || 0;
-    const saldo = parseFloat(item.saldo_linha?.toString() || '0') || 0;
-    
-    doc.setFontSize(8);
-    doc.text(formatDate(item.data), 18, yPos);
-    doc.text(String(item.tipo || '').substring(0, 4), 40, yPos);
-    doc.text(String(item.fornecedor_creditor || '').substring(0, 15), 55, yPos);
-    doc.text(String(item.numero_documento || '-').substring(0, 6), 90, yPos);
-    doc.setFontSize(6.4); // Reduzindo 20% da fonte (de 8 para 6.4)
-    doc.text(String(item.projeto || '-').substring(0, 15), 110, yPos); // Aumentando de 10 para 15 caracteres (30% mais)
-    doc.setFontSize(8); // Voltando ao tamanho original para as outras colunas
-    doc.text(String(item.matriz_nome || '-').substring(0, 10), 145, yPos);
-    
-    // Valor com cor (vermelho para negativo, verde para positivo)
-    if (valor < 0) {
-      doc.setTextColor(220, 53, 69);
-    } else if (valor > 0) {
-      doc.setTextColor(40, 167, 69);
-    }
-    doc.setFont(undefined, 'bold');
-    doc.text(formatCurrency(valor), 160, yPos);
-    
-    doc.setTextColor(0, 0, 0);
-    doc.setFont(undefined, 'bold');
-    doc.text(formatCurrency(saldo), 180, yPos);
-    
-    doc.setFont(undefined, 'normal');
-    yPos += 10;
+  };
+
+  // ── HEADER BAR ────────────────────────────────────────────
+  sf(P.navy); doc.rect(0, 0, pageWidth, 22, 'F');
+  st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+  doc.text('EXTRATO BANCÁRIO', marginX, 10);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+  const contaLabel = contaInfo.conta_nome + (contaInfo.conta_banco ? ` — ${contaInfo.conta_banco}` : '');
+  doc.text(contaLabel, marginX, 17);
+  st(P.navySoft); doc.setFontSize(7.5);
+  doc.text(`Emitido em ${issuedAt}`, pageWidth - marginX, 17, { align: 'right' });
+
+  y = 28;
+
+  // ── FILTER INFO BLOCK ──────────────────────────────────────
+  const infoItems: [string, string][] = [
+    ['Período', `${filtros.dataInicio} – ${filtros.dataFim}`],
+    ['Tipo',    filtros.tipo || 'Todos'],
+    ...(filtros.matrizNome ? [['Matriz', filtros.matrizNome] as [string, string]] : []),
+  ];
+  const infoW = contentW / infoItems.length;
+  infoItems.forEach(([label, val], i) => {
+    const x = marginX + i * infoW;
+    sf(P.light); doc.roundedRect(x, y, infoW - 2, 13, 2, 2, 'F');
+    st(P.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text(label.toUpperCase(), x + 3, y + 5);
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+    doc.text(val, x + 3, y + 11);
   });
-  
-  // Linha de separação e saldo final
-  yPos += 10;
-  if (yPos > 270) {
-    doc.addPage();
-    yPos = 30;
+  y += 18;
+
+  // ── SUMMARY CARDS ──────────────────────────────────────────
+  const cards = [
+    { label: 'Saldo Anterior',  value: formatCurrency(saldoAnterior), color: P.graphite },
+    { label: 'Total Entradas',  value: formatCurrency(totalEntradas), color: P.green    },
+    { label: 'Total Saídas',    value: formatCurrency(totalSaidas),   color: P.rose     },
+    { label: 'Saldo Final',     value: formatCurrency(saldoFinal),    color: saldoFinal < 0 ? P.rose : P.green },
+    { label: 'Movimentações',   value: String(data.length),           color: P.navy     },
+  ];
+  const cardW = contentW / cards.length;
+  cards.forEach((card, i) => {
+    const x = marginX + i * cardW;
+    sf(P.light); doc.roundedRect(x, y, cardW - 2, 17, 2, 2, 'F');
+    st(P.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    doc.text(card.label.toUpperCase(), x + 3, y + 6);
+    st(card.color); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(card.value, x + 3, y + 14);
+  });
+  y += 22;
+
+  // ── TABLE ─────────────────────────────────────────────────
+  y = drawTableHeader(y);
+
+  data.forEach((item, idx) => {
+    ensureSpace(ROW_H + 1);
+
+    // Zebra rows
+    sf(idx % 2 === 0 ? P.white : P.light);
+    doc.rect(marginX, y, contentW, ROW_H, 'F');
+
+    const valor      = Number(item.valor)      || 0;
+    const entrada    = Number(item.entrada)    || (valor > 0 ? valor : 0);
+    const saida      = Number(item.saida)      || (valor < 0 ? Math.abs(valor) : 0);
+    const saldoLinha = Number(item.saldo_linha) || 0;
+
+    const cells: { text: string; color: RGB; bold?: boolean }[] = [
+      { text: formatDate(item.data),                         color: P.graphite, bold: true  },
+      { text: String(item.tipo || ''),                       color: P.graphite              },
+      { text: String(item.fornecedor_creditor || '—'),       color: P.graphite              },
+      { text: String(item.numero_documento    || '—'),       color: P.graphite              },
+      { text: String(item.projeto             || '—'),       color: P.graphite              },
+      { text: String(item.matriz_nome         || '—'),       color: P.graphite              },
+      { text: entrada > 0 ? formatCurrency(entrada)  : '—', color: entrada > 0 ? P.green : P.slate  },
+      { text: saida   > 0 ? formatCurrency(saida)    : '—', color: saida   > 0 ? P.rose  : P.slate  },
+      { text: formatCurrency(saldoLinha),                    color: saldoLinha < 0 ? P.rose : P.graphite, bold: true },
+    ];
+
+    let cx = marginX;
+    cells.forEach((cell, ci) => {
+      const col = cols[ci];
+      st(cell.color);
+      doc.setFont('helvetica', cell.bold ? 'bold' : 'normal');
+      doc.setFontSize(7);
+      const fitted = doc.splitTextToSize(cell.text, col.width - 4);
+      const xText = col.right ? cx + col.width - 2 : cx + 2;
+      doc.text(fitted[0], xText, y + 5, { align: col.right ? 'right' : 'left' });
+      cx += col.width;
+    });
+
+    // Row separator
+    sd(P.border); doc.setLineWidth(0.1);
+    doc.line(marginX, y + ROW_H, marginX + contentW, y + ROW_H);
+    y += ROW_H;
+  });
+
+  // ── TOTALS ROW ─────────────────────────────────────────────
+  ensureSpace(9);
+  sf(P.navySoft); doc.rect(marginX, y, contentW, 9, 'F');
+  st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+  doc.text(`TOTAL — ${data.length} movimentaç${data.length !== 1 ? 'ões' : 'ão'}`, marginX + 2, y + 6);
+  let cx2 = marginX;
+  cols.forEach((col, ci) => {
+    if (ci === 6) { st(P.green);  doc.text(formatCurrency(totalEntradas), cx2 + col.width - 2, y + 6, { align: 'right' }); }
+    if (ci === 7) { st(P.rose);   doc.text(formatCurrency(totalSaidas),   cx2 + col.width - 2, y + 6, { align: 'right' }); }
+    if (ci === 8) { st(saldoFinal < 0 ? P.rose : P.navy); doc.text(formatCurrency(saldoFinal), cx2 + col.width - 2, y + 6, { align: 'right' }); }
+    cx2 += col.width;
+  });
+  y += 9;
+
+  // ── FOOTER ON ALL PAGES ────────────────────────────────────
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    sd(P.border); doc.setLineWidth(0.3);
+    doc.line(marginX, pageHeight - 10, pageWidth - marginX, pageHeight - 10);
+    st(P.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.text('PROVISION', marginX, pageHeight - 5.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(' Sistema de Gestão Financeira e Projetos', marginX + 16, pageHeight - 5.5);
+    doc.text(`Emitido em ${issuedAt}`, pageWidth / 2, pageHeight - 5.5, { align: 'center' });
+    doc.text(`Página ${p} de ${pages}`, pageWidth - marginX, pageHeight - 5.5, { align: 'right' });
   }
-  
-  doc.setDrawColor(0, 0, 0);
-  doc.line(14, yPos - 5, pageWidth - 14, yPos - 5);
-  
-  const saldoFinal = data.length > 0 ? (data[data.length - 1].saldo_linha || 0) : contaInfo.saldo_anterior;
-  
-  doc.setFont(undefined, 'bold');
-  doc.setFontSize(12);
-  doc.text('SALDO FINAL:', 100, yPos);
-  doc.setTextColor(saldoFinal < 0 ? 220 : 40, saldoFinal < 0 ? 53 : 167, saldoFinal < 0 ? 69 : 94);
-  doc.text(formatCurrency(saldoFinal), 140, yPos);
-  
-  // Informação de número de registros
-  yPos += 10;
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(9);
-  doc.setFont(undefined, 'normal');
-  doc.text(`Total de ${data.length} movimentação(ões) encontrada(s)`, 14, yPos);
-  
-  // Rodapé em todas as páginas
-  const pageCount = doc.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(128, 128, 128);
-    doc.text(`Página ${i} de ${pageCount}`, pageWidth - 35, doc.internal.pageSize.height - 10);
-    doc.text('PROVISON - Sistema de Gestão Financeira', 14, doc.internal.pageSize.height - 10);
-  }
-  
-  // Download
-  doc.save(`${filename}.pdf`);
+
+  const safeFilename = (filename || 'extrato')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  doc.save(`${safeFilename}.pdf`);
+
 }
 
 // Função específica para PDF do Relatório Projetos Geral
