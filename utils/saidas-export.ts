@@ -990,7 +990,7 @@ export function exportSaidasPorMesPDF(
       engine.y += rowH;
     });
 
-    engine.drawGroupFooter(`Subtotal ${mesAno}`, formatCurrency(subtotal), items.length, formatCurrency);
+    engine.drawGroupFooter(`Subtotal ${mesLabel}`, formatCurrency(subtotal), items.length, formatCurrency);
   });
 
   engine.drawGrandTotal('Total Geral', formatCurrency(total_geral_saidas), quantidade_total_registros);
