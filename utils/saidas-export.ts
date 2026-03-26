@@ -880,17 +880,18 @@ export function exportSaidasPorMesPDF(
 
   const subtotal_por_mes: Record<string, number> = {};
   data.forEach((item) => {
-    const k = getMesKey(item);
+    const k = getMesSortKey(item);
     subtotal_por_mes[k] = (subtotal_por_mes[k] ?? 0) + safeValue(item.valor);
   });
 
   const quantidade_meses = Object.keys(subtotal_por_mes).length;
-  const mes_maior_volume = Object.entries(subtotal_por_mes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+  const mes_maior_volume_key = Object.entries(subtotal_por_mes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+  const mes_maior_volume = mes_maior_volume_key !== '-' ? getMesLabel(mes_maior_volume_key) : '-';
   const media_mensal = quantidade_meses > 0 ? total_geral_saidas / quantidade_meses : 0;
 
   const grouped: Record<string, RelatorioSaidaItem[]> = {};
   data.forEach((item) => {
-    const k = getMesKey(item);
+    const k = getMesSortKey(item);
     if (!grouped[k]) grouped[k] = [];
     grouped[k].push(item);
   });
