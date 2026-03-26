@@ -82,7 +82,7 @@ function safeDisplayDate(dateStr?: string | null): string {
   if (!dateStr) return '-';
   try {
     const d = new Date(dateStr + 'T00:00:00');
-    return new Intl.DateTimeFormat('pt-BR').format(d);
+    return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(d);
   } catch {
     return dateStr;
   }
