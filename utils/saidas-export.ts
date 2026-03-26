@@ -945,11 +945,12 @@ export function exportSaidasPorMesPDF(
 
   engine.drawSectionTitle('Detalhamento', 'Lançamentos por Mês');
 
-  Object.keys(grouped).sort().forEach((mesAno) => {
-    const items = grouped[mesAno];
-    const subtotal = subtotal_por_mes[mesAno] ?? 0;
+  Object.keys(grouped).sort().forEach((sortKey) => {
+    const mesLabel = getMesLabel(sortKey);
+    const items = grouped[sortKey];
+    const subtotal = subtotal_por_mes[sortKey] ?? 0;
 
-    engine.drawGroupHeader(`Mês: ${mesAno}`, '', '');
+    engine.drawGroupHeader(`Mês: ${mesLabel}`, '', '');
     engine.drawTableHeader(columns, colX);
 
     items.forEach((item, index) => {
