@@ -924,7 +924,7 @@ export function exportSaidasPorMesPDF(
   engine.drawExecutiveSummary([
     `Foram registradas ${quantidade_total_registros} saída(s) em ${quantidade_meses} mês/meses, totalizando ${formatCurrency(total_geral_saidas)}.`,
     `A média mensal de saídas foi de ${formatCurrency(media_mensal)} por mês.`,
-    `O mês com maior volume de saídas foi ${mes_maior_volume}, com ${formatCurrency(subtotal_por_mes[mes_maior_volume] ?? 0)}.`,
+    `O mês com maior volume de saídas foi ${mes_maior_volume}, com ${formatCurrency(subtotal_por_mes[mes_maior_volume_key] ?? 0)}.`,
     `A maior saída individual registrada foi de ${formatCurrency(maior_saida)}.`,
     'Os dados refletem exclusivamente os lançamentos filtrados conforme os critérios selecionados.',
   ]);
