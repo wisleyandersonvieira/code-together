@@ -640,6 +640,7 @@ export function exportExtratoBancarioPDF(
   },
   formatCurrency: (value: number) => string,
   formatDate: (date: string) => string,
+  withObs = false,
 ) {
   type RGB = [number, number, number];
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -764,7 +765,18 @@ export function exportExtratoBancarioPDF(
   y = drawTableHeader(y);
 
   data.forEach((item, idx) => {
-    ensureSpace(ROW_H + 1);
+    // Pre-calculate obs sub-row height (if applicable)
+    const obsText = withObs && item.observacoes ? String(item.observacoes) : '';
+    let obsLines: string[] = [];
+    let obsH = 0;
+    if (obsText) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6);
+      obsLines = doc.splitTextToSize(`↳  ${obsText}`, contentW - 10);
+      obsH = Math.max(obsLines.length * 4.5 + 2, 6);
+    }
+
+    ensureSpace(ROW_H + obsH + 1);
 
     // Zebra rows
     sf(idx % 2 === 0 ? P.white : P.light);
@@ -799,10 +811,24 @@ export function exportExtratoBancarioPDF(
       cx += col.width;
     });
 
-    // Row separator
-    sd(P.border); doc.setLineWidth(0.1);
-    doc.line(marginX, y + ROW_H, marginX + contentW, y + ROW_H);
-    y += ROW_H;
+    if (obsText) {
+      // No separator between main row and obs sub-row — draw obs immediately below
+      y += ROW_H;
+      sf(idx % 2 === 0 ? P.white : P.light);
+      doc.rect(marginX, y, contentW, obsH, 'F');
+      st(P.slate);
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6);
+      doc.text(obsLines, marginX + 8, y + 3.5, { lineHeightFactor: 1.15 });
+      sd(P.border); doc.setLineWidth(0.1);
+      doc.line(marginX, y + obsH, marginX + contentW, y + obsH);
+      y += obsH;
+    } else {
+      // Row separator
+      sd(P.border); doc.setLineWidth(0.1);
+      doc.line(marginX, y + ROW_H, marginX + contentW, y + ROW_H);
+      y += ROW_H;
+    }
   });
 
   // ── TOTALS ROW ─────────────────────────────────────────────

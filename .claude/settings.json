@@ -6,7 +6,13 @@
       "Bash(find /workspaces/code-together/actions -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
       "Bash(grep -l \"relatorio\\\\|extrato\\\\|rentabilidade\" /workspaces/code-together/components/*.tsx)",
       "Bash(grep -r \"exportExtratoClientePDF\\\\|exportProjectProfitabilityPDF\" /workspaces/code-together --include=*.ts --include=*.tsx)",
-      "Bash(grep -l \"loadRelatorioClienteDespesas\\\\|loadRelatorioClienteReceitas\\\\|loadRelatorioProjetosGeral\" /workspaces/code-together/actions/*.ts)"
+      "Bash(grep -l \"loadRelatorioClienteDespesas\\\\|loadRelatorioClienteReceitas\\\\|loadRelatorioProjetosGeral\" /workspaces/code-together/actions/*.ts)",
+      "Bash(grep -l \"CREATE TABLE\" /workspaces/code-together/supabase/migrations/*.sql)",
+      "Bash(while read:*)",
+      "Bash(do grep:*)",
+      "Bash(done)",
+      "Bash(grep -n \"observacao\\\\|observacoes\" /workspaces/code-together/migrations/*.sql)",
+      "Bash(grep -A 2 \"CREATE TABLE titulos_pagar\\\\|CREATE TABLE contas_pagar\\\\|CREATE TABLE titulos_receber\\\\|CREATE TABLE contas_receber\\\\|CREATE TABLE transferencias\\\\|CREATE TABLE aportes\\\\|CREATE TABLE retiradas\" /workspaces/code-together/migrations/*.sql)"
     ]
   }
 }

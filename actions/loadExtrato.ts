@@ -20,6 +20,7 @@ function loadExtrato() {
           -tp.valor_pago::numeric(15,2)                                  AS valor,
           'CP'                                                            AS tipo,
           m.nome                                                          AS matriz_nome,
+          NULLIF(TRIM(COALESCE(tp.observacoes_pagamento, cp.observacoes, '')), '') AS observacoes,
           tp.data_pagamento                                               AS data_ordenacao,
           tp.created_at                                                   AS created_at_ordenacao
         FROM titulos_pagar tp
@@ -66,6 +67,7 @@ function loadExtrato() {
           tr.valor_recebido::numeric(15,2)                               AS valor,
           'CR'                                                            AS tipo,
           m.nome                                                          AS matriz_nome,
+          NULLIF(TRIM(COALESCE(tr.observacoes_recebimento, cr.observacoes, '')), '') AS observacoes,
           tr.data_recebimento                                             AS data_ordenacao,
           tr.created_at                                                   AS created_at_ordenacao
         FROM titulos_receber tr
@@ -94,6 +96,7 @@ function loadExtrato() {
           -t.valor::numeric(15,2)                 AS valor,
           'TR'                                    AS tipo,
           NULL                                    AS matriz_nome,
+          NULLIF(TRIM(COALESCE(t.observacoes, '')), '') AS observacoes,
           t.data_transferencia                    AS data_ordenacao,
           t.created_at                            AS created_at_ordenacao
         FROM transferencias t
@@ -115,6 +118,7 @@ function loadExtrato() {
           t.valor::numeric(15,2)                  AS valor,
           'TR'                                    AS tipo,
           NULL                                    AS matriz_nome,
+          NULLIF(TRIM(COALESCE(t.observacoes, '')), '') AS observacoes,
           t.data_transferencia                    AS data_ordenacao,
           t.created_at                            AS created_at_ordenacao
         FROM transferencias t
@@ -136,6 +140,7 @@ function loadExtrato() {
           a.valor::numeric(15,2)                  AS valor,
           'APORTE'                                AS tipo,
           m.nome                                  AS matriz_nome,
+          NULLIF(TRIM(COALESCE(a.observacoes, '')), '') AS observacoes,
           a.data_aporte                           AS data_ordenacao,
           a.created_at                            AS created_at_ordenacao
         FROM aportes a
@@ -159,6 +164,7 @@ function loadExtrato() {
           -r.valor::numeric(15,2)                 AS valor,
           'RETIRADA'                              AS tipo,
           m.nome                                  AS matriz_nome,
+          NULLIF(TRIM(COALESCE(r.observacoes, '')), '') AS observacoes,
           r.data_retirada                         AS data_ordenacao,
           r.created_at                            AS created_at_ordenacao
         FROM retiradas r

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
-import { Calendar, FileDown, FileText, X } from 'lucide-react';
+import { Calendar, ChevronDown, FileDown, FileText, X } from 'lucide-react';
 
 import loadContasAction from '@/actions/loadContas';
 import loadExtratoAction from '@/actions/loadExtrato';
@@ -24,6 +24,12 @@ import { Combobox } from '@/components/ui/combobox';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
 import { exportExtratoBancarioPDF } from '@/utils/export';
@@ -38,6 +44,7 @@ interface ExtratoTransaction {
   valor: number;
   tipo: TipoMovimentacao;
   matriz_nome?: string;
+  observacoes?: string;
 }
 
 interface TransacaoComSaldo extends ExtratoTransaction {
@@ -158,7 +165,7 @@ export function ExtratoBancario() {
     setShowExtrato(false);
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = (withObs: boolean) => {
     if (!contaInfo) return;
     const matrizLabel = matrizId !== 'all' ? matrizOptions.find((m) => m.value === matrizId)?.label : undefined;
     exportExtratoBancarioPDF(
@@ -177,6 +184,7 @@ export function ExtratoBancario() {
       },
       formatCurrency,
       formatDateForDisplay,
+      withObs,
     );
   };
 
@@ -236,10 +244,23 @@ export function ExtratoBancario() {
             Gerar extrato
           </Button>
           {showExtrato && transacoesComSaldo.length > 0 && (
-            <Button type="button" className={listingSecondaryButtonClassName} onClick={handleExportPDF}>
-              <FileDown className="mr-2 h-4 w-4" />
-              Exportar PDF
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" className={listingSecondaryButtonClassName}>
+                  <FileDown className="mr-2 h-4 w-4" />
+                  Exportar PDF
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExportPDF(false)}>
+                  Extrato Resumido
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportPDF(true)}>
+                  Extrato com OBS
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </ListingFilterCard>
