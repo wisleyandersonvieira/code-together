@@ -47,6 +47,7 @@ export interface AuditoriaItemForm {
   valor_pago: number;
   valor_a_pagar: number;
   observacoes?: string;
+  auditado?: boolean;
   parcelas_detalhes: AuditoriaParcelaForm[];
   historico_pagamentos: AuditoriaHistoricoPagamento[];
   anexos: AuditoriaItemAttachment[];
@@ -170,6 +171,7 @@ export function buildEmptyAuditoriaItem(): AuditoriaItemForm {
     status_pagamento: 'PENDENTE',
     valor_pago: 0,
     valor_a_pagar: 0,
+    auditado: false,
     parcelas_detalhes,
     historico_pagamentos: [],
     anexos: [],

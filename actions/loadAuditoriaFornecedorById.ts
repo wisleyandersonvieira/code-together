@@ -21,6 +21,7 @@ function loadAuditoriaFornecedorById() {
               'valor_pago', i.valor_pago,
               'valor_a_pagar', i.valor_a_pagar,
               'observacoes', i.observacoes,
+              'auditado', i.auditado,
               'parcelas_detalhes', COALESCE((
                 SELECT JSON_AGG(
                   JSON_BUILD_OBJECT(

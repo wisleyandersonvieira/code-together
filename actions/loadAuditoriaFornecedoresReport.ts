@@ -22,6 +22,7 @@ function loadAuditoriaFornecedoresReport() {
         {{ params && params.status && params.status !== 'all' ? "AND a.status = '" + params.status + "'" : "" }}
         {{ params && params.fornecedorId ? "AND i.fornecedor_subcontratado_id = " + params.fornecedorId : "" }}
         {{ params && params.projetoId ? "AND i.projeto_id = " + params.projetoId : "" }}
+        {{ params && params.auditoriaId ? "AND a.id = " + params.auditoriaId : "" }}
       GROUP BY COALESCE(p.name, 'Sem projeto'), fs.nome_razao_social
       ORDER BY projeto_nome ASC, fornecedor_nome ASC;
     `,

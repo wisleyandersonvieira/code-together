@@ -112,6 +112,7 @@ function normalizeAuditoriaPayload(rawData: any): AuditoriaFormData {
       valor_pago: Number(item.valor_pago || 0),
       valor_a_pagar: Number(item.valor_a_pagar || 0),
       observacoes: item.observacoes || '',
+      auditado: item.auditado === true,
       parcelas_detalhes: parcelas.length > 0 ? parcelas : splitParcelas(Number(item.valor_total || 0), Number(item.parcelas || 1)),
       historico_pagamentos: (item.historico_pagamentos || []) as AuditoriaHistoricoPagamento[],
       anexos: (item.anexos || []) as AuditoriaItemAttachment[],
@@ -497,6 +498,44 @@ function AnexosViewDialog({ files }: { files: AuditoriaItemAttachment[] }) {
   );
 }
 
+function AnexosEditDialog({
+  item,
+  onPendingFilesChange,
+  onUploadedFile,
+  onDeletedFile,
+}: {
+  item: AuditoriaItemForm;
+  onPendingFilesChange: (files: File[]) => void;
+  onUploadedFile: (file: AuditoriaItemAttachment) => void;
+  onDeletedFile: (fileId: number) => void;
+}) {
+  const totalFiles = item.anexos.length + item.pendingFiles.length;
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" className="h-8 rounded-lg border-slate-200 px-2.5 text-xs">
+          <Paperclip className="h-3.5 w-3.5" />
+          {totalFiles > 0 ? <span className="ml-1">{totalFiles}</span> : null}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Anexos do item</DialogTitle>
+        </DialogHeader>
+        <AuditoriaItemAttachments
+          itemId={item.id}
+          files={item.anexos}
+          pendingFiles={item.pendingFiles}
+          readOnly={false}
+          onPendingFilesChange={onPendingFilesChange}
+          onUploadedFile={onUploadedFile}
+          onDeletedFile={onDeletedFile}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RelatorioContent({ auditoriaId }: { auditoriaId: number }) {
   const { formatCurrency } = useCurrency();
   const [auditoriaResponse, loading] = useLoadAction(loadAuditoriaFornecedorByIdAction, [], { id: auditoriaId });
@@ -795,6 +834,7 @@ function AuditoriaFornecedorEditor({
         parcelas: item.parcelas,
         projeto_id: item.projeto_id,
         observacoes: item.observacoes || null,
+        auditado: item.auditado || false,
         parcelas_detalhes: item.parcelas_detalhes.map((parcela) => ({
           id: parcela.id || null,
           numero_parcela: parcela.numero_parcela,
@@ -924,8 +964,10 @@ function AuditoriaFornecedorEditor({
                 <TableHead>Parcelas</TableHead>
                 <TableHead>Projeto</TableHead>
                 <TableHead>Pagamento</TableHead>
+                <TableHead>Auditado</TableHead>
                 <TableHead>Anexos</TableHead>
                 <TableHead>Histórico</TableHead>
+                <TableHead>Observação</TableHead>
                 {!readOnly ? <TableHead>Ações</TableHead> : null}
               </TableRow>
             </TableHeader>
@@ -934,10 +976,7 @@ function AuditoriaFornecedorEditor({
                 <TableRow key={item.client_key} className="align-top">
                   <TableCell className="min-w-[160px]">
                     {readOnly ? (
-                      <div className="space-y-1">
-                        <p className="font-medium text-slate-900">{item.fornecedor_nome || '-'}</p>
-                        <p className="text-xs text-slate-500">{item.observacoes || 'Sem observações'}</p>
-                      </div>
+                      <p className="font-medium text-slate-900">{item.fornecedor_nome || '-'}</p>
                     ) : (
                       <div className="space-y-2">
                         <Combobox
@@ -952,17 +991,6 @@ function AuditoriaFornecedorEditor({
                           options={supplierOptions}
                           placeholder="Selecionar fornecedor"
                           className="h-11 rounded-xl border-slate-200"
-                        />
-                        <Textarea
-                          value={item.observacoes || ''}
-                          onChange={(event) =>
-                            updateItem(item.client_key, (current) => ({
-                              ...current,
-                              observacoes: event.target.value,
-                            }))
-                          }
-                          className="min-h-[88px] rounded-xl border-slate-200 text-sm"
-                          placeholder="Observações do item"
                         />
                       </div>
                     )}
@@ -1048,38 +1076,56 @@ function AuditoriaFornecedorEditor({
                       />
                     </div>
                   </TableCell>
-                  <TableCell className={readOnly ? 'min-w-[110px]' : 'min-w-[220px]'}>
+                  <TableCell className="min-w-[90px]">
+                    {readOnly ? (
+                      <span className={`inline-flex h-7 items-center rounded-lg border px-3 text-xs font-medium ${item.auditado ? 'border-emerald-200 bg-emerald-100 text-emerald-700' : 'border-rose-200 bg-rose-100 text-rose-700'}`}>
+                        {item.auditado ? 'Sim' : 'Não'}
+                      </span>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => updateItem(item.client_key, (current) => ({ ...current, auditado: !current.auditado }))}
+                        className={`h-7 rounded-lg border px-3 text-xs font-medium shadow-none ${item.auditado ? 'border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-200'}`}
+                      >
+                        {item.auditado ? 'Sim' : 'Não'}
+                      </Button>
+                    )}
+                  </TableCell>
+                  <TableCell className="min-w-[80px]">
                     {readOnly ? (
                       <AnexosViewDialog files={item.anexos} />
                     ) : (
-                      <AuditoriaItemAttachments
-                        itemId={item.id}
-                        files={item.anexos}
-                        pendingFiles={item.pendingFiles}
-                        readOnly={readOnly}
+                      <AnexosEditDialog
+                        item={item}
                         onPendingFilesChange={(pendingFiles) =>
-                          updateItem(item.client_key, (current) => ({
-                            ...current,
-                            pendingFiles,
-                          }))
+                          updateItem(item.client_key, (current) => ({ ...current, pendingFiles }))
                         }
                         onUploadedFile={(file) =>
-                          updateItem(item.client_key, (current) => ({
-                            ...current,
-                            anexos: [file, ...current.anexos],
-                          }))
+                          updateItem(item.client_key, (current) => ({ ...current, anexos: [file, ...current.anexos] }))
                         }
                         onDeletedFile={(fileId) =>
-                          updateItem(item.client_key, (current) => ({
-                            ...current,
-                            anexos: current.anexos.filter((attachment) => attachment.id !== fileId),
-                          }))
+                          updateItem(item.client_key, (current) => ({ ...current, anexos: current.anexos.filter((a) => a.id !== fileId) }))
                         }
                       />
                     )}
                   </TableCell>
                   <TableCell className="min-w-[100px]">
                     <HistoricoDialog item={item} />
+                  </TableCell>
+                  <TableCell className="min-w-[160px]">
+                    {readOnly ? (
+                      <span className="text-sm text-slate-700">{item.observacoes || '-'}</span>
+                    ) : (
+                      <Textarea
+                        value={item.observacoes || ''}
+                        onChange={(event) =>
+                          updateItem(item.client_key, (current) => ({ ...current, observacoes: event.target.value }))
+                        }
+                        className="min-h-[80px] rounded-xl border-slate-200 text-sm"
+                        placeholder="Observações"
+                      />
+                    )}
                   </TableCell>
                   {!readOnly ? (
                     <TableCell className="min-w-[70px]">
