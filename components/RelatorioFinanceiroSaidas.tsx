@@ -169,7 +169,7 @@ export function RelatorioFinanceiroSaidas() {
   };
 
 
-  const totalGeral = relatorioData?.reduce((sum: number, item: RelatorioSaidaItem) => sum + (item.valor || 0), 0) || 0;
+  const totalGeral = relatorioData?.reduce((sum: number, item: RelatorioSaidaItem) => sum + (Number(item.valor) || 0), 0) || 0;
 
   return (
     <div className="space-y-6">
