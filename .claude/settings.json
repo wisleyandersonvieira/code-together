@@ -12,7 +12,10 @@
       "Bash(do grep:*)",
       "Bash(done)",
       "Bash(grep -n \"observacao\\\\|observacoes\" /workspaces/code-together/migrations/*.sql)",
-      "Bash(grep -A 2 \"CREATE TABLE titulos_pagar\\\\|CREATE TABLE contas_pagar\\\\|CREATE TABLE titulos_receber\\\\|CREATE TABLE contas_receber\\\\|CREATE TABLE transferencias\\\\|CREATE TABLE aportes\\\\|CREATE TABLE retiradas\" /workspaces/code-together/migrations/*.sql)"
+      "Bash(grep -A 2 \"CREATE TABLE titulos_pagar\\\\|CREATE TABLE contas_pagar\\\\|CREATE TABLE titulos_receber\\\\|CREATE TABLE contas_receber\\\\|CREATE TABLE transferencias\\\\|CREATE TABLE aportes\\\\|CREATE TABLE retiradas\" /workspaces/code-together/migrations/*.sql)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(/tmp/retiradas_summary.txt:*)",
+      "Read(//tmp/**)"
     ]
   }
 }

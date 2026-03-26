@@ -17,7 +17,7 @@ import loadSociosAction from '@/actions/loadSocios';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadContasAction from '@/actions/loadContas';
 import { useCurrency } from '@/hooks/use-currency';
-import { DatePicker } from '@/components/ui/date-picker';
+import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 
 interface RetiradaFormProps {
   retirada?: any;
@@ -186,14 +186,13 @@ export function RetiradaForm({ retirada, onSuccess, onCancel }: RetiradaFormProp
 
             <div className="space-y-2">
               <Label htmlFor="data_retirada">Data da Retirada *</Label>
-              <DatePicker
+              <DatePickerWithYearSelector
                 date={formData.data_retirada ? new Date(formData.data_retirada + 'T12:00:00') : undefined}
                 onDateChange={(date) => {
                   if (date) {
-                    // Format date as YYYY-MM-DD to avoid timezone issues
-                    const year = date.getFullYear();
+                    const year  = date.getFullYear();
                     const month = String(date.getMonth() + 1).padStart(2, '0');
-                    const day = String(date.getDate()).padStart(2, '0');
+                    const day   = String(date.getDate()).padStart(2, '0');
                     setFormData({ ...formData, data_retirada: `${year}-${month}-${day}` });
                   } else {
                     setFormData({ ...formData, data_retirada: '' });
