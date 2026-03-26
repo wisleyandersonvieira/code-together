@@ -863,26 +863,35 @@ export function exportSaidasPorMesPDF(
   const maior_saida = valores.length ? Math.max(...valores) : 0;
 
   // Subtotal por mês (explícito)
-  const getMesKey = (item: RelatorioSaidaItem): string => {
-    const raw = item.data_pagamento || item.data_vencimento;
-    if (!raw) return '00/0000';
-    const d = new Date(raw + 'T00:00:00');
-    return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const getMesSortKey = (item: RelatorioSaidaItem): string => {
+    const raw = item.data_competencia || item.data_pagamento || item.data_vencimento;
+    if (!raw) return '0000-00';
+    const clean = String(raw).split('T')[0];
+    const d = new Date(clean + 'T00:00:00');
+    if (isNaN(d.getTime())) return '0000-00';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+  const getMesLabel = (sortKey: string): string => {
+    if (sortKey === '0000-00') return 'Sem Data';
+    const [year, month] = sortKey.split('-');
+    return `${MONTH_NAMES[parseInt(month, 10) - 1]} ${year}`;
   };
 
   const subtotal_por_mes: Record<string, number> = {};
   data.forEach((item) => {
-    const k = getMesKey(item);
+    const k = getMesSortKey(item);
     subtotal_por_mes[k] = (subtotal_por_mes[k] ?? 0) + safeValue(item.valor);
   });
 
   const quantidade_meses = Object.keys(subtotal_por_mes).length;
-  const mes_maior_volume = Object.entries(subtotal_por_mes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+  const mes_maior_volume_key = Object.entries(subtotal_por_mes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '-';
+  const mes_maior_volume = mes_maior_volume_key !== '-' ? getMesLabel(mes_maior_volume_key) : '-';
   const media_mensal = quantidade_meses > 0 ? total_geral_saidas / quantidade_meses : 0;
 
   const grouped: Record<string, RelatorioSaidaItem[]> = {};
   data.forEach((item) => {
-    const k = getMesKey(item);
+    const k = getMesSortKey(item);
     if (!grouped[k]) grouped[k] = [];
     grouped[k].push(item);
   });
@@ -915,7 +924,7 @@ export function exportSaidasPorMesPDF(
   engine.drawExecutiveSummary([
     `Foram registradas ${quantidade_total_registros} saída(s) em ${quantidade_meses} mês/meses, totalizando ${formatCurrency(total_geral_saidas)}.`,
     `A média mensal de saídas foi de ${formatCurrency(media_mensal)} por mês.`,
-    `O mês com maior volume de saídas foi ${mes_maior_volume}, com ${formatCurrency(subtotal_por_mes[mes_maior_volume] ?? 0)}.`,
+    `O mês com maior volume de saídas foi ${mes_maior_volume}, com ${formatCurrency(subtotal_por_mes[mes_maior_volume_key] ?? 0)}.`,
     `A maior saída individual registrada foi de ${formatCurrency(maior_saida)}.`,
     'Os dados refletem exclusivamente os lançamentos filtrados conforme os critérios selecionados.',
   ]);
@@ -936,11 +945,12 @@ export function exportSaidasPorMesPDF(
 
   engine.drawSectionTitle('Detalhamento', 'Lançamentos por Mês');
 
-  Object.keys(grouped).sort().forEach((mesAno) => {
-    const items = grouped[mesAno];
-    const subtotal = subtotal_por_mes[mesAno] ?? 0;
+  Object.keys(grouped).sort().forEach((sortKey) => {
+    const mesLabel = getMesLabel(sortKey);
+    const items = grouped[sortKey];
+    const subtotal = subtotal_por_mes[sortKey] ?? 0;
 
-    engine.drawGroupHeader(`Mês: ${mesAno}`, '', '');
+    engine.drawGroupHeader(`Mês: ${mesLabel}`, '', '');
     engine.drawTableHeader(columns, colX);
 
     items.forEach((item, index) => {
@@ -980,7 +990,7 @@ export function exportSaidasPorMesPDF(
       engine.y += rowH;
     });
 
-    engine.drawGroupFooter(`Subtotal ${mesAno}`, formatCurrency(subtotal), items.length, formatCurrency);
+    engine.drawGroupFooter(`Subtotal ${mesLabel}`, formatCurrency(subtotal), items.length, formatCurrency);
   });
 
   engine.drawGrandTotal('Total Geral', formatCurrency(total_geral_saidas), quantidade_total_registros);
