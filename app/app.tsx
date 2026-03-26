@@ -8,6 +8,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -166,7 +170,15 @@ const cadastroTabs: TabType[] = [
   'parametros',
 ];
 
-const financeiroTabs: TabType[] = ['contas-pagar', 'contas-receber', 'transferencias', 'extratos'];
+const financeiroTabs: TabType[] = [
+  'contas-pagar',
+  'contas-receber',
+  'transferencias',
+  'extratos',
+  'auditoria-fornecedores-subcontratados',
+  'auditoria-fornecedores',
+  'auditoria-fornecedores-relatorios',
+];
 
 const relatorioTabs: TabType[] = [
   'relatorio-cliente',
@@ -186,9 +198,6 @@ const matrizTabs: TabType[] = [
   'create-estrutura-dre',
   'relatorio-dre',
   'relatorio-dre-projeto',
-  'auditoria-fornecedores-subcontratados',
-  'auditoria-fornecedores',
-  'auditoria-fornecedores-relatorios',
   'export-project',
 ];
 
@@ -791,6 +800,27 @@ function App() {
                   <FileText className="mr-2 h-4 w-4" />
                   Extratos
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Receipt className="mr-2 h-4 w-4" />
+                    Auditoria
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
+                    <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores-subcontratados')}>
+                      <Receipt className="mr-2 h-4 w-4" />
+                      Fornecedores
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores')}>
+                      <Receipt className="mr-2 h-4 w-4" />
+                      Auditorias
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores-relatorios')}>
+                      <PieChart className="mr-2 h-4 w-4" />
+                      Relatórios
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -862,18 +892,6 @@ function App() {
                 <DropdownMenuItem onClick={() => navigateTo('relatorio-dre')}>
                   <PieChart className="mr-2 h-4 w-4" />
                   Relatório DRE
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores-subcontratados')}>
-                  <Receipt className="mr-2 h-4 w-4" />
-                  Auditoria {'>'} Fornecedores
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores')}>
-                  <Receipt className="mr-2 h-4 w-4" />
-                  Auditoria {'>'} Auditorias
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigateTo('auditoria-fornecedores-relatorios')}>
-                  <PieChart className="mr-2 h-4 w-4" />
-                  Auditoria {'>'} Relatórios
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigateTo('export-project')}>
                   <Github className="mr-2 h-4 w-4" />
