@@ -564,7 +564,7 @@ export function ContasReceberList() {
                   <TableCell className="px-4 py-3.5 align-middle">
                     <div className="flex flex-wrap items-center gap-2">
                       <FinanceActionButton icon={Edit} onClick={() => handleEdit(conta)} title="Editar" tone="brand" />
-                      {!conta.titulos_recebidos && (
+                      {Number(conta.titulos_recebidos) === 0 && (
                         <FinanceActionButton icon={Trash2} onClick={() => handleDelete(conta)} title="Excluir" tone="danger" />
                       )}
                       <FinanceActionButton icon={CreditCard} onClick={() => handleReceipt(conta)} title="Baixar/Receber" tone="success" />
