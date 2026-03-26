@@ -81,7 +81,9 @@ function formatDateTimeNow(): string {
 function safeDisplayDate(dateStr?: string | null): string {
   if (!dateStr) return '-';
   try {
-    const d = new Date(dateStr + 'T00:00:00');
+    const raw = String(dateStr).split('T')[0];
+    const d = new Date(raw + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
     return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(d);
   } catch {
     return dateStr;
