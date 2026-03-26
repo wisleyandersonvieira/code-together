@@ -863,11 +863,19 @@ export function exportSaidasPorMesPDF(
   const maior_saida = valores.length ? Math.max(...valores) : 0;
 
   // Subtotal por mês (explícito)
-  const getMesKey = (item: RelatorioSaidaItem): string => {
-    const raw = item.data_pagamento || item.data_vencimento;
-    if (!raw) return '00/0000';
-    const d = new Date(raw + 'T00:00:00');
-    return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  const MONTH_NAMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const getMesSortKey = (item: RelatorioSaidaItem): string => {
+    const raw = item.data_competencia || item.data_pagamento || item.data_vencimento;
+    if (!raw) return '0000-00';
+    const clean = String(raw).split('T')[0];
+    const d = new Date(clean + 'T00:00:00');
+    if (isNaN(d.getTime())) return '0000-00';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+  const getMesLabel = (sortKey: string): string => {
+    if (sortKey === '0000-00') return 'Sem Data';
+    const [year, month] = sortKey.split('-');
+    return `${MONTH_NAMES[parseInt(month, 10) - 1]} ${year}`;
   };
 
   const subtotal_por_mes: Record<string, number> = {};
