@@ -66,6 +66,7 @@ export function RelatorioDre() {
     }
 
     setShowReport(true);
+    setRefreshTrigger(prev => prev + 1);
   };
 
 
@@ -179,6 +180,7 @@ export function RelatorioDre() {
           </CardHeader>
           <CardContent className="p-6">
             <DreDataLoader
+              key={refreshTrigger}
               estruturaId={params.estruturaId}
               matrizId={params.matrizId}
               tipoData={params.tipoData}

@@ -130,13 +130,14 @@ export function DreProjetoDataLoader({
         if (item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
           console.log(`Processando subgrupo projeto: ${item.nome}, função: ${item.subgrupo_funcao}`);
           // Calculate value from contas pagar/receber related to the project
+          // Use Number() to handle PostgreSQL NUMERIC types returned as strings
           const contasPagarValues = contasPagar
-            .filter((cp: any) => cp.subgrupo_contabil_id === item.subgrupo_contabil_id)
-            .reduce((sum: number, cp: any) => sum + (cp.valor_rateio || 0), 0);
-          
+            .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
+            .reduce((sum: number, cp: any) => sum + (Number(cp.valor_rateio) || 0), 0);
+
           const contasReceberValues = contasReceber
-            .filter((cr: any) => cr.subgrupo_contabil_id === item.subgrupo_contabil_id)
-            .reduce((sum: number, cr: any) => sum + (cr.valor_rateio || 0), 0);
+            .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
+            .reduce((sum: number, cr: any) => sum + (Number(cr.valor_rateio) || 0), 0);
 
           valor = contasPagarValues + contasReceberValues;
 
@@ -148,7 +149,7 @@ export function DreProjetoDataLoader({
           }
         } else if (item.tipo === 'APORTE') {
           // Sum project-related aportes (positive)
-          valor = aportes.reduce((sum: number, aporte: any) => sum + (aporte.valor_rateado || 0), 0);
+          valor = aportes.reduce((sum: number, aporte: any) => sum + (Number(aporte.valor_rateado) || 0), 0);
         } else if (item.tipo === 'GRUPO') {
           // Group value is sum of its subgroups
           const subgroupValues = estruturaItens
@@ -158,12 +159,12 @@ export function DreProjetoDataLoader({
               let subgroupValue = 0;
               if (subitem.subgrupo_contabil_id) {
                 const contasPagarValues = contasPagar
-                  .filter((cp: any) => cp.subgrupo_contabil_id === subitem.subgrupo_contabil_id)
-                  .reduce((sum: number, cp: any) => sum + (cp.valor_rateio || 0), 0);
-                
+                  .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(subitem.subgrupo_contabil_id))
+                  .reduce((sum: number, cp: any) => sum + (Number(cp.valor_rateio) || 0), 0);
+
                 const contasReceberValues = contasReceber
-                  .filter((cr: any) => cr.subgrupo_contabil_id === subitem.subgrupo_contabil_id)
-                  .reduce((sum: number, cr: any) => sum + (cr.valor_rateio || 0), 0);
+                  .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(subitem.subgrupo_contabil_id))
+                  .reduce((sum: number, cr: any) => sum + (Number(cr.valor_rateio) || 0), 0);
 
                 subgroupValue = contasPagarValues + contasReceberValues;
 

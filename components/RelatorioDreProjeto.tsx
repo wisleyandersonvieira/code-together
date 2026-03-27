@@ -58,6 +58,7 @@ export function RelatorioDreProjeto() {
     }
 
     setShowReport(true);
+    setRefreshTrigger(prev => prev + 1);
   };
 
   return (
@@ -198,6 +199,7 @@ export function RelatorioDreProjeto() {
           </CardHeader>
           <CardContent>
             <DreProjetoDataLoader
+              key={refreshTrigger}
               estruturaId={params.estruturaId}
               matrizId={params.matrizId}
               statusProjeto={params.statusProjeto}
