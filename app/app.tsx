@@ -597,15 +597,15 @@ function App() {
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="rounded-3xl border border-white/80 bg-white/70 p-5 shadow-sm backdrop-blur">
-                      <p className="text-sm font-semibold text-slate-900">Visual corporativo</p>
+                      <p className="text-sm font-semibold text-slate-900">Gestão financeira</p>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Interface limpa, hierarquia bem definida e interacoes mais agradaveis.
+                        Controle contas, extratos, saídas, receitas, aportes, retiradas e relatórios com visão clara do fluxo financeiro.
                       </p>
                     </div>
                     <div className="rounded-3xl border border-white/80 bg-white/70 p-5 shadow-sm backdrop-blur">
-                      <p className="text-sm font-semibold text-slate-900">Acesso seguro</p>
+                      <p className="text-sm font-semibold text-slate-900">Gestão de projetos</p>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Continue usando toda a logica atual de autenticacao com uma apresentacao muito mais sofisticada.
+                        Acompanhe cada projeto com mais organização, conectando orçamento, movimentações, evolução financeira e dados operacionais.
                       </p>
                     </div>
                   </div>
