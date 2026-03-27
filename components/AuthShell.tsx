@@ -54,9 +54,11 @@ export function AuthShell({
                   {title}
                 </h1>
               </div>
-              <p className="max-w-md text-sm leading-6 text-slate-600 sm:text-[15px]">
-                {description}
-              </p>
+              {description && (
+                <p className="max-w-md text-sm leading-6 text-slate-600 sm:text-[15px]">
+                  {description}
+                </p>
+              )}
             </div>
           </div>
 
