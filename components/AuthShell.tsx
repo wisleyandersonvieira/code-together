@@ -102,4 +102,4 @@ export const authSecondaryButtonClassName =
   'h-11 rounded-2xl border-slate-200 bg-white text-sm font-semibold text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900';
 
 export const authGhostButtonClassName =
-  'h-10 rounded-xl px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900';
+  'h-10 rounded-xl bg-slate-100 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-200 hover:text-slate-900';
