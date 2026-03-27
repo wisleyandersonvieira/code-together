@@ -588,24 +588,24 @@ function App() {
 
                   <div className="space-y-5">
                     <h2 className="max-w-lg text-5xl font-semibold tracking-[-0.06em] text-slate-950">
-                      Gestao premium com uma experiencia mais clara, elegante e eficiente.
+                      Controle financeiro e gestão de projetos com visão integrada.
                     </h2>
                     <p className="max-w-xl text-lg leading-8 text-slate-600">
-                      Acesse o ambiente da Provision com o mesmo padrao visual refinado aplicado nas areas internas do sistema.
+                      Centralize projetos, entradas, saídas, aportes, retiradas e indicadores em uma única plataforma, com mais controle, organização e visão da operação.
                     </p>
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="rounded-3xl border border-white/80 bg-white/70 p-5 shadow-sm backdrop-blur">
-                      <p className="text-sm font-semibold text-slate-900">Visual corporativo</p>
+                      <p className="text-sm font-semibold text-slate-900">Gestão financeira</p>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Interface limpa, hierarquia bem definida e interacoes mais agradaveis.
+                        Controle contas, extratos, saídas, receitas, aportes, retiradas e relatórios com visão clara do fluxo financeiro.
                       </p>
                     </div>
                     <div className="rounded-3xl border border-white/80 bg-white/70 p-5 shadow-sm backdrop-blur">
-                      <p className="text-sm font-semibold text-slate-900">Acesso seguro</p>
+                      <p className="text-sm font-semibold text-slate-900">Gestão de projetos</p>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Continue usando toda a logica atual de autenticacao com uma apresentacao muito mais sofisticada.
+                        Acompanhe cada projeto com mais organização, conectando orçamento, movimentações, evolução financeira e dados operacionais.
                       </p>
                     </div>
                   </div>
