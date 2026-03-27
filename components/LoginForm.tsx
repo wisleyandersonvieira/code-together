@@ -98,7 +98,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
   return (
     <AuthShell
       title="Acesse sua conta"
-      description="Entre no ambiente Provision com uma experiência refinada, segura e alinhada ao novo padrão visual do sistema."
+      description=""
     >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
