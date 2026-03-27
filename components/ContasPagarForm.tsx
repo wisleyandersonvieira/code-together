@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
@@ -56,6 +56,7 @@ import deleteContaPagarOrcamentoAlocacoesAction from '@/actions/deleteContaPagar
 import loadTitulosByContaPagarAction from '@/actions/loadTitulosByContaPagar';
 import updateTituloPagarAction from '@/actions/updateTituloPagar';
 import loadMatrizesAction from '@/actions/loadMatrizes';
+import { PaymentModalContent } from '@/components/ContasPagarPaymentModal';
 
 const itemSchema = z.object({
   produto_id: z.number().min(1, 'Produto é obrigatório'),
@@ -298,6 +299,9 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   const [rateioConfirmado, setRateioConfirmado] = useState(false);
   const [titulosEditaveis, setTitulosEditaveis] = useState<Record<number, Date>>({});
   const [parcelasPreview, setParcelasPreview] = useState<Array<{ parcela: number; data_vencimento: Date; valor: number }>>([]);
+  const [showSaveAndPayModal, setShowSaveAndPayModal] = useState(false);
+  const [contaIdParaPagamento, setContaIdParaPagamento] = useState<number | null>(null);
+  const saveAndPayRef = useRef(false);
   const isEditing = !!conta;
   const [paymentForm, setPaymentForm] = useState({
     conta_id: '',
@@ -792,11 +796,20 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
           await uploadPendingFiles(currentContaPagarId);
         }
 
+        const shouldOpenPaymentModal = saveAndPayRef.current;
+        saveAndPayRef.current = false;
+
         toast({
           title: "Conta a pagar criada",
           description: `Conta criada com ${values.parcelas} título(s) gerado(s)${pendingFiles.length > 0 ? ` e ${pendingFiles.length} arquivo(s) anexado(s)` : ''}`,
         });
-        onSuccess();
+
+        if (shouldOpenPaymentModal) {
+          setContaIdParaPagamento(currentContaPagarId);
+          setShowSaveAndPayModal(true);
+        } else {
+          onSuccess();
+        }
       } else {
         toast({
           title: "Conta a pagar atualizada",
@@ -1676,12 +1689,12 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
               </FinanceDetailSectionCard>
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   disabled={
-                    isCreating || 
+                    isCreating ||
                     isUpdating ||
-                    valorTotalItens === 0 || 
+                    valorTotalItens === 0 ||
                     (projetosFields.length > 0 && Math.abs(percentualTotalRateio - 100) > 0.01) ||
                     (projetosFields.length > 0 && !isAlocacaoCompleta()) ||
                     (isEditing && conta.titulos_pagos > 0) ||
@@ -1690,13 +1703,34 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                   className="h-11 flex-1 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                 >
                   <Save className="mr-2 h-4 w-4" />
-                  {isEditing && conta.titulos_pagos > 0 
+                  {isEditing && conta.titulos_pagos > 0
                     ? 'Visualização'
-                    : isEditing 
+                    : isEditing
                       ? (isUpdating ? 'Salvando...' : 'Salvar Alterações')
                       : (isCreating ? 'Salvando...' : 'Salvar Conta')
                   }
                 </Button>
+                {!isEditing && (
+                  <Button
+                    type="button"
+                    disabled={
+                      isCreating ||
+                      isUpdating ||
+                      valorTotalItens === 0 ||
+                      (projetosFields.length > 0 && Math.abs(percentualTotalRateio - 100) > 0.01) ||
+                      (projetosFields.length > 0 && !isAlocacaoCompleta()) ||
+                      itensFields.length === 0
+                    }
+                    className="h-11 flex-1 rounded-xl bg-emerald-700 text-white shadow-sm hover:bg-emerald-600"
+                    onClick={() => {
+                      saveAndPayRef.current = true;
+                      form.handleSubmit(onSubmit)();
+                    }}
+                  >
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    {isCreating ? 'Salvando...' : 'Salvar e Baixar'}
+                  </Button>
+                )}
                 <Button type="button" variant="outline" onClick={onCancel} className="h-11 rounded-xl border-slate-200 bg-white px-5 text-slate-700 hover:border-slate-300 hover:bg-slate-50">
                   Cancelar
                 </Button>
@@ -1705,6 +1739,26 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
           </Tabs>
         </form>
       </Form>
+
+      {/* Save and Pay Modal */}
+      <Dialog open={showSaveAndPayModal} onOpenChange={setShowSaveAndPayModal}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Efetuar Pagamento</DialogTitle>
+          </DialogHeader>
+          {contaIdParaPagamento && (
+            <PaymentModalContent
+              conta={{ id: contaIdParaPagamento }}
+              contas={contas || []}
+              onClose={() => setShowSaveAndPayModal(false)}
+              onSuccess={() => {
+                setShowSaveAndPayModal(false);
+                onSuccess();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Payment Modal */}
       <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
