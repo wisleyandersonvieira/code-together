@@ -671,7 +671,7 @@ function App() {
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}
-                className="h-10 rounded-xl border border-slate-200 px-4 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
+                className="h-10 rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900"
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
