@@ -17,7 +17,8 @@
       "Bash(/tmp/retiradas_summary.txt:*)",
       "Read(//tmp/**)",
       "Bash(ls -la /workspaces/code-together/components/Relatorio*)",
-      "Read(//workspacescode-together/components/**)"
+      "Read(//workspacescode-together/components/**)",
+      "Bash(grep -r \"PDF\\\\|pdf\\\\|report\" /workspaces/code-together/src --include=*.ts --include=*.tsx)"
     ]
   }
 }

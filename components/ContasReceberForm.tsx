@@ -988,13 +988,17 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                   render={({ field }) => (
                                     <Input
                                       className={financeDetailFieldClassName}
-                                      type="number"
-                                      step="0.01"
-                                      {...field}
+                                      type="text"
+                                      inputMode="decimal"
+                                      name={field.name}
+                                      ref={field.ref}
+                                      defaultValue={field.value > 0 ? String(field.value).replace('.', ',') : ''}
                                       onChange={(e) => {
-                                        field.onChange(parseFloat(e.target.value) || 0);
+                                        const raw = e.target.value.replace(',', '.');
+                                        field.onChange(parseFloat(raw) || 0);
                                         setTimeout(() => updateItemTotal(index), 0);
                                       }}
+                                      onBlur={field.onBlur}
                                     />
                                   )}
                                 />
