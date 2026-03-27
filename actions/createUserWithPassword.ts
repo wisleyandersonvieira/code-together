@@ -6,6 +6,7 @@ function createUserWithPassword() {
     query: `
       INSERT INTO users (name, email, phone, role, status, password_hash)
       VALUES ({{params.name}}, {{params.email}}, {{params.phone}}, {{params.role}}, {{params.status}}, {{params.passwordHash}})
+      ON CONFLICT DO NOTHING
       RETURNING id, name, email, phone, role, status, created_at, updated_at;
     `,
   });
