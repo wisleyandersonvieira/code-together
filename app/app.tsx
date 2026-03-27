@@ -588,10 +588,10 @@ function App() {
 
                   <div className="space-y-5">
                     <h2 className="max-w-lg text-5xl font-semibold tracking-[-0.06em] text-slate-950">
-                      Gestao premium com uma experiencia mais clara, elegante e eficiente.
+                      Controle financeiro e gestão de projetos com visão integrada.
                     </h2>
                     <p className="max-w-xl text-lg leading-8 text-slate-600">
-                      Acesse o ambiente da Provision com o mesmo padrao visual refinado aplicado nas areas internas do sistema.
+                      Centralize projetos, entradas, saídas, aportes, retiradas e indicadores em uma única plataforma, com mais controle, organização e visão da operação.
                     </p>
                   </div>
 
