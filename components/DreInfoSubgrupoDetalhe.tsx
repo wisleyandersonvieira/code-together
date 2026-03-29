@@ -147,7 +147,7 @@ export function DreInfoSubgrupoDetalhe({
           <TableCell colSpan={3} className="py-1 px-4">
             <div
               className="grid text-xs items-center border-l-2 border-blue-100 pl-3"
-              style={{ marginLeft: `${indentPx}px`, gridTemplateColumns: '110px 1fr 1fr 120px' }}
+              style={{ marginLeft: `${indentPx}px`, gridTemplateColumns: '110px 1fr 1fr 1fr 120px' }}
             >
               <span className="text-muted-foreground font-mono">
                 {formatDate(item.data_referencia)}
@@ -157,6 +157,9 @@ export function DreInfoSubgrupoDetalhe({
               </span>
               <span className="text-muted-foreground truncate pr-2">
                 {item.observacao || <em className="opacity-50">—</em>}
+              </span>
+              <span className="text-muted-foreground truncate pr-2">
+                {item.projetos || <em className="opacity-50">—</em>}
               </span>
               <span
                 className={`text-right font-mono font-medium ${
