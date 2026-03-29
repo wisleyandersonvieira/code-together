@@ -453,6 +453,16 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
 
         currentContaReceberId = conta.id;
 
+        // Update pending títulos values if valor_total changed
+        const antigoValorTotal = parseFloat(conta.valor_total);
+        if (antigoValorTotal && antigoValorTotal !== valorTotalItens) {
+          await updateTitulosReceberValor({
+            conta_receber_id: conta.id,
+            antigo_valor_total: antigoValorTotal,
+            novo_valor_total: valorTotalItens,
+          });
+        }
+
         // Delete existing items, projects, and faturamentos
         await deleteContaReceberItens({ contaReceberId: conta.id });
         await deleteContaReceberProjetos({ contaReceberId: conta.id });
