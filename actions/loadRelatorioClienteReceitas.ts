@@ -12,7 +12,11 @@ function loadRelatorioClienteReceitas() {
           tr.data_vencimento,
           tr.data_recebimento,
           p.name           AS projeto_nome,
-          tr.valor,
+          CASE 
+            WHEN crp_direct.percentual IS NOT NULL 
+              THEN ROUND(tr.valor * crp_direct.percentual / 100.0, 2)
+            ELSE tr.valor
+          END              AS valor,
           c.nome           AS conta_nome,
           tr.parcela,
           tr.total_parcelas,
@@ -64,6 +68,7 @@ function loadRelatorioClienteReceitas() {
           SELECT DISTINCT conta_receber_id, projeto_id FROM contas_receber_faturamento
         ) all_projetos                         ON cr.id = all_projetos.conta_receber_id
         LEFT  JOIN projetos p                  ON all_projetos.projeto_id = p.id
+        LEFT  JOIN contas_receber_projetos crp_direct ON cr.id = crp_direct.conta_receber_id AND all_projetos.projeto_id = crp_direct.projeto_id
         LEFT  JOIN contas c                    ON tr.conta_id = c.id
         WHERE
           ({{params.clienteId}} IS NULL OR (

@@ -30,7 +30,13 @@ function loadRelatorioProjetosGeral() {
         SELECT 
           p.id as projeto_id,
           p.name as projeto_nome,
-          COALESCE(SUM(CASE WHEN tr.status = 'RECEBIDO' AND tr.valor_recebido IS NOT NULL THEN tr.valor_recebido ELSE 0 END), 0) as total_receitas
+          COALESCE(SUM(
+            CASE 
+              WHEN tr.status = 'RECEBIDO' AND tr.valor_recebido IS NOT NULL 
+                THEN ROUND(tr.valor_recebido * COALESCE(crp.percentual, 100) / 100.0, 2)
+              ELSE 0 
+            END
+          ), 0) as total_receitas
         FROM projetos p
         LEFT JOIN contas_receber_projetos crp ON p.id = crp.projeto_id
         LEFT JOIN contas_receber cr ON crp.conta_receber_id = cr.id
