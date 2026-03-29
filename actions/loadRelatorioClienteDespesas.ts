@@ -4,8 +4,6 @@ function loadRelatorioClienteDespesas() {
   return action('loadRelatorioClienteDespesas', 'SQL', {
     databaseName: 'provision',
     query: `
-      -- CTE com DISTINCT ON (tp.id) para evitar duplicação quando um título está
-      -- vinculado a múltiplos projetos via contas_pagar_projetos.
       WITH dedup AS (
         SELECT DISTINCT ON (tp.id)
           tp.id            AS titulo_id,
@@ -13,7 +11,12 @@ function loadRelatorioClienteDespesas() {
           tp.data_pagamento,
           f.name           AS fornecedor_nome,
           p.name           AS projeto_nome,
-          tp.valor,
+          -- Quando há rateio por projeto, calcula o valor proporcional
+          CASE 
+            WHEN cpp.percentual IS NOT NULL AND cpp.percentual > 0 
+              THEN ROUND(tp.valor * cpp.percentual / 100.0, 2)
+            ELSE tp.valor
+          END              AS valor,
           c.nome           AS conta_nome,
           tp.parcela,
           tp.total_parcelas,
