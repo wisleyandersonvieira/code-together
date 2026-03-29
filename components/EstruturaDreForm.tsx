@@ -603,7 +603,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                                   <SelectValue placeholder="Selecione o subgrupo" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {item.grupo_contabil_id && getAvailableSubgrupos(item.grupo_contabil_id).map((subgrupo: any) => (
+                                  {item.grupo_contabil_id && getAvailableSubgrupos(item.grupo_contabil_id, index).map((subgrupo: any) => (
                                     <SelectItem key={subgrupo.id} value={subgrupo.id.toString()}>
                                       {subgrupo.descricao}
                                     </SelectItem>
