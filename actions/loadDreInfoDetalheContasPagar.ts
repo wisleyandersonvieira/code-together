@@ -7,7 +7,7 @@ function loadDreInfoDetalheContasPagar() {
       SELECT
         cp.id,
         f.name as favorecido,
-        COALESCE(cp.observacao, '') as observacao,
+        COALESCE(cp.observacoes, '') as observacao,
         CASE
           WHEN '{{params.tipoData}}' = 'competencia' THEN cp.data_competencia::text
           ELSE MIN(tp.data_pagamento)::text
@@ -33,7 +33,7 @@ function loadDreInfoDetalheContasPagar() {
           ('{{params.tipoData}}' = 'pagamento' AND tp.data_pagamento BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}' AND tp.status = 'PAGO' AND tp.valor_pago IS NOT NULL AND tp.valor_pago > 0)
         )
         {{ params.projetoId ? "AND EXISTS (SELECT 1 FROM contas_pagar_projetos cpp WHERE cpp.conta_pagar_id = cp.id AND cpp.projeto_id = " + params.projetoId + ")" : "" }}
-      GROUP BY cp.id, f.name, cp.observacao, cp.data_competencia
+      GROUP BY cp.id, f.name, cp.observacoes, cp.data_competencia
       ORDER BY data_referencia ASC, cp.id ASC
     `,
   });

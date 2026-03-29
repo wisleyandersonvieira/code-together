@@ -21,6 +21,7 @@ type SqlClient = {
 };
 
 export interface AppUserRecord {
+  [key: string]: unknown;
   id: number;
   name: string;
   email: string;
@@ -30,6 +31,7 @@ export interface AppUserRecord {
 }
 
 export interface PublicUser {
+  [key: string]: unknown;
   id: number;
   name: string;
   email: string;
@@ -95,7 +97,7 @@ async function deriveHash(password: string, salt: Uint8Array): Promise<string> {
   const bits = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt,
+      salt: salt as unknown as BufferSource,
       iterations: ITERATIONS,
       hash: 'SHA-256',
     },
