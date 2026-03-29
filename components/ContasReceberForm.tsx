@@ -525,8 +525,9 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
       }
 
       // Auto-save rateio data if there are rateios with values
-      if (currentRateios && currentRateios.length > 0) {
-        const rateiosComValor = currentRateios.filter(r => r.valor_rateado > 0);
+      const allRateios = Object.values(currentRateiosMap).flat();
+      if (allRateios && allRateios.length > 0) {
+        const rateiosComValor = allRateios.filter(r => r.valor_rateado > 0);
         if (rateiosComValor.length > 0) {
           try {
             // First delete existing rateios for this conta
