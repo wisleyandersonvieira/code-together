@@ -11,7 +11,13 @@ function loadRelatorioProjetoReceitasPorCliente() {
           WHEN cr.entity_type = 'grupo' THEN g.name
           ELSE 'Desconhecido'
         END as cliente_nome,
-        SUM(tr.valor) as valor_total
+        SUM(
+          CASE 
+            WHEN crp_direct.percentual IS NOT NULL 
+              THEN ROUND(tr.valor * crp_direct.percentual / 100.0, 2)
+            ELSE tr.valor
+          END
+        ) as valor_total
       FROM titulos_receber tr
       INNER JOIN contas_receber cr ON tr.conta_receber_id = cr.id
       LEFT JOIN clientes c ON cr.entity_type = 'cliente' AND cr.entity_id = c.id
