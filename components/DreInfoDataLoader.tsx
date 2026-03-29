@@ -490,7 +490,7 @@ export function DreInfoDataLoader({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {dreData.map((item) => {
+            {dreData.filter((item) => item.valor !== 0).map((item) => {
               const expanded = expandedRows.has(item.id);
               const expandable = isExpandable(item);
 
