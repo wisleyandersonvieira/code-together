@@ -71,6 +71,7 @@ export function DreInfoSubgrupoDetalhe({
       observacao: d.observacao || '',
       data_referencia: d.data_referencia || '',
       valor: Number(d.valor) || 0,
+      projetos: d.projetos || '',
     }));
 
     const crItems = (crDetalhe || []).map((d: any) => ({
@@ -79,6 +80,7 @@ export function DreInfoSubgrupoDetalhe({
       observacao: d.observacao || '',
       data_referencia: d.data_referencia || '',
       valor: Number(d.valor) || 0,
+      projetos: d.projetos || '',
     }));
 
     const combined = [...cpItems, ...crItems] as DetalheItem[];
