@@ -762,7 +762,7 @@ function ReverseReceiptModalContent({ conta, onClose, onSuccess }: ReverseReceip
                 <TableHead>Vencimento</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Data Recebimento</TableHead>
-                <TableHead>Observações</TableHead>
+                <TableHead>Conta de Recebimento</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
