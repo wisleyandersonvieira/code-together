@@ -580,7 +580,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                                 <SelectValue placeholder="Selecione o grupo" />
                               </SelectTrigger>
                               <SelectContent>
-                                {gruposContabeis?.map((grupo: any) => (
+                                {gruposContabeis?.filter((grupo: any) => !getUsedGrupoContabilIds(index).includes(grupo.id)).map((grupo: any) => (
                                   <SelectItem key={grupo.id} value={grupo.id.toString()}>
                                     {grupo.descricao}
                                   </SelectItem>
