@@ -47,6 +47,7 @@ import saveRateioAportesAction from '@/actions/saveRateioAportes';
 import createRateioAporteAction from '@/actions/createRateioAporte';
 import uploadFileAction from '@/actions/uploadFile';
 import updateContaReceberAction from '@/actions/updateContaReceber';
+import updateTitulosReceberValorAction from '@/actions/updateTitulosReceberValor';
 import loadContaReceberItensAction from '@/actions/loadContaReceberItens';
 import loadContaReceberProjetosAction from '@/actions/loadContaReceberProjetos';
 import deleteContaReceberItensAction from '@/actions/deleteContaReceberItens';
