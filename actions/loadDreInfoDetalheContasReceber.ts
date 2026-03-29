@@ -45,7 +45,7 @@ function loadDreInfoDetalheContasReceber() {
           ('{{params.tipoData}}' = 'pagamento' AND tr.data_recebimento BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}' AND tr.status = 'RECEBIDO' AND tr.valor_recebido IS NOT NULL AND tr.valor_recebido > 0)
         )
         {{ params.projetoId ? "AND EXISTS (SELECT 1 FROM contas_receber_projetos crp WHERE crp.conta_receber_id = cr.id AND crp.projeto_id = " + params.projetoId + ")" : "" }}
-      GROUP BY cr.id, cli_legacy.name, cli_entity.name, e.name, grp.name, cr.entity_type, cr.observacao, cr.data_competencia
+      GROUP BY cr.id, cli_legacy.name, cli_entity.name, e.name, grp.name, cr.entity_type, cr.observacoes, cr.data_competencia
       ORDER BY data_referencia ASC, cr.id ASC
     `,
   });
