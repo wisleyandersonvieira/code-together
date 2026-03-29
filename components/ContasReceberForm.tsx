@@ -105,7 +105,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const [selectedTitulos, setSelectedTitulos] = useState<number[]>([]);
   const [contaReceberId, setContaReceberId] = useState<number | null>(conta?.id || null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [currentRateios, setCurrentRateios] = useState<any[]>([]);
+  const [currentRateiosMap, setCurrentRateiosMap] = useState<Record<number, any[]>>({});
   const [projetoActionType, setProjetoActionType] = useState<'rateio' | 'faturamento' | null>(null);
   const isEditing = !!conta;
   const [receiptForm, setReceiptForm] = useState({
