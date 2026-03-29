@@ -762,7 +762,7 @@ function ReverseReceiptModalContent({ conta, onClose, onSuccess }: ReverseReceip
                 <TableHead>Vencimento</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Data Recebimento</TableHead>
-                <TableHead>Observações</TableHead>
+                <TableHead>Conta de Recebimento</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -787,8 +787,8 @@ function ReverseReceiptModalContent({ conta, onClose, onSuccess }: ReverseReceip
                   <TableCell>
                     {formatDateForDisplay(titulo.data_recebimento)}
                   </TableCell>
-                  <TableCell className="max-w-[200px] truncate" title={titulo.observacoes_recebimento}>
-                    {titulo.observacoes_recebimento || '-'}
+                  <TableCell className="max-w-[200px] truncate" title={titulo.conta_nome ? `${titulo.conta_nome}${titulo.banco ? ' - ' + titulo.banco : ''}` : ''}>
+                    {titulo.conta_nome ? `${titulo.conta_nome}${titulo.banco ? ' - ' + titulo.banco : ''}` : '-'}
                   </TableCell>
                 </TableRow>
               ))}
