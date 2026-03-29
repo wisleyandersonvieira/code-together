@@ -1,0 +1,1 @@
+ALTER TABLE contas_pagar_projetos ALTER COLUMN percentual TYPE NUMERIC(5,2);
