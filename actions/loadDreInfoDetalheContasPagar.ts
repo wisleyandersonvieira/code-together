@@ -17,13 +17,16 @@ function loadDreInfoDetalheContasPagar() {
             WHEN '{{params.tipoData}}' = 'competencia' THEN (tp.valor * cpi.valor_total / NULLIF(cp.valor_total, 0))
             ELSE (tp.valor_pago * cpi.valor_total / NULLIF(cp.valor_total, 0))
           END
-        ) as valor
+        ) as valor,
+        COALESCE(STRING_AGG(DISTINCT proj.name, ', '), '') as projetos
       FROM contas_pagar cp
       INNER JOIN titulos_pagar tp ON tp.conta_pagar_id = cp.id
       INNER JOIN contas_pagar_itens cpi ON cpi.conta_pagar_id = cp.id
       INNER JOIN produtos prod ON prod.id = cpi.produto_id
       INNER JOIN subgrupos_contabeis sg ON sg.id = prod.subgrupo_id
       INNER JOIN fornecedores f ON f.id = cp.fornecedor_id
+      LEFT JOIN contas_pagar_projetos cpp2 ON cpp2.conta_pagar_id = cp.id
+      LEFT JOIN projetos proj ON proj.id = cpp2.projeto_id
       WHERE
         cp.matriz_id = {{params.matrizId}}
         AND sg.id = {{params.subgrupoId}}
