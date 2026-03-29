@@ -426,7 +426,7 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
             </TableRow>
           </TableHeader>
           <TableBody>
-            {dreData.map((item) => (
+            {dreData.filter((item) => item.valor !== 0).map((item) => (
               <TableRow key={item.id} className={getRowStyle(item)}>
                 <TableCell>
                   <div className="flex items-center gap-2">
