@@ -35,6 +35,7 @@ function loadRelatorioProjetoReceitasPorCliente() {
         SELECT DISTINCT conta_receber_id, projeto_id
         FROM contas_receber_faturamento
       ) all_projetos ON cr.id = all_projetos.conta_receber_id
+      LEFT JOIN contas_receber_projetos crp_direct ON cr.id = crp_direct.conta_receber_id AND all_projetos.projeto_id = crp_direct.projeto_id
       WHERE 
         ({{params.projetoId}} IS NULL OR all_projetos.projeto_id = {{params.projetoId}})
         AND tr.status = 'RECEBIDO'
