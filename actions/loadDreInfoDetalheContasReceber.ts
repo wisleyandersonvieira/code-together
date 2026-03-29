@@ -26,7 +26,8 @@ function loadDreInfoDetalheContasReceber() {
             WHEN '{{params.tipoData}}' = 'competencia' THEN (tr.valor * cri.valor_total / NULLIF(cr.valor_total, 0))
             ELSE (tr.valor_recebido * cri.valor_total / NULLIF(cr.valor_total, 0))
           END
-        ) as valor
+        ) as valor,
+        COALESCE(STRING_AGG(DISTINCT proj.name, ', '), '') as projetos
       FROM contas_receber cr
       INNER JOIN titulos_receber tr ON tr.conta_receber_id = cr.id
       INNER JOIN contas_receber_itens cri ON cri.conta_receber_id = cr.id
@@ -36,6 +37,8 @@ function loadDreInfoDetalheContasReceber() {
       LEFT JOIN clientes cli_entity ON cr.entity_type = 'cliente' AND cr.entity_id = cli_entity.id
       LEFT JOIN empresas e ON cr.entity_type = 'empresa' AND cr.entity_id = e.id
       LEFT JOIN grupos grp ON cr.entity_type = 'grupo' AND cr.entity_id = grp.id
+      LEFT JOIN contas_receber_projetos crp2 ON crp2.conta_receber_id = cr.id
+      LEFT JOIN projetos proj ON proj.id = crp2.projeto_id
       WHERE
         cr.matriz_id = {{params.matrizId}}
         AND sg.id = {{params.subgrupoId}}

@@ -25,6 +25,7 @@ interface DetalheItem {
   observacao: string;
   data_referencia: string;
   valor: number;
+  projetos: string;
 }
 
 function formatDate(dateStr: string | null): string {
