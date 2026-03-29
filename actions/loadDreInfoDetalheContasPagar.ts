@@ -7,7 +7,7 @@ function loadDreInfoDetalheContasPagar() {
       SELECT
         cp.id,
         f.name as favorecido,
-        COALESCE(cp.observacao, '') as observacao,
+        COALESCE(cp.observacoes, '') as observacao,
         CASE
           WHEN '{{params.tipoData}}' = 'competencia' THEN cp.data_competencia::text
           ELSE MIN(tp.data_pagamento)::text
