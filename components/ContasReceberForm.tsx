@@ -47,6 +47,7 @@ import saveRateioAportesAction from '@/actions/saveRateioAportes';
 import createRateioAporteAction from '@/actions/createRateioAporte';
 import uploadFileAction from '@/actions/uploadFile';
 import updateContaReceberAction from '@/actions/updateContaReceber';
+import updateTitulosReceberValorAction from '@/actions/updateTitulosReceberValor';
 import loadContaReceberItensAction from '@/actions/loadContaReceberItens';
 import loadContaReceberProjetosAction from '@/actions/loadContaReceberProjetos';
 import deleteContaReceberItensAction from '@/actions/deleteContaReceberItens';
@@ -166,6 +167,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const [uploadFile] = useMutateAction(uploadFileAction);
   const [saveRateioAportes] = useMutateAction(saveRateioAportesAction);
   const [createRateioAporte] = useMutateAction(createRateioAporteAction);
+  const [updateTitulosReceberValor] = useMutateAction(updateTitulosReceberValorAction);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -450,6 +452,16 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
         });
 
         currentContaReceberId = conta.id;
+
+        // Update pending títulos values if valor_total changed
+        const antigoValorTotal = parseFloat(conta.valor_total);
+        if (antigoValorTotal && antigoValorTotal !== valorTotalItens) {
+          await updateTitulosReceberValor({
+            conta_receber_id: conta.id,
+            antigo_valor_total: antigoValorTotal,
+            novo_valor_total: valorTotalItens,
+          });
+        }
 
         // Delete existing items, projects, and faturamentos
         await deleteContaReceberItens({ contaReceberId: conta.id });
