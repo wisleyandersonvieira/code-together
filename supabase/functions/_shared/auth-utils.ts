@@ -21,6 +21,7 @@ type SqlClient = {
 };
 
 export interface AppUserRecord {
+  [key: string]: unknown;
   id: number;
   name: string;
   email: string;
@@ -30,6 +31,7 @@ export interface AppUserRecord {
 }
 
 export interface PublicUser {
+  [key: string]: unknown;
   id: number;
   name: string;
   email: string;
