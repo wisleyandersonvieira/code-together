@@ -8,7 +8,13 @@ function loadRelatorioProjetosGeral() {
         SELECT 
           p.id as projeto_id,
           p.name as projeto_nome,
-          COALESCE(SUM(CASE WHEN tp.status = 'PAGO' AND tp.valor_pago IS NOT NULL THEN tp.valor_pago ELSE 0 END), 0) as total_despesas
+          COALESCE(SUM(
+            CASE 
+              WHEN tp.status = 'PAGO' AND tp.valor_pago IS NOT NULL 
+                THEN ROUND(tp.valor_pago * COALESCE(cpp.percentual, 100) / 100.0, 2)
+              ELSE 0 
+            END
+          ), 0) as total_despesas
         FROM projetos p
         LEFT JOIN contas_pagar_projetos cpp ON p.id = cpp.projeto_id
         LEFT JOIN contas_pagar cp ON cpp.conta_pagar_id = cp.id
