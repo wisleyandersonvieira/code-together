@@ -167,6 +167,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const [uploadFile] = useMutateAction(uploadFileAction);
   const [saveRateioAportes] = useMutateAction(saveRateioAportesAction);
   const [createRateioAporte] = useMutateAction(createRateioAporteAction);
+  const [updateTitulosReceberValor] = useMutateAction(updateTitulosReceberValorAction);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
