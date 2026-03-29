@@ -12,7 +12,11 @@ function loadRelatorioClienteReceitas() {
           tr.data_vencimento,
           tr.data_recebimento,
           p.name           AS projeto_nome,
-          tr.valor,
+          CASE 
+            WHEN crp_direct.percentual IS NOT NULL 
+              THEN ROUND(tr.valor * crp_direct.percentual / 100.0, 2)
+            ELSE tr.valor
+          END              AS valor,
           c.nome           AS conta_nome,
           tr.parcela,
           tr.total_parcelas,
