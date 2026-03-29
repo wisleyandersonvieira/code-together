@@ -127,11 +127,12 @@ export function DreInfoSubgrupoDetalhe({
         <TableCell colSpan={3} className="py-1 px-4">
           <div
             className="grid text-xs font-semibold text-slate-500 border-l-2 border-blue-300 pl-3"
-            style={{ marginLeft: `${indentPx}px`, gridTemplateColumns: '110px 1fr 1fr 120px' }}
+            style={{ marginLeft: `${indentPx}px`, gridTemplateColumns: '110px 1fr 1fr 1fr 120px' }}
           >
             <span>Data</span>
             <span>Favorecido</span>
             <span>Observação</span>
+            <span>Projetos</span>
             <span className="text-right">Valor</span>
           </div>
         </TableCell>
