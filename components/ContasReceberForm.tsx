@@ -1262,19 +1262,35 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                   )}
               </FinanceDetailSectionCard>
 
-              {/* Rateio de Aportes quando há apenas um projeto */}
-              {projetosFields.length === 1 && form.watch('entity_type') && form.watch('entity_id') && (
-                <RateioAportesForm
-                  projetoId={watchedProjetosRateio[0]?.projeto_id || 0}
-                  entityType={form.watch('entity_type') as 'cliente' | 'empresa' | 'grupo'}
-                  entityId={form.watch('entity_id') || 0}
-                  valorTotal={valorTotalItens * ((watchedProjetosRateio[0]?.percentual || 0) / 100)}
-                  onRateioChange={(rateios) => {
-                    setCurrentRateios(rateios);
-                  }}
-                  disabled={isEditing && conta.titulos_recebidos > 0}
-                  contaReceberId={contaReceberId}
-                />
+              {/* Rateio de Aportes para cada projeto */}
+              {projetosFields.length > 0 && form.watch('entity_type') && form.watch('entity_id') && (
+                watchedProjetosRateio.map((projetoRateio, index) => {
+                  if (!projetoRateio?.projeto_id) return null;
+                  const projetoNome = projetos?.find((p: any) => p.id === projetoRateio.projeto_id)?.name;
+                  return (
+                    <div key={`rateio-${projetoRateio.projeto_id}-${index}`} className="space-y-2">
+                      {projetosFields.length > 1 && (
+                        <h3 className="text-sm font-semibold text-muted-foreground">
+                          Rateio do Projeto: {projetoNome || `Projeto ${projetoRateio.projeto_id}`}
+                        </h3>
+                      )}
+                      <RateioAportesForm
+                        projetoId={projetoRateio.projeto_id}
+                        entityType={form.watch('entity_type') as 'cliente' | 'empresa' | 'grupo'}
+                        entityId={form.watch('entity_id') || 0}
+                        valorTotal={valorTotalItens * ((projetoRateio.percentual || 0) / 100)}
+                        onRateioChange={(rateios) => {
+                          setCurrentRateiosMap(prev => ({
+                            ...prev,
+                            [projetoRateio.projeto_id]: rateios,
+                          }));
+                        }}
+                        disabled={isEditing && conta.titulos_recebidos > 0}
+                        contaReceberId={contaReceberId}
+                      />
+                    </div>
+                  );
+                })
               )}
             </TabsContent>
 
