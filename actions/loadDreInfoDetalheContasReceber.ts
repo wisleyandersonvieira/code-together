@@ -16,7 +16,7 @@ function loadDreInfoDetalheContasReceber() {
           cli_legacy.name,
           'N/A'
         ) as favorecido,
-        COALESCE(cr.observacao, '') as observacao,
+        COALESCE(cr.observacoes, '') as observacao,
         CASE
           WHEN '{{params.tipoData}}' = 'competencia' THEN cr.data_competencia::text
           ELSE MIN(tr.data_recebimento)::text
