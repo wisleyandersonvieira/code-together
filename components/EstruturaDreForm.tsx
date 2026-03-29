@@ -433,8 +433,21 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
     }
   };
 
-  const getAvailableSubgrupos = (grupoId: number) => {
-    return allSubgrupos?.filter((sg: any) => sg.grupo_id === grupoId) || [];
+  const getUsedGrupoContabilIds = (currentIndex: number) => {
+    return itens
+      .filter((item, i) => i !== currentIndex && item.tipo === 'GRUPO' && item.grupo_contabil_id)
+      .map(item => item.grupo_contabil_id!);
+  };
+
+  const getUsedSubgrupoContabilIds = (currentIndex: number) => {
+    return itens
+      .filter((item, i) => i !== currentIndex && item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id)
+      .map(item => item.subgrupo_contabil_id!);
+  };
+
+  const getAvailableSubgrupos = (grupoId: number, currentIndex?: number) => {
+    const usedIds = currentIndex !== undefined ? getUsedSubgrupoContabilIds(currentIndex) : [];
+    return allSubgrupos?.filter((sg: any) => sg.grupo_id === grupoId && !usedIds.includes(sg.id)) || [];
   };
 
   const getItemTypeBadge = (tipo: string) => {
@@ -567,7 +580,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                                 <SelectValue placeholder="Selecione o grupo" />
                               </SelectTrigger>
                               <SelectContent>
-                                {gruposContabeis?.map((grupo: any) => (
+                                {gruposContabeis?.filter((grupo: any) => !getUsedGrupoContabilIds(index).includes(grupo.id)).map((grupo: any) => (
                                   <SelectItem key={grupo.id} value={grupo.id.toString()}>
                                     {grupo.descricao}
                                   </SelectItem>
@@ -590,7 +603,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                                   <SelectValue placeholder="Selecione o subgrupo" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {item.grupo_contabil_id && getAvailableSubgrupos(item.grupo_contabil_id).map((subgrupo: any) => (
+                                  {item.grupo_contabil_id && getAvailableSubgrupos(item.grupo_contabil_id, index).map((subgrupo: any) => (
                                     <SelectItem key={subgrupo.id} value={subgrupo.id.toString()}>
                                       {subgrupo.descricao}
                                     </SelectItem>
