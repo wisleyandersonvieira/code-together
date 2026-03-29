@@ -14,8 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight, Download, FileSpreadsheet } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
-import { usePdfExport } from '@/hooks/use-pdf-export';
 import { useToast } from '@/hooks/use-toast';
+import { exportDreInfoToPDF } from '@/utils/dre-info-export';
 import * as XLSX from 'xlsx';
 import loadEstruturaDreItensAction from '@/actions/loadEstruturaDreItens';
 import loadDreInfoContasPagarAction from '@/actions/loadDreInfoContasPagar';
@@ -63,7 +63,6 @@ export function DreInfoDataLoader({
   refreshTrigger,
 }: DreInfoDataLoaderProps) {
   const { formatCurrency } = useCurrency();
-  const { exportDreToPdf } = usePdfExport();
   const { toast } = useToast();
 
   const [dreData, setDreData] = useState<DreItemResult[]>([]);
@@ -251,28 +250,30 @@ export function DreInfoDataLoader({
     return `${base} text-green-600`;
   };
 
-  // ── PDF export (consolidated – same as DRE) ─────────────────────────────────
+  // ── PDF export (novo padrão executivo premium) ──────────────────────────────
 
   const handleExportPdf = () => {
     if (!dreData || dreData.length === 0) {
       toast({ title: 'Aviso', description: 'Não há dados para exportar.', variant: 'destructive' });
       return;
     }
-    const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
-    const matrizNome = matrizes?.find((m: any) => m.id === matrizId)?.nome || 'N/A';
+    try {
+      const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
+      const matrizNome    = matrizes?.find((m: any) => m.id === matrizId)?.nome    || 'N/A';
 
-    const success = exportDreToPdf(
-      dreData,
-      'DRE Info – Demonstrativo Analítico',
-      { dataInicio, dataFim, tipoData, estruturaNome, matrizNome },
-      { aportes, retiradas }
-    );
+      exportDreInfoToPDF(
+        dreData,
+        aportes   || [],
+        retiradas || [],
+        { dataInicio, dataFim, tipoData, estruturaNome, matrizNome, projetoNome },
+        formatCurrency,
+      );
 
-    toast(
-      success
-        ? { title: 'Sucesso', description: 'PDF gerado com sucesso!' }
-        : { title: 'Erro', description: 'Falha ao gerar o PDF.', variant: 'destructive' }
-    );
+      toast({ title: 'Sucesso', description: 'PDF exportado com sucesso!' });
+    } catch (err) {
+      console.error('Erro ao exportar PDF:', err);
+      toast({ title: 'Erro', description: 'Falha ao gerar o PDF.', variant: 'destructive' });
+    }
   };
 
   // ── Excel export (Sheet 1 = consolidado · Sheet 2 = detalhamento) ───────────
