@@ -20,7 +20,11 @@
       "Read(//workspacescode-together/components/**)",
       "Bash(grep -r \"PDF\\\\|pdf\\\\|report\" /workspaces/code-together/src --include=*.ts --include=*.tsx)",
       "Bash(git pull:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(find /workspaces/code-together -type f -name *dre* -o -name *DRE*)",
+      "Bash(find /workspaces/code-together/app -type f \\\\\\(-name *.js -o -name *.ts -o -name *.tsx -o -name *.jsx \\\\\\))",
+      "Bash(ls -la /workspaces/code-together/actions/*Dre*)",
+      "Read(//workspaces/code-together/**)"
     ]
   }
 }

@@ -17,6 +17,7 @@ import {
 import {
   ArrowLeftRight,
   Banknote,
+  BarChart2,
   BarChart3,
   Building,
   Building2,
@@ -89,6 +90,7 @@ type TabType =
   | 'create-estrutura-dre'
   | 'relatorio-dre'
   | 'relatorio-dre-projeto'
+  | 'relatorio-dre-info'
   | 'auditoria-fornecedores-subcontratados'
   | 'auditoria-fornecedores'
   | 'auditoria-fornecedores-relatorios'
@@ -139,6 +141,7 @@ const routes: Record<TabType, RouteDefinition> = {
   'create-estrutura-dre': { path: '/matriz/estrutura-dre/editar', title: 'Editar Estrutura DRE' },
   'relatorio-dre': { path: '/matriz/relatorio-dre', title: 'Relatorio DRE' },
   'relatorio-dre-projeto': { path: '/matriz/relatorio-dre-projeto', title: 'Relatorio DRE Projeto' },
+  'relatorio-dre-info': { path: '/matriz/relatorio-dre-info', title: 'DRE Info' },
   'auditoria-fornecedores-subcontratados': { path: '/matriz/auditoria/fornecedores-subcontratados', title: 'Auditoria Fornecedores Subcontratados' },
   'auditoria-fornecedores': { path: '/matriz/auditoria', title: 'Auditorias de Fornecedores' },
   'auditoria-fornecedores-relatorios': { path: '/matriz/auditoria/relatorios', title: 'Relatorios Auditoria Fornecedores' },
@@ -198,6 +201,7 @@ const matrizTabs: TabType[] = [
   'create-estrutura-dre',
   'relatorio-dre',
   'relatorio-dre-projeto',
+  'relatorio-dre-info',
   'export-project',
 ];
 
@@ -266,6 +270,7 @@ const EstruturasDreList = lazy(() => import('@/components/EstruturasDreList').th
 const EstruturaDreForm = lazy(() => import('@/components/EstruturaDreForm').then((module) => ({ default: module.EstruturaDreForm })));
 const RelatorioDre = lazy(() => import('@/components/RelatorioDre').then((module) => ({ default: module.RelatorioDre })));
 const RelatorioDreProjeto = lazy(() => import('@/components/RelatorioDreProjeto').then((module) => ({ default: module.RelatorioDreProjeto })));
+const RelatorioDreInfo = lazy(() => import('@/components/RelatorioDreInfo').then((module) => ({ default: module.RelatorioDreInfo })));
 const FornecedorSubcontratadoList = lazy(() => import('@/components/FornecedorSubcontratadoList').then((module) => ({ default: module.FornecedorSubcontratadoList })));
 const AuditoriaFornecedoresModule = lazy(() => import('@/components/AuditoriaFornecedoresModule').then((module) => ({ default: module.AuditoriaFornecedoresModule })));
 const AuditoriaFornecedorReports = lazy(() => import('@/components/AuditoriaFornecedorReports').then((module) => ({ default: module.AuditoriaFornecedorReports })));
@@ -472,6 +477,8 @@ function App() {
         return <RelatorioDre />;
       case 'relatorio-dre-projeto':
         return <RelatorioDreProjeto />;
+      case 'relatorio-dre-info':
+        return <RelatorioDreInfo />;
       case 'auditoria-fornecedores-subcontratados':
         return <FornecedorSubcontratadoList />;
       case 'auditoria-fornecedores':
@@ -892,6 +899,10 @@ function App() {
                 <DropdownMenuItem onClick={() => navigateTo('relatorio-dre')}>
                   <PieChart className="mr-2 h-4 w-4" />
                   Relatório DRE
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('relatorio-dre-info')}>
+                  <BarChart2 className="mr-2 h-4 w-4" />
+                  DRE Info
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigateTo('export-project')}>
                   <Github className="mr-2 h-4 w-4" />
