@@ -323,11 +323,11 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                             <SortIcon className="h-4 w-4" />
                           </span>
                         </TableHead>
-                        <TableHead className={listingTableHeadClassName}>Status</TableHead>
-                        <TableHead className={listingTableHeadClassName}>Cidade</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Status</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Cidade</TableHead>
                         <TableHead className={listingTableHeadClassName}>Membros</TableHead>
-                        <TableHead className={listingTableHeadClassName}>Valor Previsto</TableHead>
-                        <TableHead className={listingTableHeadClassName}>Orçamentos</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Valor Previsto</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Orçamentos</TableHead>
                         <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -338,13 +338,13 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                         return (
                           <TableRow key={projeto.id} className="border-b border-slate-100 hover:bg-slate-50/70">
                             <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{projeto.name}</TableCell>
-                            <TableCell className={listingTableCellClassName}>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell`}>
                               <FinanceStatusBadge
                                 label={projeto.status || 'Em andamento'}
                                 tone={projeto.status === 'Concluído' ? 'success' : 'warning'}
                               />
                             </TableCell>
-                            <TableCell className={listingTableCellClassName}>{projeto.city || '-'}</TableCell>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell`}>{projeto.city || '-'}</TableCell>
                             <TableCell className={listingTableCellClassName}>
                               <div className="space-y-1">
                                 {projeto.members.map((member, idx) => (
@@ -355,10 +355,10 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                                 ))}
                               </div>
                             </TableCell>
-                            <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell font-medium text-slate-800`}>
                               {projeto.predicted_sale_value ? formatCurrency(projeto.predicted_sale_value) : '-'}
                             </TableCell>
-                            <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell font-medium text-slate-800`}>
                               {totalOrcamento > 0 ? formatCurrency(totalOrcamento) : '-'}
                             </TableCell>
                             <TableCell className={`${listingTableCellClassName} text-right`}>

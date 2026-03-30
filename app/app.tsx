@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
+import React, { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toaster';
@@ -31,6 +31,7 @@ import {
   Github,
   Home,
   LogOut,
+  Menu,
   Package,
   PieChart,
   Receipt,
@@ -42,6 +43,13 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { LoginForm } from '@/components/LoginForm';
 import { NetworkStatus } from '@/components/NetworkStatus';
 import { DatabaseBackup } from '@/components/DatabaseBackup';
@@ -297,6 +305,139 @@ function RestrictedAccess() {
       <p className="mt-2 text-sm leading-6">
         Esta área está disponível apenas para administradores. Volte ao dashboard ou entre com uma conta autorizada.
       </p>
+    </div>
+  );
+}
+
+interface MobileNavContentProps {
+  activeTab: TabType;
+  navigateTo: (tab: TabType) => void;
+  isAdmin: boolean;
+  isCadastroActive: boolean;
+  isFinanceiroActive: boolean;
+  isRelatorioActive: boolean;
+  isMatrizActive: boolean;
+  onLogout: () => void;
+  currentUser: User;
+}
+
+function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUser }: MobileNavContentProps) {
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const toggleSection = (s: string) => setOpenSection(prev => prev === s ? null : s);
+
+  const navItem = (label: string, tab: TabType, icon: React.ReactNode) => (
+    <button
+      key={tab}
+      onClick={() => navigateTo(tab)}
+      className={cn(
+        'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+        activeTab === tab ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  const sectionHeader = (label: string, key: string, icon: React.ReactNode) => (
+    <button
+      onClick={() => toggleSection(key)}
+      className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+    >
+      <span className="flex items-center gap-3">{icon}{label}</span>
+      <ChevronDown className={cn('h-4 w-4 transition-transform', openSection === key && 'rotate-180')} />
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col h-full">
+      <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
+        {navItem('Dashboard', 'dashboard', <BarChart3 className="h-4 w-4" />)}
+
+        <div>
+          {sectionHeader('Cadastros', 'cadastros', <FolderOpen className="h-4 w-4" />)}
+          {openSection === 'cadastros' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Clientes', 'clientes', <UserCheck className="h-4 w-4" />)}
+              {navItem('Empresas', 'empresas', <Building className="h-4 w-4" />)}
+              {navItem('Grupos', 'grupos', <Building2 className="h-4 w-4" />)}
+              {navItem('Fornecedores', 'fornecedores', <Truck className="h-4 w-4" />)}
+              {isAdmin && navItem('Usuários', 'users', <Users className="h-4 w-4" />)}
+              {isAdmin && navItem('Definir Senha', 'set-password', <UserPlus className="h-4 w-4" />)}
+              {navItem('Contas', 'contas', <CreditCard className="h-4 w-4" />)}
+              {navItem('Grupos Contábeis', 'grupos-contabeis', <Calculator className="h-4 w-4" />)}
+              {navItem('Subgrupos Contábeis', 'subgrupos-contabeis', <Calculator className="h-4 w-4" />)}
+              {navItem('Produtos/Serviços', 'produtos', <Package className="h-4 w-4" />)}
+              {navItem('Tipos de Documento', 'tipos-documento', <File className="h-4 w-4" />)}
+              {navItem('Parâmetros', 'parametros', <Settings className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+
+        {navItem('Projetos', 'projetos', <Home className="h-4 w-4" />)}
+        {navItem('Painel', 'kanban', <BarChart3 className="h-4 w-4" />)}
+
+        <div>
+          {sectionHeader('Financeiro', 'financeiro', <Banknote className="h-4 w-4" />)}
+          {openSection === 'financeiro' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Contas a Pagar', 'contas-pagar', <Receipt className="h-4 w-4" />)}
+              {navItem('Contas a Receber', 'contas-receber', <DollarSign className="h-4 w-4" />)}
+              {navItem('Transferência', 'transferencias', <ArrowLeftRight className="h-4 w-4" />)}
+              {navItem('Extratos', 'extratos', <FileText className="h-4 w-4" />)}
+              {navItem('Fornecedores Sub.', 'auditoria-fornecedores-subcontratados', <Receipt className="h-4 w-4" />)}
+              {navItem('Auditorias', 'auditoria-fornecedores', <Receipt className="h-4 w-4" />)}
+              {navItem('Relatórios Auditoria', 'auditoria-fornecedores-relatorios', <PieChart className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+
+        <div>
+          {sectionHeader('Relatórios', 'relatorios', <PieChart className="h-4 w-4" />)}
+          {openSection === 'relatorios' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Relatório por Projeto', 'relatorio-cliente', <UserCheck className="h-4 w-4" />)}
+              {navItem('Extrato do Cliente', 'relatorio-extrato-cliente', <FileText className="h-4 w-4" />)}
+              {navItem('Financeiro Saídas', 'relatorio-financeiro-saidas', <Receipt className="h-4 w-4" />)}
+              {navItem('Financeiro Entradas', 'relatorio-financeiro-entradas', <DollarSign className="h-4 w-4" />)}
+              {navItem('Projetos Geral', 'relatorio-projetos-geral', <BarChart3 className="h-4 w-4" />)}
+              {navItem('Rentabilidade', 'relatorio-rentabilidade-projeto', <TrendingUp className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+
+        <div>
+          {sectionHeader('Matriz', 'matriz', <Building className="h-4 w-4" />)}
+          {openSection === 'matriz' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Sócios', 'socios', <UserIcon className="h-4 w-4" />)}
+              {navItem('Matrizes', 'matrizes', <Building className="h-4 w-4" />)}
+              {navItem('Aporte', 'aportes', <DollarSign className="h-4 w-4" />)}
+              {navItem('Retirada', 'retiradas', <DollarSign className="h-4 w-4" />)}
+              {navItem('Estrutura DRE', 'estruturas-dre', <FileText className="h-4 w-4" />)}
+              {navItem('Relatório DRE', 'relatorio-dre', <PieChart className="h-4 w-4" />)}
+              {navItem('DRE Info', 'relatorio-dre-info', <BarChart2 className="h-4 w-4" />)}
+              {navItem('Exportar GitHub', 'export-project', <Github className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+      </nav>
+
+      <div className="border-t border-slate-200 p-3 space-y-2">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <Badge variant="outline" className="border-slate-300 bg-white text-slate-700 text-xs">
+            {currentUser.role}
+          </Badge>
+          <span className="text-sm font-medium text-slate-600 truncate">{currentUser.name}</span>
+        </div>
+        <button
+          onClick={onLogout}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+        >
+          <LogOut className="h-4 w-4" />
+          Sair
+        </button>
+      </div>
     </div>
   );
 }
@@ -659,15 +800,46 @@ function App() {
 
       <div className="border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/85">
         <div className="container mx-auto px-4">
-          <div className="flex h-20 items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 p-2.5 shadow-sm">
-                <ProvisonLogo className="w-8 h-8" />
+          <div className="flex h-16 sm:h-20 items-center justify-between">
+            <div className="flex items-center gap-3 sm:gap-4">
+              {/* Mobile hamburger */}
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="md:hidden h-9 w-9">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[280px] p-0 overflow-y-auto">
+                  <SheetHeader className="p-4 border-b border-slate-200">
+                    <SheetTitle className="flex items-center gap-3">
+                      <div className="rounded-lg bg-gradient-to-br from-slate-900 to-slate-700 p-2 shadow-sm">
+                        <ProvisonLogo className="w-5 h-5" />
+                      </div>
+                      PROVISON
+                    </SheetTitle>
+                  </SheetHeader>
+                  <MobileNavContent
+                    activeTab={activeTab}
+                    navigateTo={navigateTo}
+                    isAdmin={isAdmin}
+                    isCadastroActive={isCadastroActive}
+                    isFinanceiroActive={isFinanceiroActive}
+                    isRelatorioActive={isRelatorioActive}
+                    isMatrizActive={isMatrizActive}
+                    onLogout={handleLogout}
+                    currentUser={currentUser}
+                  />
+                </SheetContent>
+              </Sheet>
+
+              <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 p-2 sm:p-2.5 shadow-sm">
+                <ProvisonLogo className="w-6 h-6 sm:w-8 sm:h-8" />
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">PROVISON</h1>
+              <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-slate-900">PROVISON</h1>
             </div>
-            <div className="flex items-center gap-5">
-              <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+            <div className="flex items-center gap-3 sm:gap-5">
+              {/* Hide user info on mobile */}
+              <div className="hidden sm:flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
                 <Badge variant="outline" className="border-slate-300 bg-white text-slate-700">
                   {currentUser.role}
                 </Badge>
@@ -678,7 +850,7 @@ function App() {
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}
-                className="h-10 rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900"
+                className="hidden sm:inline-flex h-10 rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900"
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
@@ -688,7 +860,7 @@ function App() {
         </div>
       </div>
 
-      <div className="border-b border-slate-200 bg-white/80 shadow-[0_1px_0_rgba(15,23,42,0.04)] overflow-x-auto">
+      <div className="hidden md:block border-b border-slate-200 bg-white/80 shadow-[0_1px_0_rgba(15,23,42,0.04)] overflow-x-auto">
         <div className="container mx-auto px-4">
           <div className="flex min-w-max items-center gap-2 py-3">
             <Button
