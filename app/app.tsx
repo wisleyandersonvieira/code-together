@@ -31,6 +31,7 @@ import {
   Github,
   Home,
   LogOut,
+  Menu,
   Package,
   PieChart,
   Receipt,
@@ -42,6 +43,13 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { LoginForm } from '@/components/LoginForm';
 import { NetworkStatus } from '@/components/NetworkStatus';
 import { DatabaseBackup } from '@/components/DatabaseBackup';
