@@ -309,6 +309,139 @@ function RestrictedAccess() {
   );
 }
 
+interface MobileNavContentProps {
+  activeTab: TabType;
+  navigateTo: (tab: TabType) => void;
+  isAdmin: boolean;
+  isCadastroActive: boolean;
+  isFinanceiroActive: boolean;
+  isRelatorioActive: boolean;
+  isMatrizActive: boolean;
+  onLogout: () => void;
+  currentUser: User;
+}
+
+function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUser }: MobileNavContentProps) {
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const toggleSection = (s: string) => setOpenSection(prev => prev === s ? null : s);
+
+  const navItem = (label: string, tab: TabType, icon: React.ReactNode) => (
+    <button
+      key={tab}
+      onClick={() => navigateTo(tab)}
+      className={cn(
+        'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+        activeTab === tab ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+
+  const sectionHeader = (label: string, key: string, icon: React.ReactNode) => (
+    <button
+      onClick={() => toggleSection(key)}
+      className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+    >
+      <span className="flex items-center gap-3">{icon}{label}</span>
+      <ChevronDown className={cn('h-4 w-4 transition-transform', openSection === key && 'rotate-180')} />
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col h-full">
+      <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
+        {navItem('Dashboard', 'dashboard', <BarChart3 className="h-4 w-4" />)}
+
+        <div>
+          {sectionHeader('Cadastros', 'cadastros', <FolderOpen className="h-4 w-4" />)}
+          {openSection === 'cadastros' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Clientes', 'clientes', <UserCheck className="h-4 w-4" />)}
+              {navItem('Empresas', 'empresas', <Building className="h-4 w-4" />)}
+              {navItem('Grupos', 'grupos', <Building2 className="h-4 w-4" />)}
+              {navItem('Fornecedores', 'fornecedores', <Truck className="h-4 w-4" />)}
+              {isAdmin && navItem('Usuários', 'users', <Users className="h-4 w-4" />)}
+              {isAdmin && navItem('Definir Senha', 'set-password', <UserPlus className="h-4 w-4" />)}
+              {navItem('Contas', 'contas', <CreditCard className="h-4 w-4" />)}
+              {navItem('Grupos Contábeis', 'grupos-contabeis', <Calculator className="h-4 w-4" />)}
+              {navItem('Subgrupos Contábeis', 'subgrupos-contabeis', <Calculator className="h-4 w-4" />)}
+              {navItem('Produtos/Serviços', 'produtos', <Package className="h-4 w-4" />)}
+              {navItem('Tipos de Documento', 'tipos-documento', <File className="h-4 w-4" />)}
+              {navItem('Parâmetros', 'parametros', <Settings className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+
+        {navItem('Projetos', 'projetos', <Home className="h-4 w-4" />)}
+        {navItem('Painel', 'kanban', <BarChart3 className="h-4 w-4" />)}
+
+        <div>
+          {sectionHeader('Financeiro', 'financeiro', <Banknote className="h-4 w-4" />)}
+          {openSection === 'financeiro' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Contas a Pagar', 'contas-pagar', <Receipt className="h-4 w-4" />)}
+              {navItem('Contas a Receber', 'contas-receber', <DollarSign className="h-4 w-4" />)}
+              {navItem('Transferência', 'transferencias', <ArrowLeftRight className="h-4 w-4" />)}
+              {navItem('Extratos', 'extratos', <FileText className="h-4 w-4" />)}
+              {navItem('Fornecedores Sub.', 'auditoria-fornecedores-subcontratados', <Receipt className="h-4 w-4" />)}
+              {navItem('Auditorias', 'auditoria-fornecedores', <Receipt className="h-4 w-4" />)}
+              {navItem('Relatórios Auditoria', 'auditoria-fornecedores-relatorios', <PieChart className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+
+        <div>
+          {sectionHeader('Relatórios', 'relatorios', <PieChart className="h-4 w-4" />)}
+          {openSection === 'relatorios' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Relatório por Projeto', 'relatorio-cliente', <UserCheck className="h-4 w-4" />)}
+              {navItem('Extrato do Cliente', 'relatorio-extrato-cliente', <FileText className="h-4 w-4" />)}
+              {navItem('Financeiro Saídas', 'relatorio-financeiro-saidas', <Receipt className="h-4 w-4" />)}
+              {navItem('Financeiro Entradas', 'relatorio-financeiro-entradas', <DollarSign className="h-4 w-4" />)}
+              {navItem('Projetos Geral', 'relatorio-projetos-geral', <BarChart3 className="h-4 w-4" />)}
+              {navItem('Rentabilidade', 'relatorio-rentabilidade-projeto', <TrendingUp className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+
+        <div>
+          {sectionHeader('Matriz', 'matriz', <Building className="h-4 w-4" />)}
+          {openSection === 'matriz' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Sócios', 'socios', <UserIcon className="h-4 w-4" />)}
+              {navItem('Matrizes', 'matrizes', <Building className="h-4 w-4" />)}
+              {navItem('Aporte', 'aportes', <DollarSign className="h-4 w-4" />)}
+              {navItem('Retirada', 'retiradas', <DollarSign className="h-4 w-4" />)}
+              {navItem('Estrutura DRE', 'estruturas-dre', <FileText className="h-4 w-4" />)}
+              {navItem('Relatório DRE', 'relatorio-dre', <PieChart className="h-4 w-4" />)}
+              {navItem('DRE Info', 'relatorio-dre-info', <BarChart2 className="h-4 w-4" />)}
+              {navItem('Exportar GitHub', 'export-project', <Github className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+      </nav>
+
+      <div className="border-t border-slate-200 p-3 space-y-2">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <Badge variant="outline" className="border-slate-300 bg-white text-slate-700 text-xs">
+            {currentUser.role}
+          </Badge>
+          <span className="text-sm font-medium text-slate-600 truncate">{currentUser.name}</span>
+        </div>
+        <button
+          onClick={onLogout}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+        >
+          <LogOut className="h-4 w-4" />
+          Sair
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function getTabFromLocation() {
   if (typeof window === 'undefined') {
     return 'dashboard' as TabType;
