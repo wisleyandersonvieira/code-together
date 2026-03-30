@@ -7,9 +7,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useMutateAction } from '@uibakery/data';
-import generatePasswordResetTokenAction from '@/actions/generatePasswordResetToken';
-import resetPasswordAction from '@/actions/resetPassword';
+import { supabase } from '@/src/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import {
   AuthShell,
@@ -23,29 +21,16 @@ const emailSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),
 });
 
-const resetSchema = z.object({
-  password: z.string().min(8, { message: 'Senha deve ter pelo menos 8 caracteres.' }),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'Senhas não coincidem.',
-  path: ['confirmPassword'],
-});
-
 type EmailFormData = z.infer<typeof emailSchema>;
-type ResetFormData = z.infer<typeof resetSchema>;
 
 interface PasswordResetFormProps {
-  token?: string;
   onCancel?: () => void;
 }
 
-export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
+export function PasswordResetForm({ onCancel }: PasswordResetFormProps) {
   const { toast } = useToast();
-  const [step, setStep] = useState<'email' | 'reset' | 'success'>(token ? 'reset' : 'email');
   const [emailSent, setEmailSent] = useState(false);
-
-  const [generateToken, isGeneratingToken] = useMutateAction(generatePasswordResetTokenAction);
-  const [resetPassword, isResettingPassword] = useMutateAction(resetPasswordAction);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const emailForm = useForm<EmailFormData>({
     resolver: zodResolver(emailSchema),
@@ -54,136 +39,32 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
     },
   });
 
-  const resetForm = useForm<ResetFormData>({
-    resolver: zodResolver(resetSchema),
-    defaultValues: {
-      password: '',
-      confirmPassword: '',
-    },
-  });
-
   async function onSubmitEmail(values: EmailFormData) {
+    setIsSubmitting(true);
     try {
-      const result = await generateToken({
-        email: values.email,
+      const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
-      const debugToken = result?.[0]?.debugToken as string | undefined;
-
-      setEmailSent(true);
-      toast({
-        description: debugToken
-          ? `Link de recuperação preparado. Token de debug: ${debugToken}`
-          : 'Se o email existir e estiver ativo, o link de recuperação será enviado.',
-      });
-    } catch {
-      toast({
-        description: 'Erro ao gerar token de recuperação. Tente novamente.',
-        variant: 'destructive',
-      });
-    }
-  }
-
-  async function onSubmitReset(values: ResetFormData) {
-    if (!token) return;
-
-    try {
-      const result = await resetPassword({
-        token,
-        password: values.password,
-      });
-
-      if (result && result.length > 0) {
-        setStep('success');
+      if (error) {
         toast({
-          description: 'Senha alterada com sucesso!',
+          description: 'Erro ao enviar email de recuperação. Tente novamente.',
+          variant: 'destructive',
         });
       } else {
+        setEmailSent(true);
         toast({
-          description: 'Token inválido ou expirado.',
-          variant: 'destructive',
+          description: 'Se o email existir, um link de recuperação será enviado.',
         });
       }
     } catch {
       toast({
-        description: 'Erro ao alterar senha. Tente novamente.',
+        description: 'Erro ao enviar email de recuperação. Tente novamente.',
         variant: 'destructive',
       });
+    } finally {
+      setIsSubmitting(false);
     }
-  }
-
-  if (step === 'success') {
-    return (
-      <AuthShell
-        eyebrow="Recuperação concluída"
-        title="Senha alterada com sucesso"
-        description="Sua nova senha já está ativa. Você pode voltar ao login e acessar a plataforma normalmente."
-      >
-        <div className="space-y-4 text-center">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm leading-6 text-emerald-800">
-            Sua senha foi atualizada com sucesso.
-          </div>
-          {onCancel && (
-            <Button onClick={onCancel} className={`w-full ${authPrimaryButtonClassName}`}>
-              Fazer Login
-            </Button>
-          )}
-        </div>
-      </AuthShell>
-    );
-  }
-
-  if (step === 'reset') {
-    return (
-      <AuthShell
-        eyebrow="Redefinir acesso"
-        title="Crie uma nova senha"
-        description="Escolha uma senha segura para concluir a recuperação e voltar ao sistema com tranquilidade."
-      >
-          <Form {...resetForm}>
-            <form onSubmit={resetForm.handleSubmit(onSubmitReset)} className="space-y-5">
-              <FormField
-                control={resetForm.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem className="space-y-2.5">
-                    <FormLabel className="text-sm font-semibold text-slate-700">Nova Senha</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="No minimo 6 caracteres" className={authInputClassName} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={resetForm.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem className="space-y-2.5">
-                    <FormLabel className="text-sm font-semibold text-slate-700">Confirmar Nova Senha</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="Repita a senha" className={authInputClassName} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                {onCancel && (
-                  <Button type="button" variant="outline" onClick={onCancel} className={`flex-1 ${authSecondaryButtonClassName}`}>
-                    Cancelar
-                  </Button>
-                )}
-                <Button type="submit" disabled={isResettingPassword} className={`flex-1 ${authPrimaryButtonClassName}`}>
-                  {isResettingPassword ? 'Alterando...' : 'Alterar Senha'}
-                </Button>
-              </div>
-            </form>
-          </Form>
-      </AuthShell>
-    );
   }
 
   return (
@@ -238,8 +119,8 @@ export function PasswordResetForm({ token, onCancel }: PasswordResetFormProps) {
                     Cancelar
                   </Button>
                 )}
-                <Button type="submit" disabled={isGeneratingToken} className={`flex-1 ${authPrimaryButtonClassName}`}>
-                  {isGeneratingToken ? 'Enviando...' : 'Enviar Link'}
+                <Button type="submit" disabled={isSubmitting} className={`flex-1 ${authPrimaryButtonClassName}`}>
+                  {isSubmitting ? 'Enviando...' : 'Enviar Link'}
                 </Button>
               </div>
             </form>

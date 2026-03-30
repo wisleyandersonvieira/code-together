@@ -1,6 +1,6 @@
 'use client';
 
-import React, { lazy, Suspense, useEffect, useState, type ComponentType } from 'react';
+import React, { lazy, Suspense, useEffect, useState, useCallback, type ComponentType } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toaster';
@@ -51,6 +51,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { LoginForm } from '@/components/LoginForm';
+import { ResetPasswordPage } from '@/components/ResetPasswordPage';
 import { NetworkStatus } from '@/components/NetworkStatus';
 import { DatabaseBackup } from '@/components/DatabaseBackup';
 import { DatabaseConnectionStatus } from '@/components/DatabaseConnectionStatus';
@@ -60,6 +61,7 @@ import { cn } from '@/lib/utils';
 import type { User } from '@/types/user';
 import { authSecondaryButtonClassName } from '@/components/AuthShell';
 import { UserProvider } from '@/lib/userContext';
+import { supabase } from '@/src/integrations/supabase/client';
 
 type TabType =
   | 'dashboard'
@@ -453,8 +455,55 @@ function getTabFromLocation() {
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>(() => getTabFromLocation());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [showRegistration, setShowRegistration] = useState(false);
   const [editingEstrutura, setEditingEstrutura] = useState<{ id: number; nome: string } | undefined>(undefined);
+
+  // Supabase Auth session listener
+  useEffect(() => {
+    const loadProfile = async (userId: string) => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (data) {
+        setCurrentUser({
+          id: data.id,
+          name: data.name || '',
+          email: data.email || '',
+          role: data.role || 'user',
+          status: data.status || 'active',
+          phone: data.phone || undefined,
+          legacy_user_id: data.legacy_user_id || undefined,
+        });
+      }
+      setAuthLoading(false);
+    };
+
+    // Set up auth state listener BEFORE getSession
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setCurrentUser(null);
+        setAuthLoading(false);
+      } else if (session?.user) {
+        // Use setTimeout to avoid potential deadlock with Supabase client
+        setTimeout(() => loadProfile(session.user.id), 0);
+      }
+    });
+
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadProfile(session.user.id);
+      } else {
+        setAuthLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const syncTabWithLocation = () => {
@@ -492,12 +541,8 @@ function App() {
     setActiveTab(tab);
   };
 
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    setShowRegistration(false);
-  };
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setCurrentUser(null);
     setShowRegistration(false);
     setEditingEstrutura(undefined);
@@ -689,6 +734,26 @@ function App() {
     );
   }
 
+  // Handle /reset-password route
+  if (typeof window !== 'undefined' && window.location.pathname === '/reset-password') {
+    return (
+      <>
+        <ResetPasswordPage />
+        <Toaster />
+      </>
+    );
+  }
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="text-slate-500">Carregando...</div>
+        <Toaster />
+      </div>
+    );
+  }
+
   if (!currentUser) {
     if (showRegistration) {
       return (
@@ -761,7 +826,7 @@ function App() {
               </div>
 
               <div className="mx-auto w-full max-w-md space-y-5">
-                <LoginForm onLogin={handleLogin} />
+                <LoginForm />
 
                 <div className="rounded-[24px] border border-white/80 bg-white/80 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
