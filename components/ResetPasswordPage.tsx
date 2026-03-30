@@ -116,6 +116,16 @@ export function ResetPasswordPage() {
     );
   }
 
+  if (checking) {
+    return (
+      <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#f8fafc_0%,#f3f4f6_45%,#eef2f7_100%)] px-4 py-8 sm:px-6 lg:px-8">
+        <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md items-center justify-center">
+          <div className="text-slate-500">Verificando link...</div>
+        </div>
+      </div>
+    );
+  }
+
   if (!isRecovery) {
     return (
       <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#f8fafc_0%,#f3f4f6_45%,#eef2f7_100%)] px-4 py-8 sm:px-6 lg:px-8">
