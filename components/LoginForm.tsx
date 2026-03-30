@@ -7,8 +7,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useMutateAction } from '@uibakery/data';
-import authenticateUserAction from '@/actions/authenticateUser';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { PasswordResetForm } from './PasswordResetForm';
 import {
@@ -25,22 +24,10 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-import type { User } from '@/types/user';
-
-interface LoginFormProps {
-  onLogin: (user: User) => void;
-}
-
-
-export function LoginForm({ onLogin }: LoginFormProps) {
+export function LoginForm() {
   const { toast } = useToast();
-  const initialResetToken =
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('reset_token')
-      : null;
-  const [resetToken, setResetToken] = useState<string | null>(initialResetToken);
-  const [showPasswordReset, setShowPasswordReset] = useState(Boolean(initialResetToken));
-  const [authenticateUser, isAuthenticating] = useMutateAction(authenticateUserAction);
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -51,21 +38,22 @@ export function LoginForm({ onLogin }: LoginFormProps) {
   });
 
   async function onSubmit(values: FormData) {
+    setIsAuthenticating(true);
     try {
-      const users = await authenticateUser({
+      const { error } = await supabase.auth.signInWithPassword({
         email: values.email,
         password: values.password,
       });
 
-      if (users && users.length > 0) {
-        const user = users[0];
-        toast({ description: 'Login realizado com sucesso!' });
-        onLogin(user);
-      } else {
+      if (error) {
         toast({
-          description: 'Email ou senha inválidos.',
+          description: error.message === 'Invalid login credentials'
+            ? 'Email ou senha inválidos.'
+            : error.message,
           variant: 'destructive',
         });
+      } else {
+        toast({ description: 'Login realizado com sucesso!' });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido';
@@ -73,24 +61,15 @@ export function LoginForm({ onLogin }: LoginFormProps) {
         description: `Erro ao fazer login: ${message}`,
         variant: 'destructive',
       });
+    } finally {
+      setIsAuthenticating(false);
     }
   }
 
   if (showPasswordReset) {
-    const handleCancelReset = () => {
-      if (typeof window !== 'undefined' && resetToken) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('reset_token');
-        window.history.replaceState(window.history.state, '', url.toString());
-      }
-      setResetToken(null);
-      setShowPasswordReset(false);
-    };
-
     return (
       <PasswordResetForm
-        token={resetToken ?? undefined}
-        onCancel={handleCancelReset}
+        onCancel={() => setShowPasswordReset(false)}
       />
     );
   }
@@ -152,10 +131,7 @@ export function LoginForm({ onLogin }: LoginFormProps) {
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() => {
-                    setResetToken(null);
-                    setShowPasswordReset(true);
-                  }}
+                  onClick={() => setShowPasswordReset(true)}
                   className={authGhostButtonClassName}
                 >
                   Esqueci minha senha

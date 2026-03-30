@@ -1,11 +1,11 @@
 export interface User {
-  id: number;
+  id: string; // UUID from auth.users
   name: string;
   email: string;
   role: string;
   status: string;
-  created_at: string;
-  updated_at: string;
-  password_hash?: string;
-  last_login?: string;
+  phone?: string;
+  legacy_user_id?: number;
+  created_at?: string;
+  updated_at?: string;
 }
