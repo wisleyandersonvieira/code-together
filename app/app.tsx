@@ -727,7 +727,7 @@ function App() {
         </div>
       </div>
 
-      <div className="border-b border-slate-200 bg-white/80 shadow-[0_1px_0_rgba(15,23,42,0.04)] overflow-x-auto">
+      <div className="hidden md:block border-b border-slate-200 bg-white/80 shadow-[0_1px_0_rgba(15,23,42,0.04)] overflow-x-auto">
         <div className="container mx-auto px-4">
           <div className="flex min-w-max items-center gap-2 py-3">
             <Button
