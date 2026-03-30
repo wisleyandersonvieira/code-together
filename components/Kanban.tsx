@@ -43,7 +43,7 @@ interface KanbanColumnData {
 export function Kanban() {
   const { toast } = useToast();
   const currentUser = useCurrentUser();
-  const userId = currentUser?.id ?? null;
+  const userId = currentUser?.legacy_user_id ?? null;
 
   const [newColumnName, setNewColumnName] = useState('');
   const [newColumnColor, setNewColumnColor] = useState('#4F46E5');

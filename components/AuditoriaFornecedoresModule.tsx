@@ -844,7 +844,7 @@ function AuditoriaFornecedorEditor({
     try {
       const result = await saveAuditoria({
         payload,
-        userId: currentUser?.id || null,
+        userId: currentUser?.legacy_user_id || null,
       });
 
       const data = result?.[0]?.data;

@@ -44,7 +44,7 @@ interface ProjetoModalProps {
 export function ProjetoModal({ projeto, isOpen, onClose, onUpdate }: ProjetoModalProps) {
   const { toast } = useToast();
   const currentUser = useCurrentUser();
-  const userId = currentUser?.id ?? null;
+  const userId = currentUser?.legacy_user_id ?? null;
 
   const [newComment, setNewComment] = useState('');
   const [newTask, setNewTask] = useState('');
