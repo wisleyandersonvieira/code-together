@@ -826,7 +826,7 @@ function App() {
               </div>
 
               <div className="mx-auto w-full max-w-md space-y-5">
-                <LoginForm onLogin={handleLogin} />
+                <LoginForm />
 
                 <div className="rounded-[24px] border border-white/80 bg-white/80 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
