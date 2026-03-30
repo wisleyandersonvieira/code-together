@@ -323,11 +323,11 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                             <SortIcon className="h-4 w-4" />
                           </span>
                         </TableHead>
-                        <TableHead className={listingTableHeadClassName}>Status</TableHead>
-                        <TableHead className={listingTableHeadClassName}>Cidade</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Status</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Cidade</TableHead>
                         <TableHead className={listingTableHeadClassName}>Membros</TableHead>
-                        <TableHead className={listingTableHeadClassName}>Valor Previsto</TableHead>
-                        <TableHead className={listingTableHeadClassName}>Orçamentos</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Valor Previsto</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} hidden sm:table-cell`}>Orçamentos</TableHead>
                         <TableHead className={`${listingTableHeadClassName} text-right`}>Ações</TableHead>
                       </TableRow>
                     </TableHeader>
