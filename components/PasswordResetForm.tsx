@@ -42,8 +42,12 @@ export function PasswordResetForm({ onCancel }: PasswordResetFormProps) {
   async function onSubmitEmail(values: EmailFormData) {
     setIsSubmitting(true);
     try {
+      const redirectTo = window.location.hostname === 'localhost'
+        ? `${window.location.origin}/reset-password`
+        : 'https://provison.com.br/reset-password';
+
       const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo,
       });
 
       if (error) {

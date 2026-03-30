@@ -30,12 +30,14 @@ export function ResetPasswordPage() {
   const [isRecovery, setIsRecovery] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     // Listen for PASSWORD_RECOVERY event from Supabase
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setIsRecovery(true);
+        setChecking(false);
       }
     });
 
@@ -43,6 +45,16 @@ export function ResetPasswordPage() {
     const hash = window.location.hash;
     if (hash.includes('type=recovery')) {
       setIsRecovery(true);
+      setChecking(false);
+    } else {
+      // If user has an active session on /reset-password, they likely came from a recovery link
+      // (the PASSWORD_RECOVERY event may have already fired before this component mounted)
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          setIsRecovery(true);
+        }
+        setChecking(false);
+      });
     }
 
     return () => subscription.unsubscribe();
@@ -99,6 +111,16 @@ export function ResetPasswordPage() {
               Sua senha foi atualizada com sucesso.
             </div>
           </AuthShell>
+        </div>
+      </div>
+    );
+  }
+
+  if (checking) {
+    return (
+      <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#f8fafc_0%,#f3f4f6_45%,#eef2f7_100%)] px-4 py-8 sm:px-6 lg:px-8">
+        <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md items-center justify-center">
+          <div className="text-slate-500">Verificando link...</div>
         </div>
       </div>
     );
