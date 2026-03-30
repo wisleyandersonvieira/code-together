@@ -338,13 +338,13 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                         return (
                           <TableRow key={projeto.id} className="border-b border-slate-100 hover:bg-slate-50/70">
                             <TableCell className={`${listingTableCellClassName} font-medium text-slate-900`}>{projeto.name}</TableCell>
-                            <TableCell className={listingTableCellClassName}>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell`}>
                               <FinanceStatusBadge
                                 label={projeto.status || 'Em andamento'}
                                 tone={projeto.status === 'Concluído' ? 'success' : 'warning'}
                               />
                             </TableCell>
-                            <TableCell className={listingTableCellClassName}>{projeto.city || '-'}</TableCell>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell`}>{projeto.city || '-'}</TableCell>
                             <TableCell className={listingTableCellClassName}>
                               <div className="space-y-1">
                                 {projeto.members.map((member, idx) => (
@@ -355,10 +355,10 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
                                 ))}
                               </div>
                             </TableCell>
-                            <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell font-medium text-slate-800`}>
                               {projeto.predicted_sale_value ? formatCurrency(projeto.predicted_sale_value) : '-'}
                             </TableCell>
-                            <TableCell className={`${listingTableCellClassName} font-medium text-slate-800`}>
+                            <TableCell className={`${listingTableCellClassName} hidden sm:table-cell font-medium text-slate-800`}>
                               {totalOrcamento > 0 ? formatCurrency(totalOrcamento) : '-'}
                             </TableCell>
                             <TableCell className={`${listingTableCellClassName} text-right`}>
