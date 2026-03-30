@@ -455,8 +455,55 @@ function getTabFromLocation() {
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>(() => getTabFromLocation());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [showRegistration, setShowRegistration] = useState(false);
   const [editingEstrutura, setEditingEstrutura] = useState<{ id: number; nome: string } | undefined>(undefined);
+
+  // Supabase Auth session listener
+  useEffect(() => {
+    const loadProfile = async (userId: string) => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (data) {
+        setCurrentUser({
+          id: data.id,
+          name: data.name || '',
+          email: data.email || '',
+          role: data.role || 'user',
+          status: data.status || 'active',
+          phone: data.phone || undefined,
+          legacy_user_id: data.legacy_user_id || undefined,
+        });
+      }
+      setAuthLoading(false);
+    };
+
+    // Set up auth state listener BEFORE getSession
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setCurrentUser(null);
+        setAuthLoading(false);
+      } else if (session?.user) {
+        // Use setTimeout to avoid potential deadlock with Supabase client
+        setTimeout(() => loadProfile(session.user.id), 0);
+      }
+    });
+
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadProfile(session.user.id);
+      } else {
+        setAuthLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const syncTabWithLocation = () => {
@@ -494,12 +541,8 @@ function App() {
     setActiveTab(tab);
   };
 
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    setShowRegistration(false);
-  };
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setCurrentUser(null);
     setShowRegistration(false);
     setEditingEstrutura(undefined);
