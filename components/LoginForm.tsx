@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/src/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { PasswordResetForm } from './PasswordResetForm';
 import {
