@@ -734,6 +734,26 @@ function App() {
     );
   }
 
+  // Handle /reset-password route
+  if (typeof window !== 'undefined' && window.location.pathname === '/reset-password') {
+    return (
+      <>
+        <ResetPasswordPage />
+        <Toaster />
+      </>
+    );
+  }
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="text-slate-500">Carregando...</div>
+        <Toaster />
+      </div>
+    );
+  }
+
   if (!currentUser) {
     if (showRegistration) {
       return (
