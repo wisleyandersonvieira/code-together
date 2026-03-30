@@ -51,6 +51,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { LoginForm } from '@/components/LoginForm';
+import { ResetPasswordPage } from '@/components/ResetPasswordPage';
 import { NetworkStatus } from '@/components/NetworkStatus';
 import { DatabaseBackup } from '@/components/DatabaseBackup';
 import { DatabaseConnectionStatus } from '@/components/DatabaseConnectionStatus';
@@ -60,6 +61,7 @@ import { cn } from '@/lib/utils';
 import type { User } from '@/types/user';
 import { authSecondaryButtonClassName } from '@/components/AuthShell';
 import { UserProvider } from '@/lib/userContext';
+import { supabase } from '@/src/integrations/supabase/client';
 
 type TabType =
   | 'dashboard'
