@@ -667,15 +667,46 @@ function App() {
 
       <div className="border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/85">
         <div className="container mx-auto px-4">
-          <div className="flex h-20 items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 p-2.5 shadow-sm">
-                <ProvisonLogo className="w-8 h-8" />
+          <div className="flex h-16 sm:h-20 items-center justify-between">
+            <div className="flex items-center gap-3 sm:gap-4">
+              {/* Mobile hamburger */}
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="md:hidden h-9 w-9">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-[280px] p-0 overflow-y-auto">
+                  <SheetHeader className="p-4 border-b border-slate-200">
+                    <SheetTitle className="flex items-center gap-3">
+                      <div className="rounded-lg bg-gradient-to-br from-slate-900 to-slate-700 p-2 shadow-sm">
+                        <ProvisonLogo className="w-5 h-5" />
+                      </div>
+                      PROVISON
+                    </SheetTitle>
+                  </SheetHeader>
+                  <MobileNavContent
+                    activeTab={activeTab}
+                    navigateTo={navigateTo}
+                    isAdmin={isAdmin}
+                    isCadastroActive={isCadastroActive}
+                    isFinanceiroActive={isFinanceiroActive}
+                    isRelatorioActive={isRelatorioActive}
+                    isMatrizActive={isMatrizActive}
+                    onLogout={handleLogout}
+                    currentUser={currentUser}
+                  />
+                </SheetContent>
+              </Sheet>
+
+              <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 p-2 sm:p-2.5 shadow-sm">
+                <ProvisonLogo className="w-6 h-6 sm:w-8 sm:h-8" />
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">PROVISON</h1>
+              <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-slate-900">PROVISON</h1>
             </div>
-            <div className="flex items-center gap-5">
-              <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+            <div className="flex items-center gap-3 sm:gap-5">
+              {/* Hide user info on mobile */}
+              <div className="hidden sm:flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
                 <Badge variant="outline" className="border-slate-300 bg-white text-slate-700">
                   {currentUser.role}
                 </Badge>
@@ -686,7 +717,7 @@ function App() {
                 variant="ghost"
                 size="sm"
                 onClick={handleLogout}
-                className="h-10 rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900"
+                className="hidden sm:inline-flex h-10 rounded-xl border border-slate-200 bg-slate-100 px-4 text-slate-600 hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900"
               >
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
