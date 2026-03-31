@@ -225,6 +225,7 @@ export function ExtratoBancario() {
         matrizNome: matrizLabel,
       },
       formatCurrency,
+      aportesRetiradas || [],
     );
   };
 
@@ -241,6 +242,7 @@ export function ExtratoBancario() {
         matrizNome: matrizLabel,
       },
       formatCurrency,
+      aportesRetiradas || [],
     );
   };
 
