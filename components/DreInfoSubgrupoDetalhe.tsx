@@ -48,6 +48,7 @@ export function DreInfoSubgrupoDetalhe({
   projetoId,
   funcao,
   nivel,
+  onDataLoaded,
 }: DreInfoSubgrupoDetalheProps) {
   const { formatCurrency } = useCurrency();
 
