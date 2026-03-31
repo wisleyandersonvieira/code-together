@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
-import { exportExtratoBancarioPDF, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF } from '@/utils/export';
+import { exportExtratoBancarioPDF, exportExtratoBancarioExcel, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF } from '@/utils/export';
 
 type TipoMovimentacao = 'CP' | 'CR' | 'TR' | 'APORTE' | 'RETIRADA';
 
