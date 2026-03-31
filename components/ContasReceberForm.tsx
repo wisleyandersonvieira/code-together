@@ -400,6 +400,16 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
     }
 
     try {
+      // Validar período bloqueado para competência
+      const validacaoPeriodo = await validarPeriodoBloqueado({
+        matrizId: values.matriz_id,
+        dataCompetencia: values.data_competencia,
+      });
+      if (validacaoPeriodo.bloqueado) {
+        toast({ title: 'Período Bloqueado', description: validacaoPeriodo.mensagem, variant: 'destructive' });
+        return;
+      }
+
       // Validation - only check project percentages if there are projects
       if (values.projetos_rateio.length > 0 && Math.abs(percentualTotalRateio - 100) > 0.01) {
         toast({
