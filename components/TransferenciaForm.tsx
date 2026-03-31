@@ -94,6 +94,15 @@ export function TransferenciaForm({ transferencia, onSuccess, onCancel }: Transf
         return;
       }
 
+      // Validar período bloqueado para pagamento
+      const validacao = await validarPeriodoBloqueado({
+        dataPagamento: data.data_transferencia,
+      });
+      if (validacao.bloqueado) {
+        toast({ title: 'Período Bloqueado', description: validacao.mensagem, variant: 'destructive' });
+        return;
+      }
+
       const transferenciaData = {
         conta_origem_id: parseInt(data.conta_origem_id),
         conta_destino_id: parseInt(data.conta_destino_id),
