@@ -126,13 +126,14 @@ export function RelatorioDreInfo() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Matriz *</label>
                 <Select
-                  value={params.matrizId ? params.matrizId.toString() : ''}
-                  onValueChange={(v) => handleChange('matrizId', parseInt(v))}
+                  value={params.matrizId !== null ? params.matrizId.toString() : 'todas'}
+                  onValueChange={(v) => handleChange('matrizId', v === 'todas' ? 0 : parseInt(v))}
                 >
                   <SelectTrigger className={triggerClass}>
                     <SelectValue placeholder="Selecione a matriz" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="todas">Todas as matrizes</SelectItem>
                     {(matrizes as any[])?.map((m: any) => (
                       <SelectItem key={m.id} value={m.id.toString()}>
                         {m.nome}
