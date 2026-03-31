@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
-import { exportExtratoBancarioPDF, exportExtratoBancarioExcel, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF } from '@/utils/export';
+import { exportExtratoBancarioPDF, exportExtratoBancarioExcel, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF, exportExtratoBySubgrupoContabilExcel } from '@/utils/export';
 
 type TipoMovimentacao = 'CP' | 'CR' | 'TR' | 'APORTE' | 'RETIRADA';
 
@@ -260,6 +260,17 @@ export function ExtratoBancario() {
     );
   };
 
+  const handleExportBySubgrupoExcel = () => {
+    if (!contaInfo || !extratoBySubgrupo || extratoBySubgrupo.length === 0) return;
+    exportExtratoBySubgrupoContabilExcel(
+      extratoBySubgrupo,
+      `extrato_subgrupo_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      { conta_nome: contaInfo.conta_nome || '', conta_banco: contaInfo.conta_banco || '' },
+      formatCurrency,
+      aportesRetiradas || [],
+    );
+  };
+
   const canGenerate = !!contaId && !!dataInicio && !!dataFim;
 
   return (
@@ -341,10 +352,23 @@ export function ExtratoBancario() {
             </DropdownMenu>
           )}
           {showExtrato && transacoesComSaldo.length > 0 && (
-            <Button type="button" className={listingSecondaryButtonClassName} onClick={handleExportExcel}>
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Exportar Excel
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" className={listingSecondaryButtonClassName}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Exportar Excel
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  Extrato Detalhado
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportBySubgrupoExcel} disabled={!extratoBySubgrupo || extratoBySubgrupo.length === 0}>
+                  Relatório por Subgrupo
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </ListingFilterCard>

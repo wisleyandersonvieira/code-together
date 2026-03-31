@@ -2171,3 +2171,125 @@ export function exportExtratoBySubgrupoContabilPDF(
 
   doc.save(`${filename}.pdf`);
 }
+
+export function exportExtratoBySubgrupoContabilExcel(
+  data: SubgrupoContabilData[],
+  filename: string,
+  contaInfo: { conta_nome: string; conta_banco: string },
+  formatCurrency: (value: number) => string,
+  aportesRetiradas: AporteRetiradaSocioData[] = [],
+) {
+  // Group data: grupo -> subgrupo -> { entradas, saidas }
+  const grupoMap = new Map<string, Map<string, { entradas: number; saidas: number; qtdEntradas: number; qtdSaidas: number }>>();
+  data.forEach((item) => {
+    const gKey = item.grupo_nome || 'Sem Grupo';
+    const sKey = item.subgrupo_nome || 'Sem Subgrupo';
+    if (!grupoMap.has(gKey)) grupoMap.set(gKey, new Map());
+    const sMap = grupoMap.get(gKey)!;
+    if (!sMap.has(sKey)) sMap.set(sKey, { entradas: 0, saidas: 0, qtdEntradas: 0, qtdSaidas: 0 });
+    const s = sMap.get(sKey)!;
+    if (item.direcao === 'entrada') { s.entradas += Number(item.valor_total) || 0; s.qtdEntradas += Number(item.qtd_lancamentos) || 0; }
+    else { s.saidas += Number(item.valor_total) || 0; s.qtdSaidas += Number(item.qtd_lancamentos) || 0; }
+  });
+
+  const gruposSorted = Array.from(grupoMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  let totalEntradas = 0, totalSaidas = 0;
+  gruposSorted.forEach(([, subs]) => subs.forEach((v) => { totalEntradas += v.entradas; totalSaidas += v.saidas; }));
+
+  // Process aportes/retiradas
+  const socioMap = new Map<string, { aportes: number; retiradas: number; qtdAportes: number; qtdRetiradas: number }>();
+  aportesRetiradas.forEach((item) => {
+    const key = item.socio_nome || 'Sem Sócio';
+    if (!socioMap.has(key)) socioMap.set(key, { aportes: 0, retiradas: 0, qtdAportes: 0, qtdRetiradas: 0 });
+    const s2 = socioMap.get(key)!;
+    if (item.tipo === 'aporte') { s2.aportes += Number(item.valor_total) || 0; s2.qtdAportes += Number(item.qtd_lancamentos) || 0; }
+    else { s2.retiradas += Number(item.valor_total) || 0; s2.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
+  });
+  const socios = Array.from(socioMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const totalAportes = socios.reduce((s, [, v]) => s + v.aportes, 0);
+  const totalRetiradas = socios.reduce((s, [, v]) => s + v.retiradas, 0);
+  totalEntradas += totalAportes;
+  totalSaidas += totalRetiradas;
+
+  const rows: Record<string, any>[] = [];
+
+  gruposSorted.forEach(([grupoNome, subsMap]) => {
+    const subsSorted = Array.from(subsMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    let gEntradas = 0, gSaidas = 0;
+    subsSorted.forEach(([, v]) => { gEntradas += v.entradas; gSaidas += v.saidas; });
+
+    // Group header
+    rows.push({
+      'Grupo Contábil': grupoNome,
+      'Subgrupo Contábil': '',
+      'Qtd Entradas': '',
+      'Entradas': gEntradas,
+      'Qtd Saídas': '',
+      'Saídas': gSaidas,
+    });
+
+    subsSorted.forEach(([subNome, vals]) => {
+      rows.push({
+        'Grupo Contábil': '',
+        'Subgrupo Contábil': subNome,
+        'Qtd Entradas': vals.qtdEntradas,
+        'Entradas': vals.entradas,
+        'Qtd Saídas': vals.qtdSaidas,
+        'Saídas': vals.saidas,
+      });
+    });
+  });
+
+  // Total row
+  rows.push({
+    'Grupo Contábil': 'TOTAL GERAL',
+    'Subgrupo Contábil': '',
+    'Qtd Entradas': '',
+    'Entradas': totalEntradas,
+    'Qtd Saídas': '',
+    'Saídas': totalSaidas,
+  });
+
+  // Aportes/Retiradas section
+  if (socios.length > 0) {
+    rows.push({});
+    rows.push({
+      'Grupo Contábil': 'APORTES E RETIRADAS POR SÓCIO',
+      'Subgrupo Contábil': '',
+      'Qtd Entradas': '',
+      'Entradas': '',
+      'Qtd Saídas': '',
+      'Saídas': '',
+    });
+
+    socios.forEach(([nome, vals]) => {
+      rows.push({
+        'Grupo Contábil': nome,
+        'Subgrupo Contábil': '',
+        'Qtd Entradas': vals.qtdAportes,
+        'Entradas': vals.aportes,
+        'Qtd Saídas': vals.qtdRetiradas,
+        'Saídas': vals.retiradas,
+      });
+    });
+
+    rows.push({
+      'Grupo Contábil': 'TOTAL APORTES/RETIRADAS',
+      'Subgrupo Contábil': '',
+      'Qtd Entradas': '',
+      'Entradas': totalAportes,
+      'Qtd Saídas': '',
+      'Saídas': totalRetiradas,
+    });
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const colWidths = [
+    { wch: 30 }, { wch: 30 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 18 },
+  ];
+  ws['!cols'] = colWidths;
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Subgrupo Contábil');
+  XLSX.writeFile(wb, `${filename}.xlsx`);
+}
