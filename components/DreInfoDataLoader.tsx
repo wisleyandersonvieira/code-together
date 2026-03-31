@@ -70,6 +70,16 @@ export function DreInfoDataLoader({
   const [dreData, setDreData] = useState<DreItemResult[]>([]);
   const [hasCalculated, setHasCalculated] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [expandedDetailData, setExpandedDetailData] = useState<Map<number, any[]>>(new Map());
+
+  // Callback for DreInfoSubgrupoDetalhe to report loaded data
+  const handleSubgrupoDataLoaded = useCallback((subgrupoId: number, items: any[]) => {
+    setExpandedDetailData((prev) => {
+      const next = new Map(prev);
+      next.set(subgrupoId, items);
+      return next;
+    });
+  }, []);
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
