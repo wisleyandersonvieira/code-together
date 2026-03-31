@@ -246,6 +246,20 @@ export function ExtratoBancario() {
     );
   };
 
+  const handleExportExcel = () => {
+    if (!contaInfo || transacoesComSaldo.length === 0) return;
+    exportExtratoBancarioExcel(
+      transacoesComSaldo,
+      `extrato_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      {
+        conta_nome: contaInfo.conta_nome || '',
+        conta_banco: contaInfo.conta_banco || '',
+        saldo_anterior: Number(contaInfo.saldo_anterior) || 0,
+      },
+      formatCurrency,
+    );
+  };
+
   const canGenerate = !!contaId && !!dataInicio && !!dataFim;
 
   return (
