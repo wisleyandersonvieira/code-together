@@ -59,6 +59,7 @@ export function DreInfoDataLoader({
   dataInicio,
   dataFim,
   projetoId,
+  contaId,
   projetoNome,
   onComplete,
   refreshTrigger,
