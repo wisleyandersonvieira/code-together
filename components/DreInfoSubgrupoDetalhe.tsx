@@ -17,6 +17,7 @@ interface DreInfoSubgrupoDetalheProps {
   projetoId?: number | null;
   funcao?: string;
   nivel: number;
+  onDataLoaded?: (subgrupoId: number, items: DetalheItem[]) => void;
 }
 
 interface DetalheItem {
@@ -47,6 +48,7 @@ export function DreInfoSubgrupoDetalhe({
   projetoId,
   funcao,
   nivel,
+  onDataLoaded,
 }: DreInfoSubgrupoDetalheProps) {
   const { formatCurrency } = useCurrency();
 
@@ -90,6 +92,13 @@ export function DreInfoSubgrupoDetalhe({
       return 0;
     });
   }, [cpDetalhe, crDetalhe]);
+
+  // Report loaded data to parent
+  React.useEffect(() => {
+    if (!isLoading && allItems.length > 0 && onDataLoaded) {
+      onDataLoaded(subgrupoId, allItems);
+    }
+  }, [isLoading, allItems, onDataLoaded, subgrupoId]);
 
   const isDebito = funcao === 'Débito' || funcao === 'DEBITO';
 
