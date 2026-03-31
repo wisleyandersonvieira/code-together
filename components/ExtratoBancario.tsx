@@ -260,6 +260,17 @@ export function ExtratoBancario() {
     );
   };
 
+  const handleExportBySubgrupoExcel = () => {
+    if (!contaInfo || !extratoBySubgrupo || extratoBySubgrupo.length === 0) return;
+    exportExtratoBySubgrupoContabilExcel(
+      extratoBySubgrupo,
+      `extrato_subgrupo_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      { conta_nome: contaInfo.conta_nome || '', conta_banco: contaInfo.conta_banco || '' },
+      formatCurrency,
+      aportesRetiradas || [],
+    );
+  };
+
   const canGenerate = !!contaId && !!dataInicio && !!dataFim;
 
   return (
