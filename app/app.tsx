@@ -156,6 +156,7 @@ const routes: Record<TabType, RouteDefinition> = {
   'auditoria-fornecedores-subcontratados': { path: '/matriz/auditoria/fornecedores-subcontratados', title: 'Auditoria Fornecedores Subcontratados' },
   'auditoria-fornecedores': { path: '/matriz/auditoria', title: 'Auditorias de Fornecedores' },
   'auditoria-fornecedores-relatorios': { path: '/matriz/auditoria/relatorios', title: 'Relatorios Auditoria Fornecedores' },
+  'periodos-bloqueados': { path: '/matriz/periodos', title: 'Controle de Períodos' },
   'supabase-migration': { path: '/sistema/supabase-migration', title: 'Migracao Supabase' },
   'rds-migration': { path: '/sistema/rds-migration', title: 'Migracao RDS' },
   'incremental-sync': { path: '/sistema/incremental-sync', title: 'Sincronizacao Incremental' },
