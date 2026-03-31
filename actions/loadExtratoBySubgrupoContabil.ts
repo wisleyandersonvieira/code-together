@@ -13,8 +13,10 @@ function loadExtratoBySubgrupoContabil() {
           'saida' as direcao,
           SUM(
             CASE
-              WHEN tp.status = 'PAGO' THEN COALESCE(tp.valor_pago, 0)
-              ELSE COALESCE(tp.valor, 0)
+              WHEN tp.status = 'PAGO' THEN 
+                COALESCE(cpi.valor_total, 0) * COALESCE(tp.valor_pago, 0) / NULLIF(cp.valor_total, 0)
+              ELSE 
+                COALESCE(cpi.valor_total, 0) * COALESCE(tp.valor, 0) / NULLIF(cp.valor_total, 0)
             END
           ) as valor_total,
           COUNT(DISTINCT tp.id) as qtd_lancamentos
@@ -39,7 +41,9 @@ function loadExtratoBySubgrupoContabil() {
           sc.id as subgrupo_id,
           gc.id as grupo_id,
           'entrada' as direcao,
-          SUM(COALESCE(tr.valor_recebido, 0)) as valor_total,
+          SUM(
+            COALESCE(cri.valor_total, 0) * COALESCE(tr.valor_recebido, 0) / NULLIF(cr.valor_total, 0)
+          ) as valor_total,
           COUNT(DISTINCT tr.id) as qtd_lancamentos
         FROM titulos_receber tr
         JOIN contas_receber cr ON tr.conta_receber_id = cr.id
