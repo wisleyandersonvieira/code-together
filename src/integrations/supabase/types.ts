@@ -1255,6 +1255,75 @@ export type Database = {
         }
         Relationships: []
       }
+      periodos_bloqueados: {
+        Row: {
+          aplica_todas_matrizes: boolean
+          bloqueia_competencia: boolean
+          bloqueia_pagamento: boolean
+          created_at: string
+          created_by: string | null
+          id: number
+          referencia_mes: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          aplica_todas_matrizes?: boolean
+          bloqueia_competencia?: boolean
+          bloqueia_pagamento?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: number
+          referencia_mes: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          aplica_todas_matrizes?: boolean
+          bloqueia_competencia?: boolean
+          bloqueia_pagamento?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: number
+          referencia_mes?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      periodos_bloqueados_matrizes: {
+        Row: {
+          id: number
+          matriz_id: number
+          periodo_bloqueado_id: number
+        }
+        Insert: {
+          id?: number
+          matriz_id: number
+          periodo_bloqueado_id: number
+        }
+        Update: {
+          id?: number
+          matriz_id?: number
+          periodo_bloqueado_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "periodos_bloqueados_matrizes_matriz_id_fkey"
+            columns: ["matriz_id"]
+            isOneToOne: false
+            referencedRelation: "matrizes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "periodos_bloqueados_matrizes_periodo_bloqueado_id_fkey"
+            columns: ["periodo_bloqueado_id"]
+            isOneToOne: false
+            referencedRelation: "periodos_bloqueados"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       previsao_aportes: {
         Row: {
           created_at: string | null

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { validarPeriodoBloqueado } from '@/hooks/use-periodo-bloqueado';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
@@ -399,6 +400,16 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
     }
 
     try {
+      // Validar período bloqueado para competência
+      const validacaoPeriodo = await validarPeriodoBloqueado({
+        matrizId: values.matriz_id,
+        dataCompetencia: values.data_competencia,
+      });
+      if (validacaoPeriodo.bloqueado) {
+        toast({ title: 'Período Bloqueado', description: validacaoPeriodo.mensagem, variant: 'destructive' });
+        return;
+      }
+
       // Validation - only check project percentages if there are projects
       if (values.projetos_rateio.length > 0 && Math.abs(percentualTotalRateio - 100) > 0.01) {
         toast({
@@ -647,6 +658,16 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   };
 
   const handleReceipt = async () => {
+    // Validar período bloqueado para pagamento/recebimento
+    const validacao = await validarPeriodoBloqueado({
+      matrizId: conta?.matriz_id,
+      dataPagamento: receiptForm.data_recebimento,
+    });
+    if (validacao.bloqueado) {
+      toast({ title: 'Período Bloqueado', description: validacao.mensagem, variant: 'destructive' });
+      return;
+    }
+
     try {
       for (const index of selectedTitulos) {
         const titulo = generatedTitulos[index];

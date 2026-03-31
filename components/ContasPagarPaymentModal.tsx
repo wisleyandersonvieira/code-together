@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { validarPeriodoBloqueado } from '@/hooks/use-periodo-bloqueado';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,17 @@ export function PaymentModalContent({ conta, contas, onClose, onSuccess }: Payme
 
   const handlePayment = async () => {
     if (!paymentForm.conta_id || selectedTitulos.length === 0) return;
+
+    // Validar período bloqueado para pagamento
+    const validacao = await validarPeriodoBloqueado({
+      matrizId: conta.matriz_id,
+      dataPagamento: paymentForm.data_pagamento,
+    });
+    if (validacao.bloqueado) {
+      alert(validacao.mensagem);
+      return;
+    }
+
 
     try {
       for (const tituloId of selectedTitulos) {

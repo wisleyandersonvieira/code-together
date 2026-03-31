@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { validarPeriodoBloqueado } from '@/hooks/use-periodo-bloqueado';
 import { useForm } from 'react-hook-form';
 import { useMutateAction, useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -90,6 +91,15 @@ export function TransferenciaForm({ transferencia, onSuccess, onCancel }: Transf
           description: "A conta de origem deve ser diferente da conta de destino.",
           variant: "destructive",
         });
+        return;
+      }
+
+      // Validar período bloqueado para pagamento
+      const validacao = await validarPeriodoBloqueado({
+        dataPagamento: data.data_transferencia,
+      });
+      if (validacao.bloqueado) {
+        toast({ title: 'Período Bloqueado', description: validacao.mensagem, variant: 'destructive' });
         return;
       }
 

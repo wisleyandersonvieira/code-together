@@ -42,6 +42,7 @@ import {
   UserPlus,
   TrendingUp,
   Users,
+  Calendar,
 } from 'lucide-react';
 import {
   Sheet,
@@ -104,6 +105,7 @@ type TabType =
   | 'auditoria-fornecedores-subcontratados'
   | 'auditoria-fornecedores'
   | 'auditoria-fornecedores-relatorios'
+  | 'periodos-bloqueados'
   | 'supabase-migration'
   | 'rds-migration'
   | 'incremental-sync'
@@ -155,6 +157,7 @@ const routes: Record<TabType, RouteDefinition> = {
   'auditoria-fornecedores-subcontratados': { path: '/matriz/auditoria/fornecedores-subcontratados', title: 'Auditoria Fornecedores Subcontratados' },
   'auditoria-fornecedores': { path: '/matriz/auditoria', title: 'Auditorias de Fornecedores' },
   'auditoria-fornecedores-relatorios': { path: '/matriz/auditoria/relatorios', title: 'Relatorios Auditoria Fornecedores' },
+  'periodos-bloqueados': { path: '/matriz/periodos', title: 'Controle de Períodos' },
   'supabase-migration': { path: '/sistema/supabase-migration', title: 'Migracao Supabase' },
   'rds-migration': { path: '/sistema/rds-migration', title: 'Migracao RDS' },
   'incremental-sync': { path: '/sistema/incremental-sync', title: 'Sincronizacao Incremental' },
@@ -213,6 +216,7 @@ const matrizTabs: TabType[] = [
   'relatorio-dre-projeto',
   'relatorio-dre-info',
   'export-project',
+  'periodos-bloqueados',
 ];
 
 function lazyWithRetry<T extends ComponentType<any>>(
@@ -287,6 +291,7 @@ const AuditoriaFornecedorReports = lazy(() => import('@/components/AuditoriaForn
 const FullSupabaseMigration = lazy(() => import('@/components/FullSupabaseMigration').then((module) => ({ default: module.FullSupabaseMigration })));
 const IncrementalSync = lazy(() => import('@/components/IncrementalSync').then((module) => ({ default: module.IncrementalSync })));
 const ExportProject = lazy(() => import('@/components/ExportProject').then((module) => ({ default: module.ExportProject })));
+const PeriodosBloqueados = lazy(() => import('@/components/PeriodosBloqueados').then((module) => ({ default: module.PeriodosBloqueados })));
 
 function LoadingPage() {
   return (
@@ -420,6 +425,7 @@ function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUse
               {navItem('Relatório DRE', 'relatorio-dre', <PieChart className="h-4 w-4" />)}
               {navItem('DRE Info', 'relatorio-dre-info', <BarChart2 className="h-4 w-4" />)}
               {navItem('Exportar GitHub', 'export-project', <Github className="h-4 w-4" />)}
+              {navItem('Períodos', 'periodos-bloqueados', <Calendar className="h-4 w-4" />)}
             </div>
           )}
         </div>
@@ -679,6 +685,8 @@ function App() {
         return <IncrementalSync />;
       case 'export-project':
         return <ExportProject />;
+      case 'periodos-bloqueados':
+        return <PeriodosBloqueados />;
       case 'dashboard':
       default:
         return <Dashboard onNavigate={(tab) => navigateTo(tab as TabType)} />;
