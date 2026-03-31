@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadProjetosAction from '@/actions/loadProjetos';
+import loadContasAction from '@/actions/loadContas';
 import { DreInfoDataLoader } from '@/components/DreInfoDataLoader';
 import {
   ListingFilterCard,
