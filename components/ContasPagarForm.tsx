@@ -641,6 +641,16 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
     });
 
     try {
+      // Validar período bloqueado para competência
+      const validacaoPeriodo = await validarPeriodoBloqueado({
+        matrizId: values.matriz_id,
+        dataCompetencia: values.data_competencia,
+      });
+      if (validacaoPeriodo.bloqueado) {
+        toast({ title: 'Período Bloqueado', description: validacaoPeriodo.mensagem, variant: 'destructive' });
+        return;
+      }
+
       // Check if any project is concluded and has budget allocation changes
       const projetosConcluidos = values.projetos_rateio
         .map(p => projetos?.find(proj => proj.id === p.projeto_id))
