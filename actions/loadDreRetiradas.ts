@@ -11,7 +11,7 @@ function loadDreRetiradas() {
         data_retirada as data_referencia
       FROM retiradas
       WHERE 
-        matriz_id = {{params.matrizId}}
+        {{ params.matrizId ? "matriz_id = " + params.matrizId : "1=1" }}
         AND data_retirada BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}';
     `,
   });

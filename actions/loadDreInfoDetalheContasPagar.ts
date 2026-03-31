@@ -28,7 +28,7 @@ function loadDreInfoDetalheContasPagar() {
       LEFT JOIN contas_pagar_projetos cpp2 ON cpp2.conta_pagar_id = cp.id
       LEFT JOIN projetos proj ON proj.id = cpp2.projeto_id
       WHERE
-        cp.matriz_id = {{params.matrizId}}
+        {{ params.matrizId ? "cp.matriz_id = " + params.matrizId : "1=1" }}
         AND sg.id = {{params.subgrupoId}}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cp.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
