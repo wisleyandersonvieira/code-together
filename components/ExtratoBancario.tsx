@@ -97,6 +97,20 @@ export function ExtratoBancario() {
     dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
   });
 
+  const [extratoByGrupo] = useLoadAction(loadExtratoByGrupoAction, [], {
+    contaId: contaId ? parseInt(contaId) : null,
+    dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+    dataFim: dataFim ? formatDateForDatabase(dataFim) : null,
+    matrizId: matrizId !== 'all' ? parseInt(matrizId) : null,
+  });
+
+  const [extratoBySubgrupo] = useLoadAction(loadExtratoBySubgrupoAction, [], {
+    contaId: contaId ? parseInt(contaId) : null,
+    dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+    dataFim: dataFim ? formatDateForDatabase(dataFim) : null,
+    matrizId: matrizId !== 'all' ? parseInt(matrizId) : null,
+  });
+
   const contaOptions = useMemo(
     () =>
       (contas || []).map((c: any) => ({
