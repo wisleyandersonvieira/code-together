@@ -112,6 +112,13 @@ export function ExtratoBancario() {
     matrizId: matrizId !== 'all' ? parseInt(matrizId) : null,
   });
 
+  const [aportesRetiradas] = useLoadAction(loadAportesRetiradaBySocioAction, [], {
+    contaId: contaId ? parseInt(contaId) : null,
+    dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+    dataFim: dataFim ? formatDateForDatabase(dataFim) : null,
+    matrizId: matrizId !== 'all' ? parseInt(matrizId) : null,
+  });
+
   const contaOptions = useMemo(
     () =>
       (contas || []).map((c: any) => ({
