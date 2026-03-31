@@ -75,7 +75,7 @@ export function RelatorioDreInfo() {
     if (!params.estruturaId || !params.dataInicio || !params.dataFim) {
       toast({
         title: 'Campos obrigatórios',
-        description: 'Preencha Estrutura DRE, Matriz, Data Início e Data Fim.',
+        description: 'Preencha Estrutura DRE, Data Início e Data Fim.',
         variant: 'destructive',
       });
       return;
