@@ -40,7 +40,7 @@ function loadDreInfoDetalheContasReceber() {
       LEFT JOIN contas_receber_projetos crp2 ON crp2.conta_receber_id = cr.id
       LEFT JOIN projetos proj ON proj.id = crp2.projeto_id
       WHERE
-        cr.matriz_id = {{params.matrizId}}
+        {{ params.matrizId ? "cr.matriz_id = " + params.matrizId : "1=1" }}
         AND sg.id = {{params.subgrupoId}}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cr.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
