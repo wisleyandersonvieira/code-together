@@ -277,6 +277,7 @@ export function RelatorioDreInfo() {
               dataInicio={params.dataInicio}
               dataFim={params.dataFim}
               projetoId={params.projetoId}
+              contaId={params.contaId}
               projetoNome={projetoNome}
               refreshTrigger={refreshTrigger}
               onComplete={() => {
