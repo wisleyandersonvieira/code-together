@@ -17,6 +17,7 @@ interface DreInfoSubgrupoDetalheProps {
   projetoId?: number | null;
   funcao?: string;
   nivel: number;
+  onDataLoaded?: (subgrupoId: number, items: DetalheItem[]) => void;
 }
 
 interface DetalheItem {
