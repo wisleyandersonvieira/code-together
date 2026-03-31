@@ -58,6 +58,7 @@ export function RelatorioDreInfo() {
   const [estruturas] = useLoadAction(loadEstruturasDreAction, []);
   const [matrizes] = useLoadAction(loadMatrizesAction, [], { searchNome: null });
   const [projetos] = useLoadAction(loadProjetosAction, []);
+  const [contas] = useLoadAction(loadContasAction, []);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
