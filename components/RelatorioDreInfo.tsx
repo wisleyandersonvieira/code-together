@@ -47,6 +47,7 @@ export function RelatorioDreInfo() {
     dataInicio: '',
     dataFim: '',
     projetoId: null,
+    contaId: null,
   });
 
   const [showReport, setShowReport] = useState(false);
