@@ -1848,6 +1848,7 @@ export function exportExtratoBySubgrupoContabilPDF(
   contaInfo: { conta_nome: string; conta_banco: string },
   filtros: { dataInicio: string; dataFim: string; matrizNome?: string },
   formatCurrency: (value: number) => string,
+  aportesRetiradas: AporteRetiradaSocioData[] = [],
 ) {
   type RGB = [number, number, number];
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
