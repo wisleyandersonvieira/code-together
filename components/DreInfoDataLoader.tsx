@@ -317,18 +317,53 @@ export function DreInfoDataLoader({
         ['Ordem', 'Tipo', 'Nome', 'Valor'],
       ]);
 
-      XLSX.utils.sheet_add_json(
-        ws1,
-        dreData.map((item) => ({
-          Ordem: item.ordem,
-          Tipo: item.tipo,
-          Nome: item.nome,
-          Valor: item.valor,
-        })),
-        { origin: 'A10', skipHeader: true }
-      );
+      // Build rows interleaving expanded detail
+      const consolidadoRows: any[][] = [];
+      dreData.forEach((item) => {
+        consolidadoRows.push([item.ordem, item.tipo, item.nome, item.valor]);
 
-      ws1['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 50 }, { wch: 22 }];
+        // If this subgrupo is expanded and we have detail data, add detail rows
+        if (expandedRows.has(item.id) && item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
+          const details = expandedDetailData.get(item.subgrupo_contabil_id);
+          if (details && details.length > 0) {
+            const isDebito = item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO';
+            // Sub-header
+            consolidadoRows.push(['', '', '  ↳ Data', '  Favorecido', '  Observação', '  Projetos', '  Valor']);
+            details.forEach((d: any) => {
+              consolidadoRows.push([
+                '',
+                '',
+                `    ${d.data_referencia || '-'}`,
+                d.favorecido || '-',
+                d.observacao || '',
+                d.projetos || '',
+                d.valor || 0,
+              ]);
+            });
+          }
+        }
+
+        // If APORTE expanded, add aporte detail rows
+        if (expandedRows.has(item.id) && item.tipo === 'APORTE' && aportes && aportes.length > 0) {
+          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          (aportes as any[]).forEach((a) => {
+            consolidadoRows.push(['', '', `    ${a.data_aporte || '-'}`, a.socio_nome || '-', '', '', Number(a.valor) || 0]);
+          });
+        }
+
+        // If RETIRADA expanded, add retirada detail rows
+        if (expandedRows.has(item.id) && item.tipo === 'RETIRADA' && retiradas && retiradas.length > 0) {
+          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          (retiradas as any[]).forEach((r) => {
+            consolidadoRows.push(['', '', `    ${r.data_retirada || '-'}`, r.socio_nome || '-', '', '', Number(r.valor) || 0]);
+          });
+        }
+      });
+
+      XLSX.utils.sheet_add_aoa(ws1, consolidadoRows, { origin: 'A10' });
+
+      // Adjust columns for possible expanded detail
+      ws1['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 22 }];
 
       const range1 = XLSX.utils.decode_range(ws1['!ref'] || 'A1');
       for (let R = 9; R <= range1.e.r; ++R) {
