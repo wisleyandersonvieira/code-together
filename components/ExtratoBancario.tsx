@@ -307,6 +307,12 @@ export function ExtratoBancario() {
                 <DropdownMenuItem onClick={() => handleExportPDF(true)}>
                   Extrato com OBS
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportByGrupoPDF} disabled={!extratoByGrupo || extratoByGrupo.length === 0}>
+                  Relatório por Grupo
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportBySubgrupoPDF} disabled={!extratoBySubgrupo || extratoBySubgrupo.length === 0}>
+                  Relatório por Subgrupo
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
