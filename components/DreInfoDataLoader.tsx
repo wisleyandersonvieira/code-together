@@ -82,13 +82,13 @@ export function DreInfoDataLoader({
   const [contasPagar, loadingContasPagar] = useLoadAction(
     loadDreInfoContasPagarAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId }
+    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId, contaId }
   );
 
   const [contasReceber, loadingContasReceber] = useLoadAction(
     loadDreInfoContasReceberAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId }
+    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId, contaId }
   );
 
   const [aportes, loadingAportes] = useLoadAction(loadAportesAction, [], {

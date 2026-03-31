@@ -26,6 +26,7 @@ function loadDreInfoContasPagar() {
       WHERE
         cp.matriz_id = {{params.matrizId}}
         {{ params.projetoId ? "AND EXISTS (SELECT 1 FROM contas_pagar_projetos cpp WHERE cpp.conta_pagar_id = cp.id AND cpp.projeto_id = " + params.projetoId + ")" : "" }}
+        {{ params.contaId ? "AND tp.conta_id = " + params.contaId : "" }}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cp.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
           OR
