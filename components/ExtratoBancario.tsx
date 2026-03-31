@@ -204,6 +204,38 @@ export function ExtratoBancario() {
     );
   };
 
+  const handleExportByGrupoPDF = () => {
+    if (!contaInfo || !extratoByGrupo || extratoByGrupo.length === 0) return;
+    const matrizLabel = matrizId !== 'all' ? matrizOptions.find((m) => m.value === matrizId)?.label : undefined;
+    exportExtratoByGrupoContabilPDF(
+      extratoByGrupo,
+      `extrato_grupo_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      { conta_nome: contaInfo.conta_nome || '', conta_banco: contaInfo.conta_banco || '' },
+      {
+        dataInicio: dataInicio ? dataInicio.toLocaleDateString('pt-BR') : '',
+        dataFim: dataFim ? dataFim.toLocaleDateString('pt-BR') : '',
+        matrizNome: matrizLabel,
+      },
+      formatCurrency,
+    );
+  };
+
+  const handleExportBySubgrupoPDF = () => {
+    if (!contaInfo || !extratoBySubgrupo || extratoBySubgrupo.length === 0) return;
+    const matrizLabel = matrizId !== 'all' ? matrizOptions.find((m) => m.value === matrizId)?.label : undefined;
+    exportExtratoBySubgrupoContabilPDF(
+      extratoBySubgrupo,
+      `extrato_subgrupo_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      { conta_nome: contaInfo.conta_nome || '', conta_banco: contaInfo.conta_banco || '' },
+      {
+        dataInicio: dataInicio ? dataInicio.toLocaleDateString('pt-BR') : '',
+        dataFim: dataFim ? dataFim.toLocaleDateString('pt-BR') : '',
+        matrizNome: matrizLabel,
+      },
+      formatCurrency,
+    );
+  };
+
   const canGenerate = !!contaId && !!dataInicio && !!dataFim;
 
   return (
