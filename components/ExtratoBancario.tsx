@@ -352,10 +352,23 @@ export function ExtratoBancario() {
             </DropdownMenu>
           )}
           {showExtrato && transacoesComSaldo.length > 0 && (
-            <Button type="button" className={listingSecondaryButtonClassName} onClick={handleExportExcel}>
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Exportar Excel
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" className={listingSecondaryButtonClassName}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Exportar Excel
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel}>
+                  Extrato Detalhado
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportBySubgrupoExcel} disabled={!extratoBySubgrupo || extratoBySubgrupo.length === 0}>
+                  Relatório por Subgrupo
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </ListingFilterCard>
