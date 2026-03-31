@@ -72,7 +72,7 @@ export function RelatorioDreInfo() {
       : undefined;
 
   const generateReport = () => {
-    if (!params.estruturaId || !params.matrizId || !params.dataInicio || !params.dataFim) {
+    if (!params.estruturaId || !params.dataInicio || !params.dataFim) {
       toast({
         title: 'Campos obrigatórios',
         description: 'Preencha Estrutura DRE, Matriz, Data Início e Data Fim.',
