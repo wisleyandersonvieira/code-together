@@ -658,6 +658,16 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   };
 
   const handleReceipt = async () => {
+    // Validar período bloqueado para pagamento/recebimento
+    const validacao = await validarPeriodoBloqueado({
+      matrizId: conta?.matriz_id,
+      dataPagamento: receiptForm.data_recebimento,
+    });
+    if (validacao.bloqueado) {
+      toast({ title: 'Período Bloqueado', description: validacao.mensagem, variant: 'destructive' });
+      return;
+    }
+
     try {
       for (const index of selectedTitulos) {
         const titulo = generatedTitulos[index];
