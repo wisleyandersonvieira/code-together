@@ -34,6 +34,7 @@ interface DreInfoParams {
   dataInicio: string;
   dataFim: string;
   projetoId: number | null;
+  contaId: number | null;
 }
 
 export function RelatorioDreInfo() {
