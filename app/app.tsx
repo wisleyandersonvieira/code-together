@@ -290,6 +290,7 @@ const AuditoriaFornecedorReports = lazy(() => import('@/components/AuditoriaForn
 const FullSupabaseMigration = lazy(() => import('@/components/FullSupabaseMigration').then((module) => ({ default: module.FullSupabaseMigration })));
 const IncrementalSync = lazy(() => import('@/components/IncrementalSync').then((module) => ({ default: module.IncrementalSync })));
 const ExportProject = lazy(() => import('@/components/ExportProject').then((module) => ({ default: module.ExportProject })));
+const PeriodosBloqueados = lazy(() => import('@/components/PeriodosBloqueados').then((module) => ({ default: module.PeriodosBloqueados })));
 
 function LoadingPage() {
   return (
