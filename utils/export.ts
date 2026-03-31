@@ -1553,3 +1553,406 @@ export function exportExtratoClientePDF(
   // Download
   doc.save(`${filename}.pdf`);
 }
+
+// ── PDF Relatório por Grupo Contábil ─────────────────────────
+interface GrupoContabilData {
+  grupo_nome: string;
+  grupo_id: number | null;
+  direcao: 'entrada' | 'saida';
+  valor_total: number;
+  qtd_lancamentos: number;
+}
+
+export function exportExtratoByGrupoContabilPDF(
+  data: GrupoContabilData[],
+  filename: string,
+  contaInfo: { conta_nome: string; conta_banco: string },
+  filtros: { dataInicio: string; dataFim: string; matrizNome?: string },
+  formatCurrency: (value: number) => string,
+) {
+  type RGB = [number, number, number];
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 14;
+  const contentW = pageWidth - marginX * 2;
+
+  const P: Record<string, RGB> = {
+    navy: [17, 31, 59], navySoft: [229, 236, 246], graphite: [59, 68, 82],
+    slate: [107, 114, 128], border: [217, 223, 232], light: [245, 247, 250],
+    white: [255, 255, 255], green: [22, 101, 52], rose: [190, 24, 93],
+  };
+  const sf = (c: RGB) => doc.setFillColor(c[0], c[1], c[2]);
+  const sd = (c: RGB) => doc.setDrawColor(c[0], c[1], c[2]);
+  const st = (c: RGB) => doc.setTextColor(c[0], c[1], c[2]);
+
+  const now = new Date();
+  const issuedAt = new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(now);
+
+  // Group data by grupo_nome
+  const grupoMap = new Map<string, { entradas: number; saidas: number; qtdEntradas: number; qtdSaidas: number }>();
+  data.forEach((item) => {
+    const key = item.grupo_nome || 'Sem Grupo';
+    if (!grupoMap.has(key)) grupoMap.set(key, { entradas: 0, saidas: 0, qtdEntradas: 0, qtdSaidas: 0 });
+    const g = grupoMap.get(key)!;
+    if (item.direcao === 'entrada') { g.entradas += Number(item.valor_total) || 0; g.qtdEntradas += Number(item.qtd_lancamentos) || 0; }
+    else { g.saidas += Number(item.valor_total) || 0; g.qtdSaidas += Number(item.qtd_lancamentos) || 0; }
+  });
+
+  const grupos = Array.from(grupoMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const totalEntradas = grupos.reduce((s, [, v]) => s + v.entradas, 0);
+  const totalSaidas = grupos.reduce((s, [, v]) => s + v.saidas, 0);
+
+  // Header bar
+  sf(P.navy); doc.rect(0, 0, pageWidth, 22, 'F');
+  st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+  doc.text('RELATÓRIO POR GRUPO CONTÁBIL', marginX, 10);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+  const contaLabel = contaInfo.conta_nome + (contaInfo.conta_banco ? ` — ${contaInfo.conta_banco}` : '');
+  doc.text(contaLabel, marginX, 17);
+  st(P.navySoft); doc.setFontSize(7.5);
+  doc.text(`Emitido em ${issuedAt}`, pageWidth - marginX, 17, { align: 'right' });
+
+  let y = 28;
+
+  // Filter info
+  const infoItems: [string, string][] = [
+    ['Período', `${filtros.dataInicio} – ${filtros.dataFim}`],
+    ...(filtros.matrizNome ? [['Matriz', filtros.matrizNome] as [string, string]] : []),
+  ];
+  const infoW = contentW / Math.max(infoItems.length, 1);
+  infoItems.forEach(([label, val], i) => {
+    const x = marginX + i * infoW;
+    sf(P.light); doc.roundedRect(x, y, infoW - 2, 13, 2, 2, 'F');
+    st(P.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text(label.toUpperCase(), x + 3, y + 5);
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+    doc.text(val, x + 3, y + 11);
+  });
+  y += 18;
+
+  // Summary cards
+  const saldo = totalEntradas - totalSaidas;
+  const cards = [
+    { label: 'Total Entradas', value: formatCurrency(totalEntradas), color: P.green },
+    { label: 'Total Saídas', value: formatCurrency(totalSaidas), color: P.rose },
+    { label: 'Saldo', value: formatCurrency(saldo), color: saldo < 0 ? P.rose : P.green },
+    { label: 'Grupos', value: String(grupos.length), color: P.navy },
+  ];
+  const cardW = contentW / cards.length;
+  cards.forEach((card, i) => {
+    const x = marginX + i * cardW;
+    sf(P.light); doc.roundedRect(x, y, cardW - 2, 17, 2, 2, 'F');
+    st(P.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    doc.text(card.label.toUpperCase(), x + 3, y + 6);
+    st(card.color); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(card.value, x + 3, y + 14);
+  });
+  y += 22;
+
+  // Table
+  const cols = [
+    { label: 'Grupo Contábil', width: contentW * 0.40, right: false },
+    { label: 'Qtd Ent.', width: contentW * 0.10, right: true },
+    { label: 'Entradas', width: contentW * 0.20, right: true },
+    { label: 'Qtd Saí.', width: contentW * 0.10, right: true },
+    { label: 'Saídas', width: contentW * 0.20, right: true },
+  ];
+  const ROW_H = 8;
+  const HEADER_H = 8;
+
+  const drawTableHeader = (yh: number): number => {
+    sf(P.navy); doc.rect(marginX, yh, contentW, HEADER_H, 'F');
+    let cx = marginX;
+    cols.forEach((col) => {
+      st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      const xText = col.right ? cx + col.width - 2 : cx + 2;
+      doc.text(col.label, xText, yh + 5.5, { align: col.right ? 'right' : 'left' });
+      cx += col.width;
+    });
+    return yh + HEADER_H;
+  };
+
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageHeight - 14) { doc.addPage(); y = 14; y = drawTableHeader(y); }
+  };
+
+  y = drawTableHeader(y);
+
+  grupos.forEach(([nome, vals], idx) => {
+    ensureSpace(ROW_H + 1);
+    sf(idx % 2 === 0 ? P.white : P.light);
+    doc.rect(marginX, y, contentW, ROW_H, 'F');
+
+    const cellData = [
+      { text: nome, color: P.graphite, bold: true },
+      { text: String(vals.qtdEntradas), color: P.graphite },
+      { text: formatCurrency(vals.entradas), color: P.green },
+      { text: String(vals.qtdSaidas), color: P.graphite },
+      { text: formatCurrency(vals.saidas), color: P.rose },
+    ];
+
+    let cx = marginX;
+    cellData.forEach((cell, ci) => {
+      const col = cols[ci];
+      st(cell.color); doc.setFont('helvetica', cell.bold ? 'bold' : 'normal'); doc.setFontSize(7);
+      const fitted = doc.splitTextToSize(cell.text, col.width - 4);
+      const xText = col.right ? cx + col.width - 2 : cx + 2;
+      doc.text(fitted[0], xText, y + 5.5, { align: col.right ? 'right' : 'left' });
+      cx += col.width;
+    });
+
+    sd(P.border); doc.setLineWidth(0.1);
+    doc.line(marginX, y + ROW_H, marginX + contentW, y + ROW_H);
+    y += ROW_H;
+  });
+
+  // Totals row
+  ensureSpace(9);
+  sf(P.navySoft); doc.rect(marginX, y, contentW, 9, 'F');
+  st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+  doc.text('TOTAL', marginX + 2, y + 6);
+  let cx = marginX;
+  cols.forEach((col, ci) => {
+    if (ci === 2) { st(P.green); doc.text(formatCurrency(totalEntradas), cx + col.width - 2, y + 6, { align: 'right' }); }
+    if (ci === 4) { st(P.rose); doc.text(formatCurrency(totalSaidas), cx + col.width - 2, y + 6, { align: 'right' }); }
+    cx += col.width;
+  });
+
+  // Footer
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    sd(P.border); doc.setLineWidth(0.3);
+    doc.line(marginX, pageHeight - 10, pageWidth - marginX, pageHeight - 10);
+    st(P.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.text('PROVISION', marginX, pageHeight - 5.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(' Sistema de Gestão Financeira e Projetos', marginX + 16, pageHeight - 5.5);
+    doc.text(`Emitido em ${issuedAt}`, pageWidth / 2, pageHeight - 5.5, { align: 'center' });
+    doc.text(`Página ${p} de ${pages}`, pageWidth - marginX, pageHeight - 5.5, { align: 'right' });
+  }
+
+  doc.save(`${filename}.pdf`);
+}
+
+// ── PDF Relatório por Subgrupo Contábil ─────────────────────────
+interface SubgrupoContabilData {
+  grupo_nome: string;
+  subgrupo_nome: string;
+  subgrupo_id: number | null;
+  grupo_id: number | null;
+  direcao: 'entrada' | 'saida';
+  valor_total: number;
+  qtd_lancamentos: number;
+}
+
+export function exportExtratoBySubgrupoContabilPDF(
+  data: SubgrupoContabilData[],
+  filename: string,
+  contaInfo: { conta_nome: string; conta_banco: string },
+  filtros: { dataInicio: string; dataFim: string; matrizNome?: string },
+  formatCurrency: (value: number) => string,
+) {
+  type RGB = [number, number, number];
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 14;
+  const contentW = pageWidth - marginX * 2;
+
+  const P: Record<string, RGB> = {
+    navy: [17, 31, 59], navySoft: [229, 236, 246], graphite: [59, 68, 82],
+    slate: [107, 114, 128], border: [217, 223, 232], light: [245, 247, 250],
+    white: [255, 255, 255], green: [22, 101, 52], rose: [190, 24, 93],
+  };
+  const sf = (c: RGB) => doc.setFillColor(c[0], c[1], c[2]);
+  const sd = (c: RGB) => doc.setDrawColor(c[0], c[1], c[2]);
+  const st = (c: RGB) => doc.setTextColor(c[0], c[1], c[2]);
+
+  const now = new Date();
+  const issuedAt = new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(now);
+
+  // Group data: grupo -> subgrupo -> { entradas, saidas }
+  const grupoMap = new Map<string, Map<string, { entradas: number; saidas: number; qtdEntradas: number; qtdSaidas: number }>>();
+  data.forEach((item) => {
+    const gKey = item.grupo_nome || 'Sem Grupo';
+    const sKey = item.subgrupo_nome || 'Sem Subgrupo';
+    if (!grupoMap.has(gKey)) grupoMap.set(gKey, new Map());
+    const sMap = grupoMap.get(gKey)!;
+    if (!sMap.has(sKey)) sMap.set(sKey, { entradas: 0, saidas: 0, qtdEntradas: 0, qtdSaidas: 0 });
+    const s = sMap.get(sKey)!;
+    if (item.direcao === 'entrada') { s.entradas += Number(item.valor_total) || 0; s.qtdEntradas += Number(item.qtd_lancamentos) || 0; }
+    else { s.saidas += Number(item.valor_total) || 0; s.qtdSaidas += Number(item.qtd_lancamentos) || 0; }
+  });
+
+  const gruposSorted = Array.from(grupoMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  let totalEntradas = 0, totalSaidas = 0;
+  gruposSorted.forEach(([, subs]) => subs.forEach((v) => { totalEntradas += v.entradas; totalSaidas += v.saidas; }));
+
+  // Header bar
+  sf(P.navy); doc.rect(0, 0, pageWidth, 22, 'F');
+  st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+  doc.text('RELATÓRIO POR SUBGRUPO CONTÁBIL', marginX, 10);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+  const contaLabel = contaInfo.conta_nome + (contaInfo.conta_banco ? ` — ${contaInfo.conta_banco}` : '');
+  doc.text(contaLabel, marginX, 17);
+  st(P.navySoft); doc.setFontSize(7.5);
+  doc.text(`Emitido em ${issuedAt}`, pageWidth - marginX, 17, { align: 'right' });
+
+  let y = 28;
+
+  // Filter info
+  const infoItems: [string, string][] = [
+    ['Período', `${filtros.dataInicio} – ${filtros.dataFim}`],
+    ...(filtros.matrizNome ? [['Matriz', filtros.matrizNome] as [string, string]] : []),
+  ];
+  const infoW = contentW / Math.max(infoItems.length, 1);
+  infoItems.forEach(([label, val], i) => {
+    const x = marginX + i * infoW;
+    sf(P.light); doc.roundedRect(x, y, infoW - 2, 13, 2, 2, 'F');
+    st(P.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text(label.toUpperCase(), x + 3, y + 5);
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+    doc.text(val, x + 3, y + 11);
+  });
+  y += 18;
+
+  // Summary cards
+  const saldo = totalEntradas - totalSaidas;
+  const totalSubgrupos = gruposSorted.reduce((s, [, subs]) => s + subs.size, 0);
+  const cards2 = [
+    { label: 'Total Entradas', value: formatCurrency(totalEntradas), color: P.green },
+    { label: 'Total Saídas', value: formatCurrency(totalSaidas), color: P.rose },
+    { label: 'Saldo', value: formatCurrency(saldo), color: saldo < 0 ? P.rose : P.green },
+    { label: 'Subgrupos', value: String(totalSubgrupos), color: P.navy },
+  ];
+  const cardW = contentW / cards2.length;
+  cards2.forEach((card, i) => {
+    const x = marginX + i * cardW;
+    sf(P.light); doc.roundedRect(x, y, cardW - 2, 17, 2, 2, 'F');
+    st(P.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    doc.text(card.label.toUpperCase(), x + 3, y + 6);
+    st(card.color); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(card.value, x + 3, y + 14);
+  });
+  y += 22;
+
+  // Table columns
+  const cols = [
+    { label: 'Grupo Contábil', width: contentW * 0.22, right: false },
+    { label: 'Subgrupo Contábil', width: contentW * 0.22, right: false },
+    { label: 'Qtd Ent.', width: contentW * 0.08, right: true },
+    { label: 'Entradas', width: contentW * 0.19, right: true },
+    { label: 'Qtd Saí.', width: contentW * 0.08, right: true },
+    { label: 'Saídas', width: contentW * 0.21, right: true },
+  ];
+  const ROW_H = 7.5;
+  const HEADER_H = 8;
+  const GROUP_H = 8;
+
+  const drawTableHeader = (yh: number): number => {
+    sf(P.navy); doc.rect(marginX, yh, contentW, HEADER_H, 'F');
+    let cx = marginX;
+    cols.forEach((col) => {
+      st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      const xText = col.right ? cx + col.width - 2 : cx + 2;
+      doc.text(col.label, xText, yh + 5.5, { align: col.right ? 'right' : 'left' });
+      cx += col.width;
+    });
+    return yh + HEADER_H;
+  };
+
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageHeight - 14) { doc.addPage(); y = 14; y = drawTableHeader(y); }
+  };
+
+  y = drawTableHeader(y);
+
+  let rowIdx = 0;
+  gruposSorted.forEach(([grupoNome, subsMap]) => {
+    const subsSorted = Array.from(subsMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+    // Group header row
+    ensureSpace(GROUP_H + ROW_H);
+    sf(P.navySoft); doc.rect(marginX, y, contentW, GROUP_H, 'F');
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+    doc.text(grupoNome, marginX + 3, y + 5.5);
+
+    // Group totals
+    let gEntradas = 0, gSaidas = 0;
+    subsSorted.forEach(([, v]) => { gEntradas += v.entradas; gSaidas += v.saidas; });
+    st(P.green); doc.setFontSize(7);
+    const entCol = cols.slice(0, 4).reduce((s, c) => s + c.width, 0);
+    doc.text(formatCurrency(gEntradas), marginX + entCol - 2, y + 5.5, { align: 'right' });
+    st(P.rose);
+    const saiCol = cols.reduce((s, c) => s + c.width, 0);
+    doc.text(formatCurrency(gSaidas), marginX + saiCol - 2, y + 5.5, { align: 'right' });
+
+    sd(P.border); doc.setLineWidth(0.1);
+    doc.line(marginX, y + GROUP_H, marginX + contentW, y + GROUP_H);
+    y += GROUP_H;
+
+    subsSorted.forEach(([subNome, vals]) => {
+      ensureSpace(ROW_H + 1);
+      sf(rowIdx % 2 === 0 ? P.white : P.light);
+      doc.rect(marginX, y, contentW, ROW_H, 'F');
+
+      const cellData = [
+        { text: '', color: P.graphite, bold: false },
+        { text: subNome, color: P.graphite, bold: false },
+        { text: String(vals.qtdEntradas), color: P.graphite, bold: false },
+        { text: formatCurrency(vals.entradas), color: P.green, bold: false },
+        { text: String(vals.qtdSaidas), color: P.graphite, bold: false },
+        { text: formatCurrency(vals.saidas), color: P.rose, bold: false },
+      ];
+
+      let cx = marginX;
+      cellData.forEach((cell, ci) => {
+        const col = cols[ci];
+        st(cell.color); doc.setFont('helvetica', cell.bold ? 'bold' : 'normal'); doc.setFontSize(7);
+        const fitted = doc.splitTextToSize(cell.text, col.width - 4);
+        const xText = col.right ? cx + col.width - 2 : cx + 2;
+        if (fitted[0]) doc.text(fitted[0], xText, y + 5, { align: col.right ? 'right' : 'left' });
+        cx += col.width;
+      });
+
+      sd(P.border); doc.setLineWidth(0.1);
+      doc.line(marginX, y + ROW_H, marginX + contentW, y + ROW_H);
+      y += ROW_H;
+      rowIdx++;
+    });
+  });
+
+  // Totals row
+  ensureSpace(9);
+  sf(P.navySoft); doc.rect(marginX, y, contentW, 9, 'F');
+  st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+  doc.text('TOTAL GERAL', marginX + 2, y + 6);
+  let cx2 = marginX;
+  cols.forEach((col, ci) => {
+    if (ci === 3) { st(P.green); doc.text(formatCurrency(totalEntradas), cx2 + col.width - 2, y + 6, { align: 'right' }); }
+    if (ci === 5) { st(P.rose); doc.text(formatCurrency(totalSaidas), cx2 + col.width - 2, y + 6, { align: 'right' }); }
+    cx2 += col.width;
+  });
+
+  // Footer
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    sd(P.border); doc.setLineWidth(0.3);
+    doc.line(marginX, pageHeight - 10, pageWidth - marginX, pageHeight - 10);
+    st(P.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.text('PROVISION', marginX, pageHeight - 5.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(' Sistema de Gestão Financeira e Projetos', marginX + 16, pageHeight - 5.5);
+    doc.text(`Emitido em ${issuedAt}`, pageWidth / 2, pageHeight - 5.5, { align: 'center' });
+    doc.text(`Página ${p} de ${pages}`, pageWidth - marginX, pageHeight - 5.5, { align: 'right' });
+  }
+
+  doc.save(`${filename}.pdf`);
+}

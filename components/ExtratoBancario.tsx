@@ -6,6 +6,8 @@ import { Calendar, ChevronDown, FileDown, FileText, X } from 'lucide-react';
 
 import loadContasAction from '@/actions/loadContas';
 import loadExtratoAction from '@/actions/loadExtrato';
+import loadExtratoByGrupoAction from '@/actions/loadExtratoByGrupoContabil';
+import loadExtratoBySubgrupoAction from '@/actions/loadExtratoBySubgrupoContabil';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadSaldoAnteriorAction from '@/actions/loadSaldoAnterior';
 import {
@@ -32,7 +34,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
-import { exportExtratoBancarioPDF } from '@/utils/export';
+import { exportExtratoBancarioPDF, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF } from '@/utils/export';
 
 type TipoMovimentacao = 'CP' | 'CR' | 'TR' | 'APORTE' | 'RETIRADA';
 
@@ -93,6 +95,20 @@ export function ExtratoBancario() {
   const [saldoData] = useLoadAction(loadSaldoAnteriorAction, [], {
     contaId: contaId ? parseInt(contaId) : null,
     dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+  });
+
+  const [extratoByGrupo] = useLoadAction(loadExtratoByGrupoAction, [], {
+    contaId: contaId ? parseInt(contaId) : null,
+    dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+    dataFim: dataFim ? formatDateForDatabase(dataFim) : null,
+    matrizId: matrizId !== 'all' ? parseInt(matrizId) : null,
+  });
+
+  const [extratoBySubgrupo] = useLoadAction(loadExtratoBySubgrupoAction, [], {
+    contaId: contaId ? parseInt(contaId) : null,
+    dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+    dataFim: dataFim ? formatDateForDatabase(dataFim) : null,
+    matrizId: matrizId !== 'all' ? parseInt(matrizId) : null,
   });
 
   const contaOptions = useMemo(
@@ -188,6 +204,38 @@ export function ExtratoBancario() {
     );
   };
 
+  const handleExportByGrupoPDF = () => {
+    if (!contaInfo || !extratoByGrupo || extratoByGrupo.length === 0) return;
+    const matrizLabel = matrizId !== 'all' ? matrizOptions.find((m) => m.value === matrizId)?.label : undefined;
+    exportExtratoByGrupoContabilPDF(
+      extratoByGrupo,
+      `extrato_grupo_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      { conta_nome: contaInfo.conta_nome || '', conta_banco: contaInfo.conta_banco || '' },
+      {
+        dataInicio: dataInicio ? dataInicio.toLocaleDateString('pt-BR') : '',
+        dataFim: dataFim ? dataFim.toLocaleDateString('pt-BR') : '',
+        matrizNome: matrizLabel,
+      },
+      formatCurrency,
+    );
+  };
+
+  const handleExportBySubgrupoPDF = () => {
+    if (!contaInfo || !extratoBySubgrupo || extratoBySubgrupo.length === 0) return;
+    const matrizLabel = matrizId !== 'all' ? matrizOptions.find((m) => m.value === matrizId)?.label : undefined;
+    exportExtratoBySubgrupoContabilPDF(
+      extratoBySubgrupo,
+      `extrato_subgrupo_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      { conta_nome: contaInfo.conta_nome || '', conta_banco: contaInfo.conta_banco || '' },
+      {
+        dataInicio: dataInicio ? dataInicio.toLocaleDateString('pt-BR') : '',
+        dataFim: dataFim ? dataFim.toLocaleDateString('pt-BR') : '',
+        matrizNome: matrizLabel,
+      },
+      formatCurrency,
+    );
+  };
+
   const canGenerate = !!contaId && !!dataInicio && !!dataFim;
 
   return (
@@ -258,6 +306,12 @@ export function ExtratoBancario() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExportPDF(true)}>
                   Extrato com OBS
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportByGrupoPDF} disabled={!extratoByGrupo || extratoByGrupo.length === 0}>
+                  Relatório por Grupo
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportBySubgrupoPDF} disabled={!extratoBySubgrupo || extratoBySubgrupo.length === 0}>
+                  Relatório por Subgrupo
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
