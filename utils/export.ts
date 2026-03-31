@@ -1884,9 +1884,24 @@ export function exportExtratoBySubgrupoContabilPDF(
     else { s.saidas += Number(item.valor_total) || 0; s.qtdSaidas += Number(item.qtd_lancamentos) || 0; }
   });
 
+  // Process aportes/retiradas by sócio
+  const socioMap = new Map<string, { aportes: number; retiradas: number; qtdAportes: number; qtdRetiradas: number }>();
+  aportesRetiradas.forEach((item) => {
+    const key = item.socio_nome || 'Sem Sócio';
+    if (!socioMap.has(key)) socioMap.set(key, { aportes: 0, retiradas: 0, qtdAportes: 0, qtdRetiradas: 0 });
+    const s2 = socioMap.get(key)!;
+    if (item.tipo === 'aporte') { s2.aportes += Number(item.valor_total) || 0; s2.qtdAportes += Number(item.qtd_lancamentos) || 0; }
+    else { s2.retiradas += Number(item.valor_total) || 0; s2.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
+  });
+  const socios = Array.from(socioMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const totalAportes = socios.reduce((s, [, v]) => s + v.aportes, 0);
+  const totalRetiradas = socios.reduce((s, [, v]) => s + v.retiradas, 0);
+
   const gruposSorted = Array.from(grupoMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   let totalEntradas = 0, totalSaidas = 0;
   gruposSorted.forEach(([, subs]) => subs.forEach((v) => { totalEntradas += v.entradas; totalSaidas += v.saidas; }));
+  totalEntradas += totalAportes;
+  totalSaidas += totalRetiradas;
 
   // Header bar
   sf(P.navy); doc.rect(0, 0, pageWidth, 22, 'F');
