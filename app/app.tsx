@@ -424,6 +424,7 @@ function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUse
               {navItem('Relatório DRE', 'relatorio-dre', <PieChart className="h-4 w-4" />)}
               {navItem('DRE Info', 'relatorio-dre-info', <BarChart2 className="h-4 w-4" />)}
               {navItem('Exportar GitHub', 'export-project', <Github className="h-4 w-4" />)}
+              {navItem('Períodos', 'periodos-bloqueados', <Calendar className="h-4 w-4" />)}
             </div>
           )}
         </div>
