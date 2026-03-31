@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { validarPeriodoBloqueado } from '@/hooks/use-periodo-bloqueado';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
