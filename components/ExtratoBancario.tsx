@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
-import { Calendar, ChevronDown, FileDown, FileText, X } from 'lucide-react';
+import { Calendar, ChevronDown, FileDown, FileSpreadsheet, FileText, X } from 'lucide-react';
 
 import loadContasAction from '@/actions/loadContas';
 import loadExtratoAction from '@/actions/loadExtrato';
@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
-import { exportExtratoBancarioPDF, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF } from '@/utils/export';
+import { exportExtratoBancarioPDF, exportExtratoBancarioExcel, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF } from '@/utils/export';
 
 type TipoMovimentacao = 'CP' | 'CR' | 'TR' | 'APORTE' | 'RETIRADA';
 
@@ -246,6 +246,20 @@ export function ExtratoBancario() {
     );
   };
 
+  const handleExportExcel = () => {
+    if (!contaInfo || transacoesComSaldo.length === 0) return;
+    exportExtratoBancarioExcel(
+      transacoesComSaldo,
+      `extrato_${(contaInfo.conta_nome || 'conta').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_')}`,
+      {
+        conta_nome: contaInfo.conta_nome || '',
+        conta_banco: contaInfo.conta_banco || '',
+        saldo_anterior: Number(contaInfo.saldo_anterior) || 0,
+      },
+      formatCurrency,
+    );
+  };
+
   const canGenerate = !!contaId && !!dataInicio && !!dataFim;
 
   return (
@@ -325,6 +339,12 @@ export function ExtratoBancario() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          )}
+          {showExtrato && transacoesComSaldo.length > 0 && (
+            <Button type="button" className={listingSecondaryButtonClassName} onClick={handleExportExcel}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Exportar Excel
+            </Button>
           )}
         </div>
       </ListingFilterCard>

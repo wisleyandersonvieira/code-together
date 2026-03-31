@@ -623,6 +623,40 @@ interface ExtratoBancarioData {
   [key: string]: any;
 }
 
+// Exportar extrato bancário para Excel
+export function exportExtratoBancarioExcel(
+  data: ExtratoBancarioData[],
+  filename: string,
+  contaInfo: { conta_nome: string; conta_banco: string; saldo_anterior: number },
+  formatCurrency: (value: number) => string,
+) {
+  const rows = data.map((item) => ({
+    'Data': item.data ? new Date(item.data).toLocaleDateString('pt-BR') : '',
+    'Tipo': item.tipo || '',
+    'Fornecedor / Credor': item.fornecedor_creditor || '',
+    'Documento': item.numero_documento || '',
+    'Projeto': item.projeto || '',
+    'Matriz': item.matriz_nome || '',
+    'Entrada': item.entrada ? item.entrada : '',
+    'Saída': item.saida ? item.saida : '',
+    'Saldo': item.saldo_linha ?? '',
+    'Observações': item.observacoes || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+
+  // Auto-size columns
+  const colWidths = Object.keys(rows[0] || {}).map((key) => {
+    const maxLen = Math.max(key.length, ...rows.map((r: any) => String(r[key] || '').length));
+    return { wch: Math.min(maxLen + 2, 40) };
+  });
+  ws['!cols'] = colWidths;
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Extrato');
+  XLSX.writeFile(wb, `${filename}.xlsx`);
+}
+
 // Função específica para PDF do extrato bancário — visual premium
 export function exportExtratoBancarioPDF(
   data: ExtratoBancarioData[],
