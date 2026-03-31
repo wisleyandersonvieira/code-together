@@ -6,6 +6,8 @@ import { Calendar, ChevronDown, FileDown, FileText, X } from 'lucide-react';
 
 import loadContasAction from '@/actions/loadContas';
 import loadExtratoAction from '@/actions/loadExtrato';
+import loadExtratoByGrupoAction from '@/actions/loadExtratoByGrupoContabil';
+import loadExtratoBySubgrupoAction from '@/actions/loadExtratoBySubgrupoContabil';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadSaldoAnteriorAction from '@/actions/loadSaldoAnterior';
 import {
