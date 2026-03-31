@@ -33,6 +33,7 @@ interface DreInfoDataLoaderProps {
   dataInicio: string;
   dataFim: string;
   projetoId?: number | null;
+  contaId?: number | null;
   projetoNome?: string;
   onComplete: () => void;
   refreshTrigger?: number;
@@ -58,6 +59,7 @@ export function DreInfoDataLoader({
   dataInicio,
   dataFim,
   projetoId,
+  contaId,
   projetoNome,
   onComplete,
   refreshTrigger,
@@ -80,13 +82,13 @@ export function DreInfoDataLoader({
   const [contasPagar, loadingContasPagar] = useLoadAction(
     loadDreInfoContasPagarAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId }
+    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId, contaId }
   );
 
   const [contasReceber, loadingContasReceber] = useLoadAction(
     loadDreInfoContasReceberAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId }
+    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId, contaId }
   );
 
   const [aportes, loadingAportes] = useLoadAction(loadAportesAction, [], {

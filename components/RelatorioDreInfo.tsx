@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadProjetosAction from '@/actions/loadProjetos';
+import loadContasAction from '@/actions/loadContas';
 import { DreInfoDataLoader } from '@/components/DreInfoDataLoader';
 import {
   ListingFilterCard,
@@ -33,6 +34,7 @@ interface DreInfoParams {
   dataInicio: string;
   dataFim: string;
   projetoId: number | null;
+  contaId: number | null;
 }
 
 export function RelatorioDreInfo() {
@@ -45,6 +47,7 @@ export function RelatorioDreInfo() {
     dataInicio: '',
     dataFim: '',
     projetoId: null,
+    contaId: null,
   });
 
   const [showReport, setShowReport] = useState(false);
@@ -55,6 +58,7 @@ export function RelatorioDreInfo() {
   const [estruturas] = useLoadAction(loadEstruturasDreAction, []);
   const [matrizes] = useLoadAction(loadMatrizesAction, [], { searchNome: null });
   const [projetos] = useLoadAction(loadProjetosAction, []);
+  const [contas] = useLoadAction(loadContasAction, []);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -200,6 +204,30 @@ export function RelatorioDreInfo() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Conta Corrente (opcional) */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Conta Corrente{' '}
+                  <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                </label>
+                <Select
+                  value={params.contaId ? params.contaId.toString() : 'todas'}
+                  onValueChange={(v) => handleChange('contaId', v === 'todas' ? null : parseInt(v))}
+                >
+                  <SelectTrigger className={triggerClass}>
+                    <SelectValue placeholder="Todas as contas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas as contas</SelectItem>
+                    {(contas as any[])?.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id.toString()}>
+                        {c.nome}{c.banco ? ` - ${c.banco}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -249,6 +277,7 @@ export function RelatorioDreInfo() {
               dataInicio={params.dataInicio}
               dataFim={params.dataFim}
               projetoId={params.projetoId}
+              contaId={params.contaId}
               projetoNome={projetoNome}
               refreshTrigger={refreshTrigger}
               onComplete={() => {

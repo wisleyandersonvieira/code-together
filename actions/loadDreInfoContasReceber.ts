@@ -26,6 +26,7 @@ function loadDreInfoContasReceber() {
       WHERE
         cr.matriz_id = {{params.matrizId}}
         {{ params.projetoId ? "AND EXISTS (SELECT 1 FROM contas_receber_projetos crp WHERE crp.conta_receber_id = cr.id AND crp.projeto_id = " + params.projetoId + ")" : "" }}
+        {{ params.contaId ? "AND tr.conta_id = " + params.contaId : "" }}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cr.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
           OR
