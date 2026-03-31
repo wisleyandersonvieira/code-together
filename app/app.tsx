@@ -684,6 +684,8 @@ function App() {
         return <IncrementalSync />;
       case 'export-project':
         return <ExportProject />;
+      case 'periodos-bloqueados':
+        return <PeriodosBloqueados />;
       case 'dashboard':
       default:
         return <Dashboard onNavigate={(tab) => navigateTo(tab as TabType)} />;
