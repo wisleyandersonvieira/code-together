@@ -42,6 +42,7 @@ import {
   UserPlus,
   TrendingUp,
   Users,
+  Calendar,
 } from 'lucide-react';
 import {
   Sheet,
