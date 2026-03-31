@@ -93,6 +93,13 @@ export function DreInfoSubgrupoDetalhe({
     });
   }, [cpDetalhe, crDetalhe]);
 
+  // Report loaded data to parent
+  React.useEffect(() => {
+    if (!isLoading && allItems.length > 0 && onDataLoaded) {
+      onDataLoaded(subgrupoId, allItems);
+    }
+  }, [isLoading, allItems, onDataLoaded, subgrupoId]);
+
   const isDebito = funcao === 'Débito' || funcao === 'DEBITO';
 
   if (isLoading) {
