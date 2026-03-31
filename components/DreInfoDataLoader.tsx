@@ -367,8 +367,11 @@ export function DreInfoDataLoader({
 
       const range1 = XLSX.utils.decode_range(ws1['!ref'] || 'A1');
       for (let R = 9; R <= range1.e.r; ++R) {
-        const cell = XLSX.utils.encode_cell({ r: R, c: 3 });
-        if (ws1[cell]) ws1[cell].z = '#,##0.00';
+        // Format value columns: D (index 3) for main rows, G (index 6) for detail rows
+        for (const colIdx of [3, 6]) {
+          const cell = XLSX.utils.encode_cell({ r: R, c: colIdx });
+          if (ws1[cell] && typeof ws1[cell].v === 'number') ws1[cell].z = '#,##0.00';
+        }
       }
 
       XLSX.utils.book_append_sheet(wb, ws1, 'Consolidado');
