@@ -291,18 +291,18 @@ export function PeriodosBloqueados() {
 
   // Apply filters
   const filteredBloqueios = bloqueios.filter((b) => {
-    if (filtroStatus && b.status !== filtroStatus) return false;
-    if (filtroMes) {
+    if (filtroStatus && filtroStatus !== 'all' && b.status !== filtroStatus) return false;
+    if (filtroMes && filtroMes !== 'all') {
       const d = new Date(b.referencia_mes + 'T00:00:00');
       const monthKey = (d.getMonth() + 1).toString().padStart(2, '0');
       if (monthKey !== filtroMes) return false;
     }
-    if (filtroTipo) {
+    if (filtroTipo && filtroTipo !== 'all') {
       if (filtroTipo === 'competencia' && !b.bloqueia_competencia) return false;
       if (filtroTipo === 'pagamento' && !b.bloqueia_pagamento) return false;
       if (filtroTipo === 'ambos' && (!b.bloqueia_competencia || !b.bloqueia_pagamento)) return false;
     }
-    if (filtroMatriz) {
+    if (filtroMatriz && filtroMatriz !== 'all') {
       const matrizId = parseInt(filtroMatriz);
       if (!b.aplica_todas_matrizes && !b.matrizes?.some((m) => m.id === matrizId)) return false;
     }
