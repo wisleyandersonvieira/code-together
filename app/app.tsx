@@ -215,6 +215,7 @@ const matrizTabs: TabType[] = [
   'relatorio-dre-projeto',
   'relatorio-dre-info',
   'export-project',
+  'periodos-bloqueados',
 ];
 
 function lazyWithRetry<T extends ComponentType<any>>(
