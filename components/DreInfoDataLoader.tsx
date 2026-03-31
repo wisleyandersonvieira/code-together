@@ -600,6 +600,7 @@ export function DreInfoDataLoader({
                       projetoId={projetoId}
                       funcao={item.subgrupo_funcao}
                       nivel={item.nivel}
+                      onDataLoaded={handleSubgrupoDataLoaded}
                     />
                   )}
 
