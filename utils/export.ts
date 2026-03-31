@@ -1554,6 +1554,15 @@ export function exportExtratoClientePDF(
   doc.save(`${filename}.pdf`);
 }
 
+// ── Aportes/Retiradas by Sócio shared interface ─────────────────
+interface AporteRetiradaSocioData {
+  socio_id: number;
+  socio_nome: string;
+  tipo: 'aporte' | 'retirada';
+  valor_total: number;
+  qtd_lancamentos: number;
+}
+
 // ── PDF Relatório por Grupo Contábil ─────────────────────────
 interface GrupoContabilData {
   grupo_nome: string;
