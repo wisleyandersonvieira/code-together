@@ -8,6 +8,7 @@ import loadContasAction from '@/actions/loadContas';
 import loadExtratoAction from '@/actions/loadExtrato';
 import loadExtratoByGrupoAction from '@/actions/loadExtratoByGrupoContabil';
 import loadExtratoBySubgrupoAction from '@/actions/loadExtratoBySubgrupoContabil';
+import loadAportesRetiradaBySocioAction from '@/actions/loadAportesRetiradaBySocio';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadSaldoAnteriorAction from '@/actions/loadSaldoAnterior';
 import {
@@ -105,6 +106,13 @@ export function ExtratoBancario() {
   });
 
   const [extratoBySubgrupo] = useLoadAction(loadExtratoBySubgrupoAction, [], {
+    contaId: contaId ? parseInt(contaId) : null,
+    dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+    dataFim: dataFim ? formatDateForDatabase(dataFim) : null,
+    matrizId: matrizId !== 'all' ? parseInt(matrizId) : null,
+  });
+
+  const [aportesRetiradas] = useLoadAction(loadAportesRetiradaBySocioAction, [], {
     contaId: contaId ? parseInt(contaId) : null,
     dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
     dataFim: dataFim ? formatDateForDatabase(dataFim) : null,
@@ -217,6 +225,7 @@ export function ExtratoBancario() {
         matrizNome: matrizLabel,
       },
       formatCurrency,
+      aportesRetiradas || [],
     );
   };
 
@@ -233,6 +242,7 @@ export function ExtratoBancario() {
         matrizNome: matrizLabel,
       },
       formatCurrency,
+      aportesRetiradas || [],
     );
   };
 

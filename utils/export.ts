@@ -1554,6 +1554,15 @@ export function exportExtratoClientePDF(
   doc.save(`${filename}.pdf`);
 }
 
+// ── Aportes/Retiradas by Sócio shared interface ─────────────────
+interface AporteRetiradaSocioData {
+  socio_id: number;
+  socio_nome: string;
+  tipo: 'aporte' | 'retirada';
+  valor_total: number;
+  qtd_lancamentos: number;
+}
+
 // ── PDF Relatório por Grupo Contábil ─────────────────────────
 interface GrupoContabilData {
   grupo_nome: string;
@@ -1569,6 +1578,7 @@ export function exportExtratoByGrupoContabilPDF(
   contaInfo: { conta_nome: string; conta_banco: string },
   filtros: { dataInicio: string; dataFim: string; matrizNome?: string },
   formatCurrency: (value: number) => string,
+  aportesRetiradas: AporteRetiradaSocioData[] = [],
 ) {
   type RGB = [number, number, number];
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -1601,9 +1611,22 @@ export function exportExtratoByGrupoContabilPDF(
     else { g.saidas += Number(item.valor_total) || 0; g.qtdSaidas += Number(item.qtd_lancamentos) || 0; }
   });
 
+  // Process aportes/retiradas by sócio
+  const socioMap = new Map<string, { aportes: number; retiradas: number; qtdAportes: number; qtdRetiradas: number }>();
+  aportesRetiradas.forEach((item) => {
+    const key = item.socio_nome || 'Sem Sócio';
+    if (!socioMap.has(key)) socioMap.set(key, { aportes: 0, retiradas: 0, qtdAportes: 0, qtdRetiradas: 0 });
+    const s = socioMap.get(key)!;
+    if (item.tipo === 'aporte') { s.aportes += Number(item.valor_total) || 0; s.qtdAportes += Number(item.qtd_lancamentos) || 0; }
+    else { s.retiradas += Number(item.valor_total) || 0; s.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
+  });
+  const socios = Array.from(socioMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const totalAportes = socios.reduce((s, [, v]) => s + v.aportes, 0);
+  const totalRetiradas = socios.reduce((s, [, v]) => s + v.retiradas, 0);
+
   const grupos = Array.from(grupoMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  const totalEntradas = grupos.reduce((s, [, v]) => s + v.entradas, 0);
-  const totalSaidas = grupos.reduce((s, [, v]) => s + v.saidas, 0);
+  const totalEntradas = grupos.reduce((s, [, v]) => s + v.entradas, 0) + totalAportes;
+  const totalSaidas = grupos.reduce((s, [, v]) => s + v.saidas, 0) + totalRetiradas;
 
   // Header bar
   sf(P.navy); doc.rect(0, 0, pageWidth, 22, 'F');
@@ -1721,6 +1744,76 @@ export function exportExtratoByGrupoContabilPDF(
     cx += col.width;
   });
 
+  y += 9;
+
+  // ── Aportes & Retiradas por Sócio ──
+  if (socios.length > 0) {
+    ensureSpace(18);
+    y += 6;
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text('APORTES E RETIRADAS POR SÓCIO', marginX, y);
+    y += 6;
+
+    const arCols = [
+      { label: 'Sócio', width: contentW * 0.40, right: false },
+      { label: 'Qtd Aport.', width: contentW * 0.10, right: true },
+      { label: 'Aportes', width: contentW * 0.20, right: true },
+      { label: 'Qtd Ret.', width: contentW * 0.10, right: true },
+      { label: 'Retiradas', width: contentW * 0.20, right: true },
+    ];
+
+    // Header
+    sf(P.navy); doc.rect(marginX, y, contentW, HEADER_H, 'F');
+    let arx = marginX;
+    arCols.forEach((col) => {
+      st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      const xText = col.right ? arx + col.width - 2 : arx + 2;
+      doc.text(col.label, xText, y + 5.5, { align: col.right ? 'right' : 'left' });
+      arx += col.width;
+    });
+    y += HEADER_H;
+
+    socios.forEach(([nome, vals], idx) => {
+      ensureSpace(ROW_H + 1);
+      sf(idx % 2 === 0 ? P.white : P.light);
+      doc.rect(marginX, y, contentW, ROW_H, 'F');
+
+      const cellData = [
+        { text: nome, color: P.graphite, bold: true },
+        { text: String(vals.qtdAportes), color: P.graphite },
+        { text: formatCurrency(vals.aportes), color: P.green },
+        { text: String(vals.qtdRetiradas), color: P.graphite },
+        { text: formatCurrency(vals.retiradas), color: P.rose },
+      ];
+
+      let cx3 = marginX;
+      cellData.forEach((cell, ci) => {
+        const col = arCols[ci];
+        st(cell.color); doc.setFont('helvetica', cell.bold ? 'bold' : 'normal'); doc.setFontSize(7);
+        const fitted = doc.splitTextToSize(cell.text, col.width - 4);
+        const xText = col.right ? cx3 + col.width - 2 : cx3 + 2;
+        doc.text(fitted[0], xText, y + 5.5, { align: col.right ? 'right' : 'left' });
+        cx3 += col.width;
+      });
+
+      sd(P.border); doc.setLineWidth(0.1);
+      doc.line(marginX, y + ROW_H, marginX + contentW, y + ROW_H);
+      y += ROW_H;
+    });
+
+    // Totals row for aportes/retiradas
+    ensureSpace(9);
+    sf(P.navySoft); doc.rect(marginX, y, contentW, 9, 'F');
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    doc.text('TOTAL', marginX + 2, y + 6);
+    let arx2 = marginX;
+    arCols.forEach((col, ci) => {
+      if (ci === 2) { st(P.green); doc.text(formatCurrency(totalAportes), arx2 + col.width - 2, y + 6, { align: 'right' }); }
+      if (ci === 4) { st(P.rose); doc.text(formatCurrency(totalRetiradas), arx2 + col.width - 2, y + 6, { align: 'right' }); }
+      arx2 += col.width;
+    });
+  }
+
   // Footer
   const pages = doc.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
@@ -1755,6 +1848,7 @@ export function exportExtratoBySubgrupoContabilPDF(
   contaInfo: { conta_nome: string; conta_banco: string },
   filtros: { dataInicio: string; dataFim: string; matrizNome?: string },
   formatCurrency: (value: number) => string,
+  aportesRetiradas: AporteRetiradaSocioData[] = [],
 ) {
   type RGB = [number, number, number];
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -1790,9 +1884,24 @@ export function exportExtratoBySubgrupoContabilPDF(
     else { s.saidas += Number(item.valor_total) || 0; s.qtdSaidas += Number(item.qtd_lancamentos) || 0; }
   });
 
+  // Process aportes/retiradas by sócio
+  const socioMap = new Map<string, { aportes: number; retiradas: number; qtdAportes: number; qtdRetiradas: number }>();
+  aportesRetiradas.forEach((item) => {
+    const key = item.socio_nome || 'Sem Sócio';
+    if (!socioMap.has(key)) socioMap.set(key, { aportes: 0, retiradas: 0, qtdAportes: 0, qtdRetiradas: 0 });
+    const s2 = socioMap.get(key)!;
+    if (item.tipo === 'aporte') { s2.aportes += Number(item.valor_total) || 0; s2.qtdAportes += Number(item.qtd_lancamentos) || 0; }
+    else { s2.retiradas += Number(item.valor_total) || 0; s2.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
+  });
+  const socios = Array.from(socioMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const totalAportes = socios.reduce((s, [, v]) => s + v.aportes, 0);
+  const totalRetiradas = socios.reduce((s, [, v]) => s + v.retiradas, 0);
+
   const gruposSorted = Array.from(grupoMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   let totalEntradas = 0, totalSaidas = 0;
   gruposSorted.forEach(([, subs]) => subs.forEach((v) => { totalEntradas += v.entradas; totalSaidas += v.saidas; }));
+  totalEntradas += totalAportes;
+  totalSaidas += totalRetiradas;
 
   // Header bar
   sf(P.navy); doc.rect(0, 0, pageWidth, 22, 'F');
@@ -1939,6 +2048,78 @@ export function exportExtratoBySubgrupoContabilPDF(
     if (ci === 5) { st(P.rose); doc.text(formatCurrency(totalSaidas), cx2 + col.width - 2, y + 6, { align: 'right' }); }
     cx2 += col.width;
   });
+
+  y += 9;
+
+  // ── Aportes & Retiradas por Sócio ──
+  if (socios.length > 0) {
+    ensureSpace(18);
+    y += 6;
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text('APORTES E RETIRADAS POR SÓCIO', marginX, y);
+    y += 6;
+
+    const arCols = [
+      { label: 'Sócio', width: contentW * 0.40, right: false },
+      { label: 'Qtd Aport.', width: contentW * 0.10, right: true },
+      { label: 'Aportes', width: contentW * 0.20, right: true },
+      { label: 'Qtd Ret.', width: contentW * 0.10, right: true },
+      { label: 'Retiradas', width: contentW * 0.20, right: true },
+    ];
+
+    const AR_ROW_H = 7.5;
+    const AR_HEADER_H = 8;
+
+    sf(P.navy); doc.rect(marginX, y, contentW, AR_HEADER_H, 'F');
+    let arx = marginX;
+    arCols.forEach((col) => {
+      st(P.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+      const xText = col.right ? arx + col.width - 2 : arx + 2;
+      doc.text(col.label, xText, y + 5.5, { align: col.right ? 'right' : 'left' });
+      arx += col.width;
+    });
+    y += AR_HEADER_H;
+
+    socios.forEach(([nome, vals], idx) => {
+      ensureSpace(AR_ROW_H + 1);
+      sf(idx % 2 === 0 ? P.white : P.light);
+      doc.rect(marginX, y, contentW, AR_ROW_H, 'F');
+
+      const cellData = [
+        { text: nome, color: P.graphite, bold: true },
+        { text: String(vals.qtdAportes), color: P.graphite },
+        { text: formatCurrency(vals.aportes), color: P.green },
+        { text: String(vals.qtdRetiradas), color: P.graphite },
+        { text: formatCurrency(vals.retiradas), color: P.rose },
+      ];
+
+      let cx3 = marginX;
+      cellData.forEach((cell, ci) => {
+        const col = arCols[ci];
+        st(cell.color); doc.setFont('helvetica', cell.bold ? 'bold' : 'normal'); doc.setFontSize(7);
+        const fitted = doc.splitTextToSize(cell.text, col.width - 4);
+        const xText = col.right ? cx3 + col.width - 2 : cx3 + 2;
+        if (fitted[0]) doc.text(fitted[0], xText, y + 5, { align: col.right ? 'right' : 'left' });
+        cx3 += col.width;
+      });
+
+      sd(P.border); doc.setLineWidth(0.1);
+      doc.line(marginX, y + AR_ROW_H, marginX + contentW, y + AR_ROW_H);
+      y += AR_ROW_H;
+    });
+
+    // Totals row for aportes/retiradas
+    ensureSpace(9);
+    sf(P.navySoft); doc.rect(marginX, y, contentW, 9, 'F');
+    st(P.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    doc.text('TOTAL', marginX + 2, y + 6);
+    let arx2 = marginX;
+    arCols.forEach((col, ci) => {
+      if (ci === 2) { st(P.green); doc.text(formatCurrency(totalAportes), arx2 + col.width - 2, y + 6, { align: 'right' }); }
+      if (ci === 4) { st(P.rose); doc.text(formatCurrency(totalRetiradas), arx2 + col.width - 2, y + 6, { align: 'right' }); }
+      arx2 += col.width;
+    });
+  }
 
   // Footer
   const pages = doc.getNumberOfPages();
