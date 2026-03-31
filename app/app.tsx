@@ -104,6 +104,7 @@ type TabType =
   | 'auditoria-fornecedores-subcontratados'
   | 'auditoria-fornecedores'
   | 'auditoria-fornecedores-relatorios'
+  | 'periodos-bloqueados'
   | 'supabase-migration'
   | 'rds-migration'
   | 'incremental-sync'
