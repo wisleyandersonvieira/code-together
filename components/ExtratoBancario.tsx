@@ -340,6 +340,12 @@ export function ExtratoBancario() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          {showExtrato && transacoesComSaldo.length > 0 && (
+            <Button type="button" className={listingSecondaryButtonClassName} onClick={handleExportExcel}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Exportar Excel
+            </Button>
+          )}
         </div>
       </ListingFilterCard>
 
