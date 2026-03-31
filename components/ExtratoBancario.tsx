@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
-import { Calendar, ChevronDown, FileDown, FileText, X } from 'lucide-react';
+import { Calendar, ChevronDown, FileDown, FileSpreadsheet, FileText, X } from 'lucide-react';
 
 import loadContasAction from '@/actions/loadContas';
 import loadExtratoAction from '@/actions/loadExtrato';
