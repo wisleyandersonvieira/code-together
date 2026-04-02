@@ -223,24 +223,22 @@ export function RelatorioFinanceiroSaidas() {
               </Select>
             </div>
 
-            {status === 'PAGO' && (
-              <div>
-                <label className="text-sm font-medium mb-2 block">Conta Corrente</label>
-                <Select value={contaId || 'ALL'} onValueChange={(value) => setContaId(value === 'ALL' ? '' : value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Todas as contas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">Todas as contas</SelectItem>
-                    {contas.map((conta: any) => (
-                      <SelectItem key={conta.id} value={conta.id.toString()}>
-                        {conta.nome} - {conta.banco}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Conta Corrente</label>
+              <Select value={contaId || 'ALL'} onValueChange={(value) => setContaId(value === 'ALL' ? '' : value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas as contas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todas as contas</SelectItem>
+                  {contas.map((conta: any) => (
+                    <SelectItem key={conta.id} value={conta.id.toString()}>
+                      {conta.nome} - {conta.banco}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <div>
               <label className="text-sm font-medium mb-2 block">Fornecedor</label>
