@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { ChevronDown, DollarSign, FolderOpen, TrendingUp, Users, X } from 'lucide-react';
+import { ChevronDown, DollarSign, FileDown, FolderOpen, TrendingUp, Users, X } from 'lucide-react';
 import loadAportesPorClienteAction from '@/actions/loadAportesPorCliente';
 import { useCurrency } from '@/hooks/use-currency';
+import { useToast } from '@/hooks/use-toast';
+import { exportAportesPorClientePDF } from '@/utils/aportes-por-cliente-export';
 import { ListingPageHeader } from '@/components/finance/listing-ui';
 
 interface AportePorCliente {
@@ -24,13 +26,20 @@ interface AportePorCliente {
   total_realizado: number | string;
 }
 
+interface ProjetoAgregado {
+  nome: string;
+  status: string | null;
+  realizado: number;
+  previsto: number;
+}
+
 interface MembroAgregado {
   membro_key: string;
   membro_nome: string;
-  membro_tipo: string;
+  membro_tipo: 'cliente' | 'empresa' | 'grupo';
   total_previsto: number;
   total_realizado: number;
-  projetos: string[];
+  projetos: ProjetoAgregado[];
 }
 
 const toNumber = (value: number | string | null | undefined) =>
@@ -118,6 +127,7 @@ function MultiSelectFilter({ label, options, selected, onChange }: MultiSelectFi
 }
 
 export function AportesPorCliente() {
+  const { toast } = useToast();
   const { formatCurrency } = useCurrency();
   const [aportes, loading, error] = useLoadAction(loadAportesPorClienteAction, []);
 
@@ -176,8 +186,13 @@ export function AportesPorCliente() {
 
       membro.total_previsto += toNumber(row.total_previsto);
       membro.total_realizado += toNumber(row.total_realizado);
-      if (!membro.projetos.includes(row.projeto_nome)) {
-        membro.projetos.push(row.projeto_nome);
+      if (!membro.projetos.some((projeto) => projeto.nome === row.projeto_nome)) {
+        membro.projetos.push({
+          nome: row.projeto_nome,
+          status: row.projeto_status,
+          realizado: toNumber(row.total_realizado),
+          previsto: toNumber(row.total_previsto),
+        });
       }
 
       map.set(row.membro_key, membro);
@@ -200,6 +215,37 @@ export function AportesPorCliente() {
   }, [filteredRows, membrosAgregados]);
 
   const hasFilters = selectedProjetos.length > 0 || selectedStatus.length > 0 || selectedMembros.length > 0;
+
+  const buildFiltroLabel = (selecionados: string[]) => {
+    if (selecionados.length === 0) return 'Todos';
+    if (selecionados.length <= 3) return selecionados.join(', ');
+    return `${selecionados.slice(0, 3).join(', ')} +${selecionados.length - 3}`;
+  };
+
+  const handleExportPDF = () => {
+    if (membrosAgregados.length === 0) return;
+
+    exportAportesPorClientePDF(
+      membrosAgregados,
+      {
+        qtdClientes: totais.totalMembros,
+        totalRealizado: totais.totalRealizado,
+        totalPrevisto: totais.totalPrevisto,
+        qtdProjetos: totais.totalProjetos,
+      },
+      {
+        projetosLabel: buildFiltroLabel(selectedProjetos),
+        statusLabel: buildFiltroLabel(selectedStatus),
+        clientesLabel: buildFiltroLabel(selectedMembros),
+      },
+      { formatCurrency },
+    );
+
+    toast({
+      title: 'Relatório exportado',
+      description: 'O PDF de Aportes por Cliente foi gerado com sucesso.',
+    });
+  };
 
   if (loading) {
     return (
@@ -254,6 +300,16 @@ export function AportesPorCliente() {
             Limpar filtros
           </Button>
         ) : null}
+
+        <Button
+          variant="outline"
+          onClick={handleExportPDF}
+          disabled={loading || membrosAgregados.length === 0}
+          className="sm:ml-auto"
+        >
+          <FileDown className="mr-2 h-4 w-4" />
+          Exportar PDF
+        </Button>
       </div>
 
       {/* Cards de resumo */}
@@ -344,8 +400,8 @@ export function AportesPorCliente() {
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {membro.projetos.map((projeto) => (
-                      <Badge key={projeto} variant="outline" className="text-xs font-normal">
-                        {projeto}
+                      <Badge key={projeto.nome} variant="outline" className="text-xs font-normal">
+                        {projeto.nome}
                       </Badge>
                     ))}
                   </div>
