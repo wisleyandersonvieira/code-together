@@ -40,11 +40,33 @@ interface MultiSelectFilterProps {
   label: string;
   options: string[];
   selected: string[];
-  onToggle: (value: string) => void;
+  onChange: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
-function MultiSelectFilter({ label, options, selected, onToggle }: MultiSelectFilterProps) {
+function MultiSelectFilter({ label, options, selected, onChange }: MultiSelectFilterProps) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const visibleOptions = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return term ? options.filter((option) => option.toLowerCase().includes(term)) : options;
+  }, [options, search]);
+
+  const selectedVisibleCount = visibleOptions.filter((option) => selected.includes(option)).length;
+  const allVisibleSelected = visibleOptions.length > 0 && selectedVisibleCount === visibleOptions.length;
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
+
+  const handleToggle = (option: string) => {
+    onChange((prev) => (prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option]));
+  };
+
+  const handleToggleAll = () => {
+    onChange((prev) =>
+      allVisibleSelected
+        ? prev.filter((item) => !visibleOptions.includes(item))
+        : Array.from(new Set([...prev, ...visibleOptions])),
+    );
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -58,18 +80,36 @@ function MultiSelectFilter({ label, options, selected, onToggle }: MultiSelectFi
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder={`Buscar ${label.toLowerCase()}...`} />
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={`Buscar ${label.toLowerCase()}...`}
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
-            <CommandEmpty>Nenhum resultado encontrado.</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem key={option} value={option} onSelect={() => onToggle(option)}>
-                  <Checkbox checked={selected.includes(option)} className="mr-2" />
-                  <span className="truncate">{option}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+            {visibleOptions.length === 0 ? (
+              <CommandEmpty>Nenhum resultado encontrado.</CommandEmpty>
+            ) : (
+              <>
+                <CommandGroup className="border-b border-slate-100">
+                  <CommandItem value="__select-all__" onSelect={handleToggleAll}>
+                    <Checkbox
+                      checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                      className="mr-2"
+                    />
+                    <span className="font-medium">Selecionar todos</span>
+                  </CommandItem>
+                </CommandGroup>
+                <CommandGroup>
+                  {visibleOptions.map((option) => (
+                    <CommandItem key={option} value={option} onSelect={() => handleToggle(option)}>
+                      <Checkbox checked={selected.includes(option)} className="mr-2" />
+                      <span className="truncate">{option}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -86,10 +126,6 @@ export function AportesPorCliente() {
   const [selectedMembros, setSelectedMembros] = useState<string[]>([]);
 
   const rows = useMemo(() => (aportes || []) as AportePorCliente[], [aportes]);
-
-  const toggleValue = (setter: React.Dispatch<React.SetStateAction<string[]>>) => (value: string) => {
-    setter((prev) => (prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]));
-  };
 
   const handleClearFilters = () => {
     setSelectedProjetos([]);
@@ -198,22 +234,22 @@ export function AportesPorCliente() {
           label="Projetos"
           options={projetoOptions}
           selected={selectedProjetos}
-          onToggle={toggleValue(setSelectedProjetos)}
+          onChange={setSelectedProjetos}
         />
         <MultiSelectFilter
           label="Status"
           options={statusOptions}
           selected={selectedStatus}
-          onToggle={toggleValue(setSelectedStatus)}
+          onChange={setSelectedStatus}
         />
         <MultiSelectFilter
           label="Clientes"
           options={membroOptions}
           selected={selectedMembros}
-          onToggle={toggleValue(setSelectedMembros)}
+          onChange={setSelectedMembros}
         />
         {hasFilters ? (
-          <Button variant="ghost" onClick={handleClearFilters} className="text-slate-600">
+          <Button variant="outline" onClick={handleClearFilters}>
             <X className="mr-2 h-4 w-4" />
             Limpar filtros
           </Button>
