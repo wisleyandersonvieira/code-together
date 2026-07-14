@@ -67,7 +67,6 @@ export function ProductList() {
 
     try {
       const result = await deleteProduto({ id });
-      console.log('Delete result:', result);
       
       if (result && result.length > 0) {
         toast({
@@ -78,7 +77,6 @@ export function ProductList() {
       } else {
         // Check for dependencies using checkProdutoUsage
         const usageResult = await checkProdutoUsage({ id });
-        console.log('Usage check result:', usageResult);
         
         const totalUsage = usageResult.reduce((sum: number, item: any) => sum + parseInt(item.count), 0);
         

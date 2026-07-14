@@ -27,7 +27,6 @@ export class NetlifyExporter {
     const filename = `export_${timestamp}.json`;
     
     writeFileSync(filename, JSON.stringify(data, null, 2));
-    console.log(`Dados exportados para: ${filename}`);
   }
 
   static generateStandaloneApp(data: ExportData) {

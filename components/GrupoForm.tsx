@@ -176,7 +176,6 @@ export function GrupoForm({ grupo, onSuccess, onCancel }: GrupoFormProps) {
           percentage: member.percentage,
         };
 
-        console.log('Creating grupo member relationship:', params);
         
         await createGrupoMember(params);
       }

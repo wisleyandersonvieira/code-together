@@ -67,7 +67,6 @@ export function PrevisaoAportesManager({
   const handleSalvarPrevisao = async () => {
     try {
       setSaved(false);
-      console.log('Iniciando salvamento da previsão de aportes...');
 
       // Coletar todos os dados para batch processing
       const previsoes = [];
@@ -98,7 +97,6 @@ export function PrevisaoAportesManager({
         return;
       }
 
-      console.log(`Total de registros a salvar: ${totalRegistros}`);
 
       // Estratégia 1: Tentar batch processing se não tiver muitos registros
       if (previsoes.length <= 50) {
@@ -117,9 +115,7 @@ export function PrevisaoAportesManager({
             observacoesList
           });
 
-          console.log('Batch processing completado com sucesso');
         } catch (batchError) {
-          console.log('Batch processing falhou, usando abordagem sequencial:', batchError);
           throw batchError; // Vai para a estratégia 2
         }
       } else {
@@ -135,13 +131,11 @@ export function PrevisaoAportesManager({
 
       if (onSaved) {
         setTimeout(() => {
-          console.log('Executando callback onSaved...');
           onSaved();
         }, 100);
       }
 
     } catch (error) {
-      console.log('Tentando abordagem sequencial com throttling...');
       
       try {
         // Estratégia 2: Processamento sequencial com delay
@@ -176,7 +170,6 @@ export function PrevisaoAportesManager({
           await Promise.all(batchPromises);
           processedCount += batch.length;
           
-          console.log(`Processados ${processedCount}/${previsoes.length} registros`);
           
           // Delay entre batches (exceto no último)
           if (i + batchSize < previsoes.length) {
@@ -184,7 +177,6 @@ export function PrevisaoAportesManager({
           }
         }
 
-        console.log('Processamento sequencial completado com sucesso');
         refreshPrevisoes();
         setSaved(true);
         toast({
@@ -193,7 +185,6 @@ export function PrevisaoAportesManager({
 
         if (onSaved) {
           setTimeout(() => {
-            console.log('Executando callback onSaved...');
             onSaved();
           }, 100);
         }

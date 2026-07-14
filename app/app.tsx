@@ -55,9 +55,7 @@ import {
 import { LoginForm } from '@/components/LoginForm';
 import { ResetPasswordPage } from '@/components/ResetPasswordPage';
 import { NetworkStatus } from '@/components/NetworkStatus';
-import { DatabaseBackup } from '@/components/DatabaseBackup';
 import { DatabaseConnectionStatus } from '@/components/DatabaseConnectionStatus';
-import { RDSMigration } from '@/components/RDSMigration';
 import { ProvisonLogo } from '@/components/ProvisonLogo';
 import { cn } from '@/lib/utils';
 import type { User } from '@/types/user';
@@ -109,9 +107,6 @@ type TabType =
   | 'auditoria-fornecedores'
   | 'auditoria-fornecedores-relatorios'
   | 'periodos-bloqueados'
-  | 'supabase-migration'
-  | 'rds-migration'
-  | 'incremental-sync'
   | 'export-project';
 
 type RouteDefinition = {
@@ -163,9 +158,6 @@ const routes: Record<TabType, RouteDefinition> = {
   'auditoria-fornecedores': { path: '/matriz/auditoria', title: 'Auditorias de Fornecedores' },
   'auditoria-fornecedores-relatorios': { path: '/matriz/auditoria/relatorios', title: 'Relatorios Auditoria Fornecedores' },
   'periodos-bloqueados': { path: '/matriz/periodos', title: 'Controle de Períodos' },
-  'supabase-migration': { path: '/sistema/supabase-migration', title: 'Migracao Supabase' },
-  'rds-migration': { path: '/sistema/rds-migration', title: 'Migracao RDS' },
-  'incremental-sync': { path: '/sistema/incremental-sync', title: 'Sincronizacao Incremental' },
   'export-project': { path: '/matriz/exportar-github', title: 'Exportar para GitHub' },
 };
 
@@ -302,8 +294,6 @@ const RelatorioDreInfo = lazy(() => import('@/components/RelatorioDreInfo').then
 const FornecedorSubcontratadoList = lazy(() => import('@/components/FornecedorSubcontratadoList').then((module) => ({ default: module.FornecedorSubcontratadoList })));
 const AuditoriaFornecedoresModule = lazy(() => import('@/components/AuditoriaFornecedoresModule').then((module) => ({ default: module.AuditoriaFornecedoresModule })));
 const AuditoriaFornecedorReports = lazy(() => import('@/components/AuditoriaFornecedorReports').then((module) => ({ default: module.AuditoriaFornecedorReports })));
-const FullSupabaseMigration = lazy(() => import('@/components/FullSupabaseMigration').then((module) => ({ default: module.FullSupabaseMigration })));
-const IncrementalSync = lazy(() => import('@/components/IncrementalSync').then((module) => ({ default: module.IncrementalSync })));
 const ExportProject = lazy(() => import('@/components/ExportProject').then((module) => ({ default: module.ExportProject })));
 const PeriodosBloqueados = lazy(() => import('@/components/PeriodosBloqueados').then((module) => ({ default: module.PeriodosBloqueados })));
 
@@ -727,12 +717,6 @@ function App() {
         return <AuditoriaFornecedoresModule />;
       case 'auditoria-fornecedores-relatorios':
         return <AuditoriaFornecedorReports />;
-      case 'supabase-migration':
-        return <FullSupabaseMigration />;
-      case 'rds-migration':
-        return <RDSMigration />;
-      case 'incremental-sync':
-        return <IncrementalSync />;
       case 'export-project':
         return <ExportProject />;
       case 'periodos-bloqueados':
@@ -752,40 +736,12 @@ function App() {
 
   const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const showStatus = searchParams?.get('status') === 'true';
-  const showBackup = searchParams?.get('backup') === 'true';
-  const showRDSMigration = searchParams?.get('rds') === 'true';
 
   if (showStatus) {
     return (
       <>
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
           <NetworkStatus />
-        </div>
-        <Toaster />
-      </>
-    );
-  }
-
-  if (showBackup) {
-    return (
-      <>
-        <div className="min-h-screen bg-gray-50 p-4">
-          <div className="max-w-4xl mx-auto">
-            <DatabaseBackup />
-          </div>
-        </div>
-        <Toaster />
-      </>
-    );
-  }
-
-  if (showRDSMigration) {
-    return (
-      <>
-        <div className="min-h-screen bg-gray-50 p-4">
-          <div className="max-w-4xl mx-auto">
-            <RDSMigration />
-          </div>
         </div>
         <Toaster />
       </>

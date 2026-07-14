@@ -17,9 +17,15 @@
  *
  * A service_role key só existe aqui dentro — nunca no front.
  *
+ * Autorização de ACESSO (Etapa 4a): o signup público do GoTrue está habilitado,
+ * então 'authenticated' não basta. O gate real é o claim app_metadata.status =
+ * 'aprovado', que só esta função (service_role) escreve. As ações abaixo são a
+ * única forma de conceder ou revogar esse claim.
+ *
  * Ações:
  *   { action: 'create',       email, password, name, phone?, role?, status?, legacyUserId? }
- *   { action: 'set-password', email, password }   // cria a conta se ainda não existir
+ *   { action: 'set-password', email, password, role?, status? }  // cria a conta se não existir
+ *   { action: 'set-status',   email, status, role? }             // concede/revoga acesso
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeadersFor } from "../_shared/cors.ts";
@@ -33,6 +39,20 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 });
 
 const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * Traduz o status do app (tabela `users`: 'active' | 'inactive' | 'pending')
+ * para o claim de autorização gravado em app_metadata.
+ *
+ * Só 'active' libera acesso: o admin pode criar uma conta já com senha mas
+ * marcada como Inativo/Pendente na tela — nesse caso a conta existe no GoTrue,
+ * a senha vale para o login, mas a execute-sql devolve 403 até ser aprovada.
+ *
+ * Ausência de status = 'active' (é o default da tela de criação pelo admin).
+ */
+function approvalClaimFor(status?: unknown): "aprovado" | "pendente" {
+  return (status ?? "active") === "active" ? "aprovado" : "pendente";
+}
 
 async function isAdmin(userId: string): Promise<boolean> {
   // app_metadata vive em auth.users e não é gravável pelo usuário.
@@ -69,9 +89,14 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // authenticate() já exige app_metadata.status = 'aprovado' (ver _shared/jwt.ts):
+    // um admin com a conta não aprovada também não passa daqui.
     const auth = await authenticate(req, "admin-users");
     if (isAuthError(auth)) {
-      return json({ data: null, error: "Não autorizado" }, 401);
+      return json(
+        { data: null, error: auth.status === 403 ? auth.error : "Não autorizado" },
+        auth.status,
+      );
     }
 
     if (!(await isAdmin(auth.userId))) {
@@ -85,14 +110,68 @@ Deno.serve(async (req) => {
     if (typeof email !== "string" || !email.trim()) {
       return json({ data: null, error: "E-mail é obrigatório" }, 400);
     }
+
+    const normalisedEmail = email.trim().toLowerCase();
+
+    // ── set-status ───────────────────────────────────────────────────────────
+    // Sincroniza o claim de autorização da conta GoTrue com o status do app.
+    // É o que efetivamente concede ou revoga acesso: mexer só na tabela legada
+    // `users` não muda nada — o gate da execute-sql lê o JWT.
+    //
+    //   status 'active'              → app_metadata.status = 'aprovado'
+    //   status 'inactive'/'pending'  → app_metadata.status = 'pendente' (403)
+    //
+    // Não exige senha: a conta já existe. Se ainda não existir, não é erro — o
+    // acesso será liberado quando o admin definir a senha.
+    if (action === "set-status") {
+      const userId = await findAuthUserIdByEmail(normalisedEmail);
+
+      if (!userId) {
+        return json({
+          data: [{ email: normalisedEmail, authAccount: false }],
+          error: null,
+        });
+      }
+
+      const claim = approvalClaimFor(status);
+
+      // Trava anti-lockout: se o admin revogar o próprio acesso — e for o único
+      // admin — ninguém consegue reaprovar ninguém pelo app; só via SQL direto.
+      if (userId === auth.userId && claim !== "aprovado") {
+        console.warn(`[admin-users] 400: admin ${auth.userId} tentou revogar o próprio acesso`);
+        return json(
+          { data: null, error: "Você não pode revogar o próprio acesso. Peça a outro administrador." },
+          400,
+        );
+      }
+
+      const { data: current } = await admin.auth.admin.getUserById(userId);
+      const { error } = await admin.auth.admin.updateUserById(userId, {
+        app_metadata: {
+          ...(current?.user?.app_metadata ?? {}),
+          status: claim,
+          ...(role ? { role } : {}),
+        },
+      });
+
+      if (error) {
+        console.warn(`[admin-users] set-status falhou para ${userId}: ${error.message}`);
+        return json({ data: null, error: error.message }, 400);
+      }
+
+      console.log(
+        `[admin-users] usuário ${userId} → app_metadata.status='${claim}' (por ${auth.userId})`,
+      );
+      return json({ data: [{ id: userId, email: normalisedEmail, authAccount: true }], error: null });
+    }
+
+    // As ações restantes (create / set-password) definem senha.
     if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
       return json(
         { data: null, error: `Senha deve ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres` },
         400,
       );
     }
-
-    const normalisedEmail = email.trim().toLowerCase();
 
     // ── create ───────────────────────────────────────────────────────────────
     if (action === "create") {
@@ -107,8 +186,11 @@ Deno.serve(async (req) => {
         password,
         email_confirm: true,
         user_metadata: { name: name ?? normalisedEmail },
-        // Fonte de verdade do papel — só o service_role escreve aqui.
-        app_metadata: { role: role ?? "user" },
+        // Fonte de verdade de papel E aprovação — só o service_role escreve aqui.
+        // Conta criada pelo admin nasce aprovada (salvo se ele a marcar como
+        // Inativo/Pendente na tela); o signup público, não — o trigger
+        // handle_new_user a deixa 'pendente'.
+        app_metadata: { role: role ?? "user", status: approvalClaimFor(status) },
       });
 
       if (error || !data?.user) {
@@ -140,7 +222,18 @@ Deno.serve(async (req) => {
       const userId = await findAuthUserIdByEmail(normalisedEmail);
 
       if (userId) {
-        const { error } = await admin.auth.admin.updateUserById(userId, { password });
+        // Definir a senha libera o acesso, então carrega a aprovação junto: sem
+        // isto, um usuário vindo do signup público continuaria com a conta
+        // 'pendente' e tomaria 403 mesmo com a senha que o admin acabou de dar.
+        const { data: current } = await admin.auth.admin.getUserById(userId);
+        const { error } = await admin.auth.admin.updateUserById(userId, {
+          password,
+          app_metadata: {
+            ...(current?.user?.app_metadata ?? {}),
+            status: approvalClaimFor(status),
+            ...(role ? { role } : {}),
+          },
+        });
         if (error) {
           console.warn(`[admin-users] updateUserById falhou: ${error.message}`);
           return json({ data: null, error: error.message }, 400);
@@ -149,13 +242,14 @@ Deno.serve(async (req) => {
       }
 
       // Sem conta no GoTrue (ex.: usuário que se cadastrou pela tela pública e
-      // foi aprovado): criar agora, já com a senha definida pelo admin.
+      // foi aprovado): criar agora, já com a senha definida pelo admin. Definir
+      // a senha é um ato deliberado do admin de liberar acesso → nasce aprovada.
       const { data, error } = await admin.auth.admin.createUser({
         email: normalisedEmail,
         password,
         email_confirm: true,
         user_metadata: { name: name ?? normalisedEmail },
-        app_metadata: { role: role ?? "user" },
+        app_metadata: { role: role ?? "user", status: approvalClaimFor(status) },
       });
 
       if (error || !data?.user) {

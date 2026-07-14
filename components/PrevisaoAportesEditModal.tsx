@@ -138,7 +138,6 @@ export function PrevisaoAportesEditModal({
   // Save all changes with throttling
   const handleSave = async () => {
     try {
-      console.log(`Salvando ${editablePrevisoes.length} previsões...`);
 
       // Estratégia 1: Tentar batch processing para poucos registros
       if (editablePrevisoes.length <= 50) {
@@ -157,9 +156,7 @@ export function PrevisaoAportesEditModal({
             observacoesList
           });
 
-          console.log('Batch processing completado');
         } catch (batchError) {
-          console.log('Batch falhou, usando processamento sequencial:', batchError);
           throw batchError; // Vai para processamento sequencial
         }
       } else {
@@ -178,7 +175,6 @@ export function PrevisaoAportesEditModal({
       }
 
     } catch (error) {
-      console.log('Usando processamento sequencial com throttling...');
       
       try {
         // Estratégia 2: Processamento sequencial com delay
@@ -202,7 +198,6 @@ export function PrevisaoAportesEditModal({
           await Promise.all(batchPromises);
           processedCount += batch.length;
           
-          console.log(`Processados ${processedCount}/${editablePrevisoes.length} registros`);
           
           // Delay entre batches
           if (i + batchSize < editablePrevisoes.length) {

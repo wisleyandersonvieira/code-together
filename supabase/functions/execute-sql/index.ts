@@ -239,10 +239,16 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Camada 1 — usuário autenticado (anon key é rejeitada)
+    // Camada 1 — usuário autenticado E aprovado (anon key é rejeitada; conta
+    // criada pelo signup público, sem aprovação de admin, leva 403 aqui).
     const auth = await authenticate(req, "execute-sql");
     if (isAuthError(auth)) {
-      return json({ data: null, error: "Não autorizado" }, 401);
+      // 403 → o motivo é acionável pelo usuário ("peça aprovação ao admin").
+      // 401 → mensagem genérica: não devolvemos diagnóstico de token ao cliente.
+      return json(
+        { data: null, error: auth.status === 403 ? auth.error : "Não autorizado" },
+        auth.status,
+      );
     }
     const { userId } = auth;
 

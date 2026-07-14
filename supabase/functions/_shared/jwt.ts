@@ -39,12 +39,37 @@ function safeToken(token: string): string {
   return `${token.slice(0, 12)}…${token.slice(-6)} (len=${token.length})`;
 }
 
+/**
+ * `status` separa "não sei quem você é" (401) de "sei quem você é, e você não
+ * pode" (403 — conta existe no GoTrue mas não foi aprovada).
+ */
 export type AuthResult =
   | { userId: string; email?: string }
-  | { error: string };
+  | { error: string; status: 401 | 403 };
 
-export function isAuthError(r: AuthResult): r is { error: string } {
+export function isAuthError(r: AuthResult): r is { error: string; status: 401 | 403 } {
   return "error" in r;
+}
+
+/**
+ * O signup público do GoTrue está HABILITADO por decisão do projeto: qualquer
+ * pessoa cria conta e recebe um JWT com role 'authenticated'. Portanto
+ * 'authenticated' NÃO é autorização — só prova que a conta existe.
+ *
+ * A autorização é o claim app_metadata.status = 'aprovado', gravado apenas
+ * pelo service_role (edge function admin-users / migration de semeadura). O
+ * usuário não alcança app_metadata; user_metadata, que ele escreve via
+ * auth.updateUser, é deliberadamente ignorado aqui.
+ *
+ * O GoTrue embute app_metadata nos claims do access token, então isto é uma
+ * checagem local — sem chamada de rede.
+ */
+const APPROVED_STATUS = "aprovado";
+
+function isApproved(payload: Record<string, unknown>): boolean {
+  const appMeta = payload.app_metadata;
+  if (!appMeta || typeof appMeta !== "object") return false;
+  return (appMeta as Record<string, unknown>).status === APPROVED_STATUS;
 }
 
 export async function authenticate(req: Request, tag = "auth"): Promise<AuthResult> {
@@ -52,7 +77,7 @@ export async function authenticate(req: Request, tag = "auth"): Promise<AuthResu
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) {
     console.warn(`[${tag}] Authorization header ausente`);
-    return { error: "Authorization header ausente" };
+    return { error: "Authorization header ausente", status: 401 };
   }
 
   const token = match[1].trim();
@@ -62,7 +87,7 @@ export async function authenticate(req: Request, tag = "auth"): Promise<AuthResu
     kid = decodeProtectedHeader(token).kid;
   } catch {
     console.warn(`[${tag}] JWT malformado — ${safeToken(token)}`);
-    return { error: "Token malformado" };
+    return { error: "Token malformado", status: 401 };
   }
 
   // kid desconhecido pode indicar rotação de chave: força refetch do JWKS.
@@ -83,7 +108,7 @@ export async function authenticate(req: Request, tag = "auth"): Promise<AuthResu
 
     if (code === "ERR_JWT_EXPIRED") {
       console.warn(`[${tag}] token expirado — ${safeToken(token)}`);
-      return { error: "Token expirado" };
+      return { error: "Token expirado", status: 401 };
     }
 
     // Chave ausente do JWKS em cache: tenta uma vez com o JWKS fresco.
@@ -93,12 +118,12 @@ export async function authenticate(req: Request, tag = "auth"): Promise<AuthResu
       } catch (retryErr) {
         const retryCode = (retryErr as { code?: string })?.code ?? "?";
         console.warn(`[${tag}] assinatura inválida após refetch do JWKS (${retryCode}) — ${safeToken(token)}`);
-        return { error: "Assinatura inválida" };
+        return { error: "Assinatura inválida", status: 401 };
       }
     } else {
       const msg = code || (err as Error)?.message;
       console.warn(`[${tag}] verificação falhou (${msg}) — ${safeToken(token)}`);
-      return { error: "Assinatura inválida ou issuer incorreto" };
+      return { error: "Assinatura inválida ou issuer incorreto", status: 401 };
     }
   }
 
@@ -109,15 +134,26 @@ export async function authenticate(req: Request, tag = "auth"): Promise<AuthResu
   const role = payload.role;
   if (role !== "authenticated") {
     console.warn(`[${tag}] role '${String(role)}' não é 'authenticated' — ${safeToken(token)}`);
-    return { error: `Role '${String(role)}' não representa um usuário autenticado` };
+    return { error: `Role '${String(role)}' não representa um usuário autenticado`, status: 401 };
   }
 
   const userId = typeof payload.sub === "string" ? payload.sub : "";
   if (!userId) {
     console.warn(`[${tag}] JWT sem claim sub — ${safeToken(token)}`);
-    return { error: "Token sem identificação de usuário" };
+    return { error: "Token sem identificação de usuário", status: 401 };
   }
 
   const email = typeof payload.email === "string" ? payload.email : undefined;
+
+  // Camada de autorização: conta existe (401 passou), mas precisa estar aprovada.
+  if (!isApproved(payload)) {
+    const status = (payload.app_metadata as Record<string, unknown> | undefined)?.status;
+    console.warn(
+      `[${tag}] 403: usuário ${userId} (${email ?? "sem e-mail"}) não aprovado — ` +
+        `app_metadata.status='${String(status ?? "ausente")}'`,
+    );
+    return { error: "Conta pendente de aprovação por um administrador", status: 403 };
+  }
+
   return { userId, email };
 }

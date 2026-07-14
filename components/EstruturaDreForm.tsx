@@ -671,7 +671,6 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                               
                               // Simple debug logging only if needed for troubleshooting
                               if ((item.nome === 'Taxa Adm' || item.nome?.includes('Taxa') || item.nome?.includes('Adm')) && process.env.NODE_ENV === 'development') {
-                                console.log('Function display for', item.nome, ':', funcao);
                               }
                               
                               if (funcao) {
@@ -683,7 +682,6 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                                 
                                 // Additional debug for Taxa Adm
                                 if (item.nome === 'Taxa Adm' || item.nome?.includes('Taxa') || item.nome?.includes('Adm')) {
-                                  console.log('BADGE RENDERING - isCredito:', isCredito, 'normalized:', normalizedFunction, 'no-accent:', normalizedForComparison);
                                 }
                                 
                                 return (

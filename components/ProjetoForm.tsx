@@ -1078,7 +1078,6 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                         projetoId={savedProjetoId || 0}
                         orcamentosByDate={getOrcamentosByDate()}
                         onSaved={() => {
-                          console.log('Previsão de aportes salva, resetando estado de submissão...');
                           setIsPrevisaoSaved(true);
                           toast({
                             description: 'Previsão de aportes cadastrada! Use "Salvar Alterações" se precisar salvar o projeto novamente.',

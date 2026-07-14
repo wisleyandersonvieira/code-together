@@ -1713,7 +1713,6 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                       className="rounded-xl border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                                       onClick={async () => {
                                         try {
-                                          console.log('Updating titulo:', titulo.id, 'with date:', titulosEditaveis[titulo.id]);
                                           await updateTituloPagar({
                                             id: titulo.id,
                                             dataVencimento: titulosEditaveis[titulo.id].toISOString().split('T')[0]

@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Check, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import approveUserAction from '@/actions/approveUser';
+import { supabase } from '@/src/integrations/supabase/client';
 
 interface User {
   id: number;
@@ -37,15 +38,32 @@ export function UserApprovalCard({ user, onApproved, onRejected }: UserApprovalC
         userId: user.id,
         role: selectedRole,
       });
-      
-      toast({
-        description: 'Usuário aprovado com sucesso!',
+
+      // Aprovar só na tabela `users` não libera acesso a nada: o gate real é o
+      // claim app_metadata.status do GoTrue, que só o service_role escreve.
+      const { data, error } = await supabase.functions.invoke('admin-users', {
+        body: {
+          action: 'set-status',
+          email: user.email,
+          status: 'active',
+          role: selectedRole,
+        },
       });
-      
+
+      if (error || data?.error) {
+        throw new Error(data?.error || error?.message || 'Falha ao liberar o acesso.');
+      }
+
+      toast({
+        description: data?.data?.[0]?.authAccount === false
+          ? 'Usuário aprovado. Defina uma senha em "Definir Senha" para liberar o acesso.'
+          : 'Usuário aprovado com sucesso!',
+      });
+
       onApproved();
     } catch (error) {
       toast({
-        description: 'Erro ao aprovar usuário.',
+        description: error instanceof Error ? error.message : 'Erro ao aprovar usuário.',
         variant: 'destructive',
       });
     }

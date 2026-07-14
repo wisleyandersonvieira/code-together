@@ -19,7 +19,6 @@ export function NetworkStatus() {
     try {
       const result = await checkStatus({});
       setTestResult(result);
-      console.log('Network test result:', result);
     } catch (error) {
       console.error('Network test error:', error);
       setTestResult({ error: error.message || 'Network test failed' });
@@ -30,7 +29,6 @@ export function NetworkStatus() {
     try {
       const result = await testPublicAccess({});
       setPublicTestResult(result);
-      console.log('Public access test result:', result);
     } catch (error) {
       console.error('Public access test error:', error);
       setPublicTestResult({ error: error.message || 'Public access test failed' });

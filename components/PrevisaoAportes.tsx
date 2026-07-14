@@ -65,11 +65,6 @@ export function PrevisaoAportes({ projetoId, members, orcamentos, onBack }: Prev
 
   // Debug log para investigar o problema
   React.useEffect(() => {
-    console.log('PrevisaoAportes - Debug Info:');
-    console.log('Orçamentos recebidos:', orcamentos);
-    console.log('Orçamentos com data:', orcamentos.filter(orc => orc.predicted_date));
-    console.log('Datas extraídas:', dates);
-    console.log('Botão habilitado:', !saving && dates.length > 0);
   }, [orcamentos, dates, saving]);
 
   // Group orcamentos by date
@@ -105,12 +100,9 @@ export function PrevisaoAportes({ projetoId, members, orcamentos, onBack }: Prev
     try {
       setSaving(true);
       
-      console.log('Iniciando geração de previsões...');
-      console.log('Previsões com rateio existentes:', previsoesComRateio);
       
       // First, delete only previsoes that don't have rateios linked
       await deletePrevisoesSemRateio({ projetoId });
-      console.log('Previsões sem rateio deletadas');
 
       let preservedCount = 0;
       let updatedCount = 0;
@@ -143,10 +135,8 @@ export function PrevisaoAportes({ projetoId, members, orcamentos, onBack }: Prev
               if (existingPrevisao && existingPrevisao.total_rateios > 0) {
                 updatedCount++;
                 preservedCount++;
-                console.log(`Atualizada previsão existente com rateios: membro ${member.id}, data ${date}, valor ${valorPrevisto}`, result);
               } else {
                 createdCount++;
-                console.log(`Criada nova previsão: membro ${member.id}, data ${date}, valor ${valorPrevisto}`, result);
               }
             } catch (itemError) {
               console.error(`Erro ao salvar previsão para membro ${member.id}, data ${date}:`, itemError);
@@ -163,7 +153,6 @@ export function PrevisaoAportes({ projetoId, members, orcamentos, onBack }: Prev
         description: `${createdCount} novas previsões criadas, ${updatedCount} atualizadas. ${totalWithRateios} previsões com rateios preservadas.`,
       });
 
-      console.log(`Resumo: ${createdCount} criadas, ${updatedCount} atualizadas, ${totalWithRateios} com rateios preservadas`);
       
       refreshPrevisoes();
     } catch (error) {

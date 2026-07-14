@@ -121,14 +121,12 @@ export function DreProjetoDataLoader({
 
   useEffect(() => {
     if (!isLoading && estruturaItens && contasPagar && contasReceber && aportes && !hasCalculated) {
-      console.log('Processando DRE Projeto - estruturaItens:', estruturaItens);
       
       // Process and calculate values for each structure item
       const processedItems: DreItemResult[] = estruturaItens.map((item: any) => {
         let valor = 0;
 
         if (item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
-          console.log(`Processando subgrupo projeto: ${item.nome}, função: ${item.subgrupo_funcao}`);
           // Calculate value from contas pagar/receber related to the project
           // Use Number() to handle PostgreSQL NUMERIC types returned as strings
           const contasPagarValues = contasPagar
@@ -142,10 +140,8 @@ export function DreProjetoDataLoader({
           valor = contasPagarValues + contasReceberValues;
 
           // Apply sign based on function from structure
-          console.log(`Subgrupo projeto ${item.nome}: valor antes=${valor}, função=${item.subgrupo_funcao}`);
           if (item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO') {
             valor = -valor;
-            console.log(`Aplicado sinal negativo: ${valor}`);
           }
         } else if (item.tipo === 'APORTE') {
           // Sum project-related aportes (positive)
@@ -202,7 +198,6 @@ export function DreProjetoDataLoader({
       // Calculate SOMA items: sum all items with lower order numbers
       const finalItems = sortedItems.map((item, index) => {
         if (item.tipo === 'SOMA') {
-          console.log(`Processando SOMA projeto ${item.nome} (ordem: ${item.ordem})`);
           
           // Sum only SUBGRUPOS and APORTES above this SOMA line (exclude GRUPOS to avoid duplication)
           const itemsAbove = sortedItems.slice(0, index).filter(aboveItem => 
@@ -211,17 +206,14 @@ export function DreProjetoDataLoader({
           );
           
           const somaValue = itemsAbove.reduce((sum: number, aboveItem) => {
-            console.log(`SOMA projeto ${item.nome} - somando item ${aboveItem.nome} (${aboveItem.tipo}): ${aboveItem.valor}`);
             return sum + aboveItem.valor;
           }, 0);
           
-          console.log(`SOMA projeto ${item.nome} - valor final calculado: ${somaValue}`);
           return { ...item, valor: somaValue };
         }
         return item;
       });
 
-      console.log('Dados finais do DRE Projeto:', finalItems);
       setDreData(finalItems.sort((a, b) => a.ordem - b.ordem));
       setHasCalculated(true);
       onComplete();

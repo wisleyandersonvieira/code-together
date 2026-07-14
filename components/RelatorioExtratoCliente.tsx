@@ -44,7 +44,6 @@ function ExtratoClienteResults({ filtros, projetos, getEntityName }: ExtratoClie
     dataFim: filtros.dataFim || null,
   };
 
-  console.log('Parâmetros do extrato cliente:', params);
   
   const [extrato, loadingExtrato] = useLoadAction(
     loadExtratoClienteAction, 
@@ -52,7 +51,6 @@ function ExtratoClienteResults({ filtros, projetos, getEntityName }: ExtratoClie
     params
   );
 
-  console.log('Resultado do extrato cliente:', extrato, 'Loading:', loadingExtrato);
 
   const totalExtrato = extrato.reduce((sum, item) => sum + (parseFloat(item.valor) || 0), 0);
 
@@ -263,8 +261,6 @@ export function RelatorioExtratoCliente() {
 
   const handleGenerateReport = () => {
     if (canGenerateReport) {
-      console.log('Gerando extrato com filtros:', filtros);
-      console.log('EntityType:', filtros.entityType, 'EntityId:', filtros.entityId);
       setShowResults(true);
     }
   };

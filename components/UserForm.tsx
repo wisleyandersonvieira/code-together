@@ -81,6 +81,27 @@ export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: Use
           role: values.role,
           status: values.status,
         });
+
+        // A tabela `users` é só cadastro: quem decide o acesso é o claim
+        // app_metadata do GoTrue. Sem este passo, marcar alguém como Inativo
+        // não revogaria nada — a pessoa continuaria consultando o banco.
+        if (isAdminView) {
+          const { data, error } = await supabase.functions.invoke('admin-users', {
+            body: {
+              action: 'set-status',
+              email: values.email,
+              status: values.status,
+              role: values.role,
+            },
+          });
+
+          if (error || data?.error) {
+            throw new Error(
+              data?.error || error?.message || 'Falha ao sincronizar o acesso do usuário.',
+            );
+          }
+        }
+
         toast({
           description: 'Usuário atualizado com sucesso!',
         });

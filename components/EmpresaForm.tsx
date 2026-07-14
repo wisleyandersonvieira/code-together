@@ -147,11 +147,6 @@ export function EmpresaForm({ empresa, onSuccess, onCancel }: EmpresaFormProps) 
 
       // Create new relationships
       for (const cliente of values.clientes) {
-        console.log('Creating empresa-cliente relationship:', {
-          empresaId,
-          clienteId: parseInt(cliente.clienteId),
-          percentage: cliente.percentage,
-        });
         
         await createEmpresaClientes({
           empresaId,

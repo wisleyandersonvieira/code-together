@@ -83,14 +83,6 @@ export function RateioAportesForm({
   // Debug apenas em desenvolvimento
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
-      console.log('=== DEBUG RATEIO APORTES ===');
-      console.log('ProjetoId:', projetoId);
-      console.log('EntityType:', entityType);
-      console.log('EntityId:', entityId);
-      console.log('ValorTotal:', valorTotal);
-      console.log('Aportes carregados:', aportes);
-      console.log('Debug data (estrutura):', debugData);
-      console.log('Aportes check:', aportesCheck);
     }
   }, [projetoId, entityType, entityId, valorTotal, aportes, debugData, aportesCheck]);
 

@@ -48,10 +48,8 @@ export function RetiradaForm({ retirada, onSuccess, onCancel }: RetiradaFormProp
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    console.log('Form submission started', formData);
 
     if (!formData.socio_id || !formData.matriz_id || !formData.conta_id || !formData.data_retirada || !formData.valor) {
-      console.log('Validation failed - missing required fields');
       toast({
         title: "Erro",
         description: "Todos os campos são obrigatórios.",
@@ -81,7 +79,6 @@ export function RetiradaForm({ retirada, onSuccess, onCancel }: RetiradaFormProp
         observacoes: formData.observacoes || null,
       };
 
-      console.log('Submitting with params:', params);
 
       if (retirada) {
         await updateRetirada(params);

@@ -22,7 +22,6 @@ export function ProjetoFileViewer({ files, title, type, isOpen, onClose }: Proje
   const { toast } = useToast();
   
   // Debug: Log files when component receives them
-  console.log(`ProjetoFileViewer - ${type}:`, files);
 
   const getFileExtension = (filename: string) => {
     return filename.split('.').pop()?.toLowerCase() || '';
@@ -182,7 +181,6 @@ export function ProjetoFileViewer({ files, title, type, isOpen, onClose }: Proje
                             alt={fileName}
                             className="w-full h-full object-cover cursor-pointer"
                             onLoad={(e) => {
-                              console.log('Image loaded successfully:', fileUrl);
                             }}
                             onError={(e) => {
                               console.error('Failed to load image:', fileUrl);
@@ -291,7 +289,6 @@ export function ProjetoFileViewer({ files, title, type, isOpen, onClose }: Proje
                   alt={selectedFile.split('/').pop() || 'Imagem'}
                   className="max-w-full max-h-[60vh] object-contain"
                   onLoad={() => {
-                    console.log('Preview image loaded successfully:', selectedFile);
                   }}
                   onError={(e) => {
                     console.error('Failed to load preview image:', selectedFile);
