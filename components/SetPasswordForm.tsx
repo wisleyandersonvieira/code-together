@@ -7,14 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useMutateAction } from '@uibakery/data';
-import setUserPasswordAction from '@/actions/setUserPassword';
-import { hashPassword } from '@/lib/crypto';
+import { useState } from 'react';
+import { supabase } from '@/src/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 const formSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),
-  password: z.string().min(6, { message: 'Senha deve ter pelo menos 6 caracteres.' }),
+  password: z.string().min(8, { message: 'Senha deve ter pelo menos 8 caracteres.' }),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Senhas não coincidem.',
@@ -25,7 +24,7 @@ type FormData = z.infer<typeof formSchema>;
 
 export function SetPasswordForm() {
   const { toast } = useToast();
-  const [setPassword, isSettingPassword] = useMutateAction(setUserPasswordAction);
+  const [isSettingPassword, setIsSettingPassword] = useState(false);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -37,30 +36,36 @@ export function SetPasswordForm() {
   });
 
   async function onSubmit(values: FormData) {
+    setIsSettingPassword(true);
     try {
-      const passwordHash = await hashPassword(values.password);
-      
-      const result = await setPassword({
-        email: values.email,
-        passwordHash: passwordHash,
+      // A senha de login vive no GoTrue. A edge function exige sessão + role
+      // admin e cria a conta caso ela ainda não exista (ex.: usuário que se
+      // cadastrou pela tela pública e foi aprovado).
+      const { data, error } = await supabase.functions.invoke('admin-users', {
+        body: {
+          action: 'set-password',
+          email: values.email,
+          password: values.password,
+        },
       });
 
-      if (result && result.length > 0) {
-        toast({
-          description: `Senha definida com sucesso para ${values.email}!`,
-        });
-        form.reset();
-      } else {
-        toast({
-          description: 'Email não encontrado ou usuário inativo.',
-          variant: 'destructive',
-        });
+      if (error || data?.error) {
+        throw new Error(data?.error || error?.message || 'Falha ao definir a senha.');
       }
+
+      toast({
+        description: data?.data?.[0]?.created
+          ? `Conta de acesso criada e senha definida para ${values.email}!`
+          : `Senha definida com sucesso para ${values.email}!`,
+      });
+      form.reset();
     } catch (error) {
       toast({
-        description: 'Erro ao definir senha. Tente novamente.',
+        description: error instanceof Error ? error.message : 'Erro ao definir senha. Tente novamente.',
         variant: 'destructive',
       });
+    } finally {
+      setIsSettingPassword(false);
     }
   }
 

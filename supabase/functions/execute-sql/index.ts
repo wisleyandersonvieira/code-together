@@ -1,10 +1,5 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { corsHeadersFor } from "../_shared/cors.ts";
-
-// ─── Configuração ────────────────────────────────────────────────────────────
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+import { authenticate, isAuthError } from "../_shared/jwt.ts";
 
 /**
  * Conexão de banco usada para rodar as queries do app.
@@ -37,10 +32,6 @@ function getDbUrl(): string {
 
 // ─── Clients de módulo (criados uma vez por instância da função) ──────────────
 
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
 let sqlClient: any = null;
 
 async function getSql() {
@@ -60,45 +51,7 @@ async function getSql() {
 }
 
 // ─── Camada 1: autenticação ──────────────────────────────────────────────────
-
-/** Lê o campo `role` do payload do JWT sem validar assinatura (a validação real é o getUser). */
-function readJwtRole(token: string): string | null {
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) return null;
-    const normalised = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const decoded = JSON.parse(atob(normalised.padEnd(Math.ceil(normalised.length / 4) * 4, "=")));
-    return typeof decoded.role === "string" ? decoded.role : null;
-  } catch {
-    return null;
-  }
-}
-
-type AuthResult = { userId: string } | { error: string };
-
-async function authenticate(req: Request): Promise<AuthResult> {
-  const header = req.headers.get("Authorization") ?? "";
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return { error: "Authorization header ausente" };
-  }
-
-  const token = match[1].trim();
-
-  // A anon key é um JWT válido, mas não representa um usuário: rejeitar antes
-  // mesmo de consultar o GoTrue.
-  const role = readJwtRole(token);
-  if (role === "anon" || role === "service_role") {
-    return { error: `Token de role '${role}' não representa um usuário autenticado` };
-  }
-
-  const { data, error } = await admin.auth.getUser(token);
-  if (error || !data?.user) {
-    return { error: "Token inválido ou expirado" };
-  }
-
-  return { userId: data.user.id };
-}
+// Verificação local do JWT via JWKS — ver ../_shared/jwt.ts
 
 // ─── Camada 2: guarda de statements ──────────────────────────────────────────
 
@@ -287,9 +240,8 @@ Deno.serve(async (req) => {
 
   try {
     // Camada 1 — usuário autenticado (anon key é rejeitada)
-    const auth = await authenticate(req);
-    if ("error" in auth) {
-      console.warn(`[execute-sql] 401: ${auth.error}`);
+    const auth = await authenticate(req, "execute-sql");
+    if (isAuthError(auth)) {
       return json({ data: null, error: "Não autorizado" }, 401);
     }
     const { userId } = auth;

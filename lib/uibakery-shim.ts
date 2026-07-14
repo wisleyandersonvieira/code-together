@@ -29,8 +29,8 @@ interface ActionResult {
 /**
  * Escape every string value in a params map so single-quotes and null bytes
  * cannot escape the surrounding SQL literal that the edge function builds.
- * This is a defence-in-depth measure; the proper fix for each critical query
- * is to migrate it to SUPABASE_DIRECT (see authenticateUser.ts).
+ * This is a defence-in-depth measure; the edge function execute-sql applies a
+ * statement guard on top of it (single statement, allow-list of commands).
  */
 function sanitiseParams(params: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};

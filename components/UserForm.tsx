@@ -9,9 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useMutateAction } from '@uibakery/data';
-import { hashPassword } from '@/lib/crypto';
+import { supabase } from '@/src/integrations/supabase/client';
 import createUserAction from '@/actions/createUser';
-import createUserWithPasswordAction from '@/actions/createUserWithPassword';
 import updateUserAction from '@/actions/updateUser';
 import { useToast } from '@/hooks/use-toast';
 
@@ -21,7 +20,7 @@ const formSchema = z.object({
   phone: z.string().min(10, { message: 'Telefone deve ter pelo menos 10 dígitos.' }).optional().or(z.literal('')),
   role: z.string().optional(),
   status: z.string().optional(),
-  password: z.string().min(6, { message: 'Senha deve ter pelo menos 6 caracteres.' }).optional().or(z.literal('')),
+  password: z.string().min(8, { message: 'Senha deve ter pelo menos 8 caracteres.' }).optional().or(z.literal('')),
   confirmPassword: z.string().optional().or(z.literal('')),
 }).refine((data) => {
   if (data.password && data.password !== data.confirmPassword) {
@@ -54,7 +53,6 @@ interface UserFormProps {
 export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: UserFormProps) {
   const { toast } = useToast();
   const [createUser, isCreating] = useMutateAction(createUserAction);
-  const [createUserWithPassword, isCreatingWithPassword] = useMutateAction(createUserWithPasswordAction);
   const [updateUser, isUpdating] = useMutateAction(updateUserAction);
 
   const form = useForm<FormData>({
@@ -70,7 +68,7 @@ export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: Use
     },
   });
 
-  const isSubmitting = isCreating || isCreatingWithPassword || isUpdating;
+  const isSubmitting = isCreating || isUpdating;
 
   async function onSubmit(values: FormData) {
     try {
@@ -88,39 +86,50 @@ export function UserForm({ user, onSuccess, onCancel, isAdminView = false }: Use
         });
       } else {
         const hasPassword = isAdminView && values.password && values.password.length > 0;
-        
-        if (hasPassword) {
-          const passwordHash = await hashPassword(values.password!);
 
-          await createUserWithPassword({
-            name: values.name,
-            email: values.email,
-            phone: values.phone || null,
-            role: values.role,
-            status: values.status,
-            passwordHash,
+        const created = await createUser({
+          name: values.name,
+          email: values.email,
+          phone: values.phone || null,
+          role: isAdminView ? values.role : 'user',
+          status: isAdminView ? values.status : 'pending',
+        });
+
+        if (hasPassword) {
+          // A conta de login vive no GoTrue, não na tabela `users`: sem isto a
+          // senha definida aqui não valeria para o login. A service_role key
+          // fica só dentro da edge function.
+          const { data, error } = await supabase.functions.invoke('admin-users', {
+            body: {
+              action: 'create',
+              email: values.email,
+              password: values.password,
+              name: values.name,
+              phone: values.phone || null,
+              role: values.role,
+              status: values.status,
+              legacyUserId: created?.[0]?.id ?? null,
+            },
           });
-        } else {
-          const userData = {
-            name: values.name,
-            email: values.email,
-            phone: values.phone || null,
-            role: isAdminView ? values.role : 'user',
-            status: isAdminView ? values.status : 'pending',
-          };
-          
-          await createUser(userData);
+
+          if (error || data?.error) {
+            throw new Error(data?.error || error?.message || 'Falha ao criar a conta de acesso.');
+          }
         }
-        
+
         toast({
-          description: isAdminView ? 'Usuário criado com sucesso!' : 'Cadastro realizado! Aguarde aprovação do administrador.',
+          description: isAdminView
+            ? hasPassword
+              ? 'Usuário criado com sucesso! Ele já pode fazer login com a senha definida.'
+              : 'Usuário criado. Defina uma senha em "Definir Senha" para liberar o acesso.'
+            : 'Cadastro realizado! Aguarde aprovação do administrador.',
         });
       }
       form.reset();
       onSuccess();
-    } catch {
+    } catch (error) {
       toast({
-        description: 'Erro ao salvar usuário. Tente novamente.',
+        description: error instanceof Error ? error.message : 'Erro ao salvar usuário. Tente novamente.',
         variant: 'destructive',
       });
     }

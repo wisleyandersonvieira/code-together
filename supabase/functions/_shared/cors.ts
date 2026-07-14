@@ -43,13 +43,3 @@ export function corsHeadersFor(req: Request): Record<string, string> {
 
   return { ...BASE_HEADERS, "Access-Control-Allow-Origin": allowed };
 }
-
-/**
- * Headers estáticos, mantidos para as funções que NÃO são chamadas pelo
- * navegador (auth-login, password-reset, migrate-users — nenhuma tela as
- * importa hoje). Para qualquer função chamada do browser use corsHeadersFor(req).
- */
-export const corsHeaders = {
-  ...BASE_HEADERS,
-  "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0] ?? "*",
-};
