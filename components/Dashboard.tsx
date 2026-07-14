@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useLoadAction } from '@uibakery/data';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -90,136 +91,121 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   }, 0);
 
   const statsSkeleton = (
-    <div className="animate-pulse flex items-center gap-4">
-      <div className="p-2 bg-muted rounded-lg w-10 h-10" />
-      <div>
-        <div className="h-3 bg-muted rounded w-24 mb-2" />
-        <div className="h-7 bg-muted rounded w-12" />
+    <div className="animate-pulse flex flex-col items-start gap-2 md:flex-row md:items-center md:gap-4">
+      <div className="p-2 bg-muted rounded-lg h-9 w-9 md:h-10 md:w-10" />
+      <div className="w-full">
+        <div className="h-3 bg-muted rounded w-20 mb-2 md:w-24" />
+        <div className="h-6 bg-muted rounded w-12 md:h-7" />
       </div>
     </div>
   );
 
+  const statCardBody = (icon: ReactNode, label: string, value: ReactNode) => (
+    <div className="flex flex-col items-start gap-2 md:flex-row md:items-center md:gap-4">
+      {icon}
+      <div className="min-w-0">
+        <p className="text-xs leading-snug text-muted-foreground md:text-sm">{label}</p>
+        {value}
+      </div>
+    </div>
+  );
+
+  const statValueClass = 'text-xl font-bold md:text-2xl';
+  const statIconClass = 'h-5 w-5 md:h-6 md:w-6';
+
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4 px-3 md:gap-6 md:px-0">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card className={!loading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!loading ? () => onNavigate('projetos') : undefined}>
-          <CardContent className="p-6">
-            {loading ? statsSkeleton : (
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Home className="h-6 w-6 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Projetos em Andamento</p>
-                  <p className="text-2xl font-bold">{stats.projetos_em_andamento}</p>
-                </div>
-              </div>
+          <CardContent className="p-4 md:p-6">
+            {loading ? statsSkeleton : statCardBody(
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Home className={`${statIconClass} text-purple-600`} />
+              </div>,
+              'Projetos em Andamento',
+              <p className={statValueClass}>{stats.projetos_em_andamento}</p>,
             )}
           </CardContent>
         </Card>
 
         <Card className={!loading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!loading ? () => onNavigate('projetos') : undefined}>
-          <CardContent className="p-6">
-            {loading ? statsSkeleton : (
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <CheckCircle className="h-6 w-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Projetos Concluídos</p>
-                  <p className="text-2xl font-bold">{stats.projetos_concluidos}</p>
-                </div>
-              </div>
+          <CardContent className="p-4 md:p-6">
+            {loading ? statsSkeleton : statCardBody(
+              <div className="p-2 bg-green-100 rounded-lg">
+                <CheckCircle className={`${statIconClass} text-green-600`} />
+              </div>,
+              'Projetos Concluídos',
+              <p className={statValueClass}>{stats.projetos_concluidos}</p>,
             )}
           </CardContent>
         </Card>
 
         <Card className={!loading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!loading ? () => onNavigate('clientes') : undefined}>
-          <CardContent className="p-6">
-            {loading ? statsSkeleton : (
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <UserCheck className="h-6 w-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Clientes</p>
-                  <p className="text-2xl font-bold">{stats.total_clientes}</p>
-                </div>
-              </div>
+          <CardContent className="p-4 md:p-6">
+            {loading ? statsSkeleton : statCardBody(
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <UserCheck className={`${statIconClass} text-blue-600`} />
+              </div>,
+              'Clientes',
+              <p className={statValueClass}>{stats.total_clientes}</p>,
             )}
           </CardContent>
         </Card>
 
         <Card className={!loading ? 'cursor-pointer hover:shadow-md transition-shadow' : ''} onClick={!loading ? () => onNavigate('empresas') : undefined}>
-          <CardContent className="p-6">
-            {loading ? statsSkeleton : (
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-yellow-100 rounded-lg">
-                  <Building className="h-6 w-6 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Empresas</p>
-                  <p className="text-2xl font-bold">{stats.total_empresas}</p>
-                </div>
-              </div>
+          <CardContent className="p-4 md:p-6">
+            {loading ? statsSkeleton : statCardBody(
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Building className={`${statIconClass} text-yellow-600`} />
+              </div>,
+              'Empresas',
+              <p className={statValueClass}>{stats.total_empresas}</p>,
             )}
           </CardContent>
         </Card>
       </div>
 
       {/* Additional Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
         <Card>
-          <CardContent className="p-6">
-            {loading ? statsSkeleton : (
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <Building2 className="h-6 w-6 text-orange-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Grupos</p>
-                  <p className="text-2xl font-bold">{stats.total_grupos}</p>
-                </div>
-              </div>
+          <CardContent className="p-4 md:p-6">
+            {loading ? statsSkeleton : statCardBody(
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <Building2 className={`${statIconClass} text-orange-600`} />
+              </div>,
+              'Grupos',
+              <p className={statValueClass}>{stats.total_grupos}</p>,
             )}
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-6">
-            {loading ? statsSkeleton : (
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-red-100 rounded-lg">
-                  <Truck className="h-6 w-6 text-red-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Fornecedores</p>
-                  <p className="text-2xl font-bold">{stats.total_fornecedores}</p>
-                </div>
-              </div>
+          <CardContent className="p-4 md:p-6">
+            {loading ? statsSkeleton : statCardBody(
+              <div className="p-2 bg-red-100 rounded-lg">
+                <Truck className={`${statIconClass} text-red-600`} />
+              </div>,
+              'Fornecedores',
+              <p className={statValueClass}>{stats.total_fornecedores}</p>,
             )}
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-6">
-            {loading ? statsSkeleton : (
-              <div className="flex items-center gap-4">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <DollarSign className="h-6 w-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">VGV Previsto</p>
-                  <p className="text-lg font-bold">{formatCurrency(stats.vgv_previsto)}</p>
-                </div>
-              </div>
+          <CardContent className="p-4 md:p-6">
+            {loading ? statsSkeleton : statCardBody(
+              <div className="p-2 bg-green-100 rounded-lg">
+                <DollarSign className={`${statIconClass} text-green-600`} />
+              </div>,
+              'VGV Previsto',
+              <p className="text-base font-bold md:text-lg">{formatCurrency(stats.vgv_previsto)}</p>,
             )}
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {/* Saldo Contas - inline, no extra query */}
         <Card>
           <CardHeader>

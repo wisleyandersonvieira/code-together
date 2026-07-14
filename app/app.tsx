@@ -337,8 +337,28 @@ interface MobileNavContentProps {
   currentUser: User;
 }
 
-function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUser }: MobileNavContentProps) {
-  const [openSection, setOpenSection] = useState<string | null>(null);
+function MobileNavContent({
+  activeTab,
+  navigateTo,
+  isAdmin,
+  isCadastroActive,
+  isFinanceiroActive,
+  isRelatorioActive,
+  isMatrizActive,
+  onLogout,
+  currentUser,
+}: MobileNavContentProps) {
+  const activeSection = isCadastroActive
+    ? 'cadastros'
+    : isFinanceiroActive
+      ? 'financeiro'
+      : isRelatorioActive
+        ? 'relatorios'
+        : isMatrizActive
+          ? 'matriz'
+          : null;
+
+  const [openSection, setOpenSection] = useState<string | null>(activeSection);
   const toggleSection = (s: string) => setOpenSection(prev => prev === s ? null : s);
 
   const navItem = (label: string, tab: TabType, icon: React.ReactNode) => (
@@ -346,8 +366,10 @@ function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUse
       key={tab}
       onClick={() => navigateTo(tab)}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-        activeTab === tab ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+        'flex w-full items-center gap-3 rounded-lg border-l-2 border-transparent bg-transparent px-3 py-3 text-left text-sm font-medium transition-colors',
+        activeTab === tab
+          ? 'border-primary bg-slate-100 text-slate-900'
+          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
       )}
     >
       {icon}
@@ -358,7 +380,10 @@ function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUse
   const sectionHeader = (label: string, key: string, icon: React.ReactNode) => (
     <button
       onClick={() => toggleSection(key)}
-      className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      className={cn(
+        'flex w-full items-center justify-between rounded-lg bg-transparent px-3 py-3 text-left text-sm font-semibold transition-colors hover:bg-slate-50',
+        activeSection === key ? 'text-slate-900' : 'text-slate-700'
+      )}
     >
       <span className="flex items-center gap-3">{icon}{label}</span>
       <ChevronDown className={cn('h-4 w-4 transition-transform', openSection === key && 'rotate-180')} />
@@ -366,7 +391,7 @@ function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUse
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col bg-white">
       <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
         {navItem('Dashboard', 'dashboard', <BarChart3 className="h-4 w-4" />)}
 
@@ -440,7 +465,7 @@ function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUse
         </div>
       </nav>
 
-      <div className="border-t border-slate-200 p-3 space-y-2">
+      <div className="mt-auto space-y-2 border-t border-slate-200 bg-white p-3">
         <div className="flex items-center gap-2 px-3 py-2">
           <Badge variant="outline" className="border-slate-300 bg-white text-slate-700 text-xs">
             {currentUser.role}
@@ -449,7 +474,7 @@ function MobileNavContent({ activeTab, navigateTo, isAdmin, onLogout, currentUse
         </div>
         <button
           onClick={onLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+          className="flex w-full items-center gap-3 rounded-lg bg-transparent px-3 py-3 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
         >
           <LogOut className="h-4 w-4" />
           Sair
@@ -899,7 +924,7 @@ function App() {
                     <Menu className="h-5 w-5" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="w-[280px] p-0 overflow-y-auto">
+                <SheetContent side="left" className="w-[280px] bg-white p-0 overflow-y-auto">
                   <SheetHeader className="p-4 border-b border-slate-200">
                     <SheetTitle className="flex items-center gap-3">
                       <div className="rounded-lg bg-gradient-to-br from-slate-900 to-slate-700 p-2 shadow-sm">
