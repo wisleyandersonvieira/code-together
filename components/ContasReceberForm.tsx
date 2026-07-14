@@ -16,13 +16,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileManager } from '@/components/FileManager';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Save, Plus, Trash2, CreditCard, Upload, FileText } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
+import { Save, Plus, Trash2, CreditCard, Upload, FileText, ArrowLeft, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase } from '@/utils/timezone';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import {
-  FinanceDetailHeader,
   FinanceDetailSectionCard,
   financeDetailFieldClassName,
   financeDetailMutedPanelClassName,
@@ -34,8 +34,6 @@ import {
 import loadClienteEntitiesAction from '@/actions/loadClienteEntities';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import loadProdutosCreditoAction from '@/actions/loadProdutosCredito';
-import testProdutosCreditoNowAction from '@/actions/testProdutosCreditoNow';
-import debugSubgruposFuncoesAction from '@/actions/debugSubgruposFuncoes';
 import loadProjetosAtivosAction from '@/actions/loadProjetosAtivos';
 import { RateioAportesForm } from '@/components/RateioAportesForm';
 import loadContasAction from '@/actions/loadContas';
@@ -57,6 +55,9 @@ import loadMatrizesAction from '@/actions/loadMatrizes';
 import createContaReceberFaturamentoAction from '@/actions/createContaReceberFaturamento';
 import loadContaReceberFaturamentosAction from '@/actions/loadContaReceberFaturamentos';
 import deleteContaReceberFaturamentosAction from '@/actions/deleteContaReceberFaturamentos';
+import { ClienteForm } from '@/components/ClienteForm';
+import { EmpresaForm } from '@/components/EmpresaForm';
+import { GrupoForm } from '@/components/GrupoForm';
 
 const itemSchema = z.object({
   produto_id: z.number().min(1, 'Produto é obrigatório'),
@@ -109,6 +110,9 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [currentRateiosMap, setCurrentRateiosMap] = useState<Record<number, any[]>>({});
   const [projetoActionType, setProjetoActionType] = useState<'rateio' | 'faturamento' | null>(null);
+  const [showEntityModal, setShowEntityModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const entityIdsAntesDoCadastroRef = React.useRef<string[] | null>(null);
   const isEditing = !!conta;
   const [receiptForm, setReceiptForm] = useState({
     conta_id: '',
@@ -119,33 +123,9 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
 
   // Data loading
   const [matrizes] = useLoadAction(loadMatrizesAction, [], { searchNome: null });
-  const [clienteEntities] = useLoadAction(loadClienteEntitiesAction, []);
+  const [clienteEntities, , , refreshClienteEntities] = useLoadAction(loadClienteEntitiesAction, []);
   const [tiposDocumento] = useLoadAction(loadTiposDocumentoAction, [], { searchDescricao: null });
-  const [produtos, produtosLoading, produtosError] = useLoadAction(loadProdutosCreditoAction, []);
-  const [testData] = useLoadAction(testProdutosCreditoNowAction, []);
-  const [debugFuncoes] = useLoadAction(debugSubgruposFuncoesAction, []);
-  
-  // Debug temporário
-  React.useEffect(() => {
-    console.log('=== DEBUG PRODUTOS CRÉDITO ===');
-    console.log('Produtos crédito carregados:', produtos);
-    console.log('Loading:', produtosLoading);
-    console.log('Error:', produtosError);
-    
-    console.log('=== DEBUG FUNÇÕES SUBGRUPOS ===');
-    console.log('Funções dos subgrupos:', debugFuncoes);
-    
-    console.log('=== DEBUG TEST DATA ===');
-    console.log('Test data completa:', testData);
-    
-    if (testData.length > 0) {
-      const subgrupos = testData.filter(item => item.origem === 'SUBGRUPOS');
-      const produtosTeste = testData.filter(item => item.origem === 'PRODUTOS');
-      console.log('Subgrupos disponíveis:', subgrupos);
-      console.log('Produtos com subgrupos:', produtosTeste);
-      console.log('Produtos com função Crédito:', produtosTeste.filter(p => p.subgrupo_funcao?.includes('Crédito')));
-    }
-  }, [produtos, produtosLoading, produtosError, testData, debugFuncoes]);
+  const [produtos] = useLoadAction(loadProdutosCreditoAction, []);
   const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
   const [contas] = useLoadAction(loadContasAction, []);
 
@@ -250,6 +230,49 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const watchedItens = form.watch('itens') || [];
   const watchedProjetosRateio = form.watch('projetos_rateio') || [];
   const watchedProjetosFaturamento = form.watch('projetos_faturamento') || [];
+  const watchedEntityType = form.watch('entity_type');
+
+  // Entidades do tipo selecionado (cliente/empresa/grupo), ordenadas alfabeticamente
+  const entityOptions = React.useMemo(() => {
+    if (!clienteEntities || !watchedEntityType) return [];
+    return clienteEntities
+      .filter((entity: any) => entity.entity_type === watchedEntityType)
+      .map((entity: any) => ({
+        value: entity.id.toString(),
+        label: entity.name || '',
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+  }, [clienteEntities, watchedEntityType]);
+
+  const entityLabel =
+    watchedEntityType === 'cliente' ? 'Cliente' : watchedEntityType === 'empresa' ? 'Empresa' : 'Grupo';
+
+  const getEntityKey = (entity: any) => `${entity.entity_type}-${entity.id}`;
+
+  const handleOpenEntityModal = () => {
+    // Guarda as entidades atuais para identificar a que for criada após o refresh
+    entityIdsAntesDoCadastroRef.current = (clienteEntities || []).map(getEntityKey);
+    setShowEntityModal(true);
+  };
+
+  const handleEntityCriada = () => {
+    setShowEntityModal(false);
+    refreshClienteEntities();
+  };
+
+  // Seleciona automaticamente a entidade recém-cadastrada quando a lista é recarregada
+  React.useEffect(() => {
+    const chavesAnteriores = entityIdsAntesDoCadastroRef.current;
+    if (!chavesAnteriores || !clienteEntities) return;
+
+    const novaEntidade = clienteEntities.find(
+      (entity: any) => entity.entity_type === watchedEntityType && !chavesAnteriores.includes(getEntityKey(entity)),
+    );
+    if (novaEntidade) {
+      entityIdsAntesDoCadastroRef.current = null;
+      form.setValue('entity_id', Number(novaEntidade.id), { shouldValidate: true });
+    }
+  }, [clienteEntities, watchedEntityType, form]);
 
   // Calculate totals
   const valorTotalItens = watchedItens.reduce((total, item) => {
@@ -302,23 +325,10 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    console.log('=== FORM SUBMIT CHAMADO ===');
-    console.log('Values:', values);
-    console.log('Valor total itens:', valorTotalItens);
-    console.log('Percentual total rateio:', percentualTotalRateio);
-    console.log('Itens fields:', itensFields);
-    console.log('Projetos fields:', projetosFields);
-    
-    // Add form validation debugging
-    const formErrors = form.formState.errors;
-    console.log('Form errors:', formErrors);
-    console.log('Form is valid:', form.formState.isValid);
-    
-    if (Object.keys(formErrors).length > 0) {
-      console.log('Form has validation errors, submit blocked');
+    if (Object.keys(form.formState.errors).length > 0) {
       return;
     }
-    
+
     await saveContaAndRateio(values, false);
   };
 
@@ -399,6 +409,8 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
       return;
     }
 
+    setIsSaving(true);
+
     try {
       // Validar período bloqueado para competência
       const validacaoPeriodo = await validarPeriodoBloqueado({
@@ -475,9 +487,11 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
         }
 
         // Delete existing items, projects, and faturamentos
-        await deleteContaReceberItens({ contaReceberId: conta.id });
-        await deleteContaReceberProjetos({ contaReceberId: conta.id });
-        await deleteContaReceberFaturamentos({ contaReceberId: conta.id });
+        await Promise.all([
+          deleteContaReceberItens({ contaReceberId: conta.id }),
+          deleteContaReceberProjetos({ contaReceberId: conta.id }),
+          deleteContaReceberFaturamentos({ contaReceberId: conta.id }),
+        ]);
       } else {
         // Create new conta a receber
         const contaReceberResult = await createContaReceber({
@@ -496,56 +510,40 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
 
         currentContaReceberId = contaReceberResult[0].id;
         setContaReceberId(currentContaReceberId);
-        
-        // Force a small delay to ensure state is updated before continuing
-        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
-      // Create/recreate items with small delays to avoid ID conflicts
-      for (let i = 0; i < values.itens.length; i++) {
-        const item = values.itens[i];
-        try {
-          await createContaReceberItem({
-            conta_receber_id: currentContaReceberId,
-            produto_id: item.produto_id,
-            quantidade: item.quantidade,
-            valor_unitario: item.valor_unitario,
-            valor_total: item.quantidade * item.valor_unitario,
-          });
-          
-          // Small delay between items to avoid sequence conflicts
-          if (i < values.itens.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-          }
-        } catch (error) {
-          console.error(`Erro ao criar item ${i + 1}:`, error);
-          throw error;
-        }
-      }
+      // Create/recreate items
+      const itensPromises = values.itens.map((item) =>
+        createContaReceberItem({
+          conta_receber_id: currentContaReceberId,
+          produto_id: item.produto_id,
+          quantidade: item.quantidade,
+          valor_unitario: item.valor_unitario,
+          valor_total: item.quantidade * item.valor_unitario,
+        }),
+      );
 
       // Create/recreate project allocations (only if there are projects)
-      if (values.projetos_rateio.length > 0) {
-        for (const projeto of values.projetos_rateio) {
-          await createContaReceberProjeto({
-            conta_receber_id: currentContaReceberId,
-            projeto_id: projeto.projeto_id,
-            percentual: projeto.percentual,
-            valor_rateio: valorTotalItens * (projeto.percentual / 100),
-          });
-        }
-      }
+      const projetosPromises = values.projetos_rateio.map((projeto) =>
+        createContaReceberProjeto({
+          conta_receber_id: currentContaReceberId,
+          projeto_id: projeto.projeto_id,
+          percentual: projeto.percentual,
+          valor_rateio: valorTotalItens * (projeto.percentual / 100),
+        }),
+      );
 
       // Create/recreate faturamentos (only if there are faturamentos)
-      if (values.projetos_faturamento.length > 0) {
-        for (const faturamento of values.projetos_faturamento) {
-          await createContaReceberFaturamento({
-            contaReceberId: currentContaReceberId,
-            projetoId: faturamento.projeto_id,
-            valorFaturamento: faturamento.valor_faturamento,
-            observacoes: faturamento.observacoes || '',
-          });
-        }
-      }
+      const faturamentosPromises = values.projetos_faturamento.map((faturamento) =>
+        createContaReceberFaturamento({
+          contaReceberId: currentContaReceberId,
+          projetoId: faturamento.projeto_id,
+          valorFaturamento: faturamento.valor_faturamento,
+          observacoes: faturamento.observacoes || '',
+        }),
+      );
+
+      await Promise.all([...itensPromises, ...projetosPromises, ...faturamentosPromises]);
 
       // Auto-save rateio data if there are rateios with values
       const allRateios = Object.values(currentRateiosMap).flat();
@@ -553,22 +551,22 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
         const rateiosComValor = allRateios.filter(r => r.valor_rateado > 0);
         if (rateiosComValor.length > 0) {
           try {
-            // First delete existing rateios for this conta
+            // First delete existing rateios for this conta (sequencial: limpa antes de recriar)
             await saveRateioAportes({
               contaReceberId: currentContaReceberId
             });
-            
+
             // Then create new rateio entries for non-zero values
-            for (const rateio of rateiosComValor) {
-              await createRateioAporte({
-                contaReceberId: currentContaReceberId,
-                aporteId: rateio.aporte_id,
-                valorRateado: rateio.valor_rateado
-              });
-            }
-            
-            console.log('Rateio de aportes salvo automaticamente');
-            
+            await Promise.all(
+              rateiosComValor.map((rateio) =>
+                createRateioAporte({
+                  contaReceberId: currentContaReceberId,
+                  aporteId: rateio.aporte_id,
+                  valorRateado: rateio.valor_rateado
+                }),
+              ),
+            );
+
             if (saveRateioAfter) {
               toast({
                 title: "Sucesso",
@@ -599,32 +597,27 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
 
       if (!isEditing) {
         // Generate parcelas/títulos only for new accounts
-        const parcelas = parcelasPreview.length > 0 
-          ? parcelasPreview.map((p, i) => ({ ...p, total_parcelas: values.parcelas }))
+        const parcelas = parcelasPreview.length > 0
+          ? parcelasPreview.map((p) => ({ ...p, total_parcelas: values.parcelas }))
           : generateParcelas(values.data_vencimento, values.parcelas, valorTotalItens);
-        const titulosGerados = [];
-        
-        for (let i = 0; i < parcelas.length; i++) {
-          const parcela = parcelas[i];
-          try {
-            const tituloResult = await createTituloReceber({
+
+        // Promise.all preserva a ordem do array de entrada, mantendo a ordem das parcelas
+        const titulosResults = await Promise.all(
+          parcelas.map((parcela) =>
+            createTituloReceber({
               conta_receber_id: currentContaReceberId,
               parcela: parcela.parcela,
               total_parcelas: parcela.total_parcelas,
               data_vencimento: formatDateForDatabase(parcela.data_vencimento),
               valor: parcela.valor,
-            });
-            titulosGerados.push({ ...parcela, id: tituloResult[0]?.id });
-            
-            // Small delay between titles to avoid sequence conflicts
-            if (i < parcelas.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-            }
-          } catch (error) {
-            console.error(`Erro ao criar título da parcela ${parcela.parcela}:`, error);
-            throw error;
-          }
-        }
+            }),
+          ),
+        );
+        const titulosGerados = parcelas.map((parcela, index) => ({
+          ...parcela,
+          id: titulosResults[index]?.[0]?.id,
+        }));
+        setGeneratedTitulos(titulosGerados);
 
         // Upload pending files
         if (pendingFiles.length > 0) {
@@ -654,6 +647,8 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
         description: `Não foi possível ${isEditing ? 'atualizar' : 'criar'} a conta a receber. ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -669,16 +664,18 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
     }
 
     try {
-      for (const index of selectedTitulos) {
-        const titulo = generatedTitulos[index];
-        await receiveTituloReceber({
-          id: titulo.id,
-          valor_recebido: titulo.valor,
-          data_recebimento: receiptForm.data_recebimento.toISOString().split('T')[0],
-          conta_id: parseInt(receiptForm.conta_id),
-          observacoes_recebimento: receiptForm.observacoes,
-        });
-      }
+      await Promise.all(
+        selectedTitulos.map((index) => {
+          const titulo = generatedTitulos[index];
+          return receiveTituloReceber({
+            id: titulo.id,
+            valor_recebido: titulo.valor,
+            data_recebimento: receiptForm.data_recebimento.toISOString().split('T')[0],
+            conta_id: parseInt(receiptForm.conta_id),
+            observacoes_recebimento: receiptForm.observacoes,
+          });
+        }),
+      );
 
       toast({
         title: "Recebimento realizado",
@@ -696,23 +693,22 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   };
 
   return (
-    <div className="space-y-8 pb-6">
-      <FinanceDetailHeader
-        title={isEditing ? 'Conta a Receber' : 'Nova Conta a Receber'}
-        subtitle={
-          isEditing
-            ? conta.titulos_recebidos > 0
-              ? 'Visualização da conta com recebimentos já efetuados, preservando a conferência dos dados com mais clareza.'
-              : 'Edite a conta a receber em uma interface mais limpa, sofisticada e alinhada ao novo padrão visual.'
-            : 'Cadastre uma nova conta a receber com melhor hierarquia, mais respiro e uma experiência mais premium.'
-        }
-        onBack={onCancel}
-      />
+    <div className="space-y-4 pb-6">
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onCancel}
+          className="h-9 rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Voltar
+        </Button>
+      </div>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
-          console.log('=== FORM VALIDATION ERRORS ===');
-          console.log('Errors:', errors);
+        <form onSubmit={form.handleSubmit(onSubmit, () => {
           toast({
             title: "Erro de validação",
             description: "Por favor, verifique os campos obrigatórios.",
@@ -740,7 +736,10 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Matriz *</FormLabel>
-                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
+                        <Select
+                          value={field.value > 0 ? field.value.toString() : ''}
+                          onValueChange={(value) => field.onChange(parseInt(value) || 0)}
+                        >
                           <FormControl>
                             <SelectTrigger className={financeDetailFieldClassName}>
                               <SelectValue placeholder="Selecione a matriz" />
@@ -795,30 +794,34 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       name="entity_id"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>
-                            {form.watch('entity_type') === 'cliente' ? 'Cliente' : 
-                             form.watch('entity_type') === 'empresa' ? 'Empresa' : 'Grupo'}
-                          </FormLabel>
-                          <Select 
-                            value={field.value?.toString()} 
-                            onValueChange={(value) => field.onChange(parseInt(value))}
-                            disabled={!form.watch('entity_type')}
-                          >
-                            <FormControl>
-                              <SelectTrigger className={financeDetailFieldClassName}>
-                                <SelectValue placeholder={`Selecione ${form.watch('entity_type') || 'a entidade'}`} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {clienteEntities
-                                ?.filter((entity: any) => entity.entity_type === form.watch('entity_type'))
-                                ?.map((entity: any) => (
-                                  <SelectItem key={`${entity.entity_type}-${entity.id}`} value={entity.id.toString()}>
-                                    {entity.name}
-                                  </SelectItem>
-                                ))}
-                            </SelectContent>
-                          </Select>
+                          <FormLabel>{entityLabel}</FormLabel>
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <FormControl>
+                                <Combobox
+                                  value={field.value > 0 ? field.value.toString() : undefined}
+                                  onValueChange={(value) => field.onChange(parseInt(value) || 0)}
+                                  options={entityOptions}
+                                  disabled={!watchedEntityType}
+                                  className={financeDetailFieldClassName}
+                                  placeholder={`Selecione ${watchedEntityType || 'a entidade'}`}
+                                  searchPlaceholder={`Buscar ${watchedEntityType || 'entidade'}...`}
+                                  emptyText="Nenhum resultado encontrado"
+                                />
+                              </FormControl>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              disabled={!watchedEntityType}
+                              title={`Cadastrar ${watchedEntityType || 'entidade'}`}
+                              onClick={handleOpenEntityModal}
+                              className="h-10 w-10 shrink-0 rounded-xl border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -830,7 +833,10 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Tipo de Documento</FormLabel>
-                          <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
+                          <Select
+                            value={field.value > 0 ? field.value.toString() : ''}
+                            onValueChange={(value) => field.onChange(parseInt(value) || 0)}
+                          >
                             <FormControl>
                               <SelectTrigger className={financeDetailFieldClassName}>
                                 <SelectValue placeholder="Selecione o tipo" />
@@ -1520,12 +1526,13 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
 
               <div className="space-y-4">
                 <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button 
-                    type="submit" 
+                  <Button
+                    type="submit"
                     disabled={
-                      isCreating || 
+                      isSaving ||
+                      isCreating ||
                       isUpdating ||
-                      valorTotalItens === 0 || 
+                      valorTotalItens === 0 ||
                       (projetosFields.length > 0 && Math.abs(percentualTotalRateio - 100) > 0.01) ||
                       (faturamentosFields.length > 0 && Math.abs(valorTotalFaturamento - valorTotalItens) > 0.01) ||
                       itensFields.length === 0 ||
@@ -1533,12 +1540,12 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                     }
                     className="h-11 flex-1 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                   >
-                    <Save className="mr-2 h-4 w-4" />
-                    {isEditing && conta?.titulos_recebidos > 0 
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    {isEditing && conta?.titulos_recebidos > 0
                       ? 'Visualização'
-                      : isEditing 
-                        ? (isUpdating ? 'Salvando...' : 'Salvar Alterações')
-                        : (isCreating ? 'Salvando...' : 'Salvar Conta')
+                      : isEditing
+                        ? (isSaving ? 'Salvando...' : 'Salvar Alterações')
+                        : (isSaving ? 'Salvando...' : 'Salvar Conta')
                     }
                   </Button>
                   <Button type="button" variant="outline" onClick={onCancel} className="h-11 rounded-xl border-slate-200 bg-white px-5 text-slate-700 hover:border-slate-300 hover:bg-slate-50">
@@ -1550,6 +1557,34 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
           </Tabs>
         </form>
       </Form>
+
+      {/* Cadastro rápido da entidade (cliente/empresa/grupo) */}
+      <Dialog open={showEntityModal} onOpenChange={setShowEntityModal}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Novo {entityLabel}</DialogTitle>
+          </DialogHeader>
+          {watchedEntityType === 'cliente' && (
+            <ClienteForm
+              modalMode={true}
+              onSuccess={handleEntityCriada}
+              onCancel={() => setShowEntityModal(false)}
+            />
+          )}
+          {watchedEntityType === 'empresa' && (
+            <EmpresaForm
+              onSuccess={handleEntityCriada}
+              onCancel={() => setShowEntityModal(false)}
+            />
+          )}
+          {watchedEntityType === 'grupo' && (
+            <GrupoForm
+              onSuccess={handleEntityCriada}
+              onCancel={() => setShowEntityModal(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Receipt Modal */}
       <Dialog open={showReceiptModal} onOpenChange={setShowReceiptModal}>
