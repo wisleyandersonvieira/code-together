@@ -79,6 +79,7 @@ type TabType =
   | 'subgrupos-contabeis'
   | 'projetos'
   | 'create-projeto'
+  | 'aportes-por-cliente'
   | 'contas-pagar'
   | 'contas-receber'
   | 'transferencias'
@@ -131,6 +132,7 @@ const routes: Record<TabType, RouteDefinition> = {
   'subgrupos-contabeis': { path: '/cadastros/subgrupos-contabeis', title: 'Subgrupos Contabeis' },
   projetos: { path: '/projetos', title: 'Projetos' },
   'create-projeto': { path: '/projetos/novo', title: 'Novo Projeto' },
+  'aportes-por-cliente': { path: '/projetos/aportes-por-cliente', title: 'Aportes por Cliente' },
   'contas-pagar': { path: '/financeiro/contas-a-pagar', title: 'Contas a Pagar' },
   'contas-receber': { path: '/financeiro/contas-a-receber', title: 'Contas a Receber' },
   transferencias: { path: '/financeiro/transferencias', title: 'Transferencias' },
@@ -184,6 +186,12 @@ const cadastroTabs: TabType[] = [
   'produtos',
   'tipos-documento',
   'parametros',
+];
+
+const projetoTabs: TabType[] = [
+  'projetos',
+  'create-projeto',
+  'aportes-por-cliente',
 ];
 
 const financeiroTabs: TabType[] = [
@@ -265,6 +273,7 @@ const TipoDocumentoList = lazyWithRetry(() => import('@/components/TipoDocumento
 const ParametrosList = lazyWithRetry(() => import('@/components/ParametrosList').then((module) => ({ default: module.ParametrosList })));
 const ProjetoForm = lazyWithRetry(() => import('@/components/ProjetoForm').then((module) => ({ default: module.ProjetoForm })));
 const ProjetoList = lazyWithRetry(() => import('@/components/ProjetoList').then((module) => ({ default: module.ProjetoList })));
+const AportesPorCliente = lazyWithRetry(() => import('@/components/AportesPorCliente').then((module) => ({ default: module.AportesPorCliente })));
 const ContasPagarList = lazyWithRetry(() => import('@/components/ContasPagarList').then((module) => ({ default: module.ContasPagarList })));
 const ContasReceberList = lazyWithRetry(() => import('@/components/ContasReceberList').then((module) => ({ default: module.ContasReceberList })));
 const TransferenciaList = lazyWithRetry(() => import('@/components/TransferenciaList').then((module) => ({ default: module.TransferenciaList })));
@@ -527,6 +536,7 @@ function App() {
   }, [activeTab]);
 
   const isCadastroActive = cadastroTabs.includes(activeTab);
+  const isProjetoActive = projetoTabs.includes(activeTab);
   const isFinanceiroActive = financeiroTabs.includes(activeTab);
   const isRelatorioActive = relatorioTabs.includes(activeTab);
   const isMatrizActive = matrizTabs.includes(activeTab);
@@ -607,7 +617,14 @@ function App() {
           />
         );
       case 'projetos':
-        return <ProjetoList onCreateNew={() => navigateTo('create-projeto')} />;
+        return (
+          <ProjetoList
+            onCreateNew={() => navigateTo('create-projeto')}
+            onOpenAportesPorCliente={() => navigateTo('aportes-por-cliente')}
+          />
+        );
+      case 'aportes-por-cliente':
+        return <AportesPorCliente />;
       case 'contas-pagar':
         return <ContasPagarList />;
       case 'contas-receber':
@@ -1011,7 +1028,7 @@ function App() {
 
             <Button
               variant="ghost"
-              className={getNavItemClasses(activeTab === 'projetos' || activeTab === 'create-projeto')}
+              className={getNavItemClasses(isProjetoActive)}
               onClick={() => navigateTo('projetos')}
             >
               <Home className="mr-2 h-4 w-4" />

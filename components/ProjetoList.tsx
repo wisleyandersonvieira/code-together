@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Eye, ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { useMutateAction } from '@uibakery/data';
 import loadProjetosAction from '@/actions/loadProjetos';
 import deleteProjetoAction from '@/actions/deleteProjeto';
@@ -58,9 +58,10 @@ interface Projeto {
 
 interface ProjetoListProps {
   onCreateNew?: () => void;
+  onOpenAportesPorCliente?: () => void;
 }
 
-export function ProjetoList({ onCreateNew }: ProjetoListProps) {
+export function ProjetoList({ onCreateNew, onOpenAportesPorCliente }: ProjetoListProps) {
   const { toast } = useToast();
   const { formatCurrency } = useCurrency();
   const [projetos, loading, error, refresh] = useLoadAction(loadProjetosAction, []);
@@ -229,33 +230,41 @@ export function ProjetoList({ onCreateNew }: ProjetoListProps) {
         <ListingPageHeader
           title="Projetos"
           action={
-            <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-              <DialogTrigger asChild>
-                <Button className={listingPrimaryButtonClassName} onClick={handleCreate}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Novo Projeto
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              {onOpenAportesPorCliente ? (
+                <Button variant="outline" onClick={onOpenAportesPorCliente}>
+                  <Users className="mr-2 h-4 w-4" />
+                  Aportes por Cliente
                 </Button>
-              </DialogTrigger>
-              <DialogContent
-                className="max-w-7xl max-h-[90vh] overflow-y-auto p-0 [&>button]:hidden"
-                onInteractOutside={(e) => {
-                  const target = e.target as Element;
-                  if (target.closest('.file-manager-content') || target.tagName === 'A') {
-                    e.preventDefault();
-                  }
-                }}
-              >
-                <DialogTitle className="sr-only">
-                  {isViewMode ? 'Visualizar Projeto' : isEditMode ? 'Editar Projeto' : 'Criar Novo Projeto'}
-                </DialogTitle>
-                <ProjetoForm
-                  projeto={selectedProjeto || undefined}
-                  onSuccess={handleFormSuccess}
-                  onCancel={() => setIsFormOpen(false)}
-                  readOnly={isViewMode}
-                />
-              </DialogContent>
-            </Dialog>
+              ) : null}
+              <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+                <DialogTrigger asChild>
+                  <Button className={listingPrimaryButtonClassName} onClick={handleCreate}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Novo Projeto
+                  </Button>
+                </DialogTrigger>
+                <DialogContent
+                  className="max-w-7xl max-h-[90vh] overflow-y-auto p-0 [&>button]:hidden"
+                  onInteractOutside={(e) => {
+                    const target = e.target as Element;
+                    if (target.closest('.file-manager-content') || target.tagName === 'A') {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  <DialogTitle className="sr-only">
+                    {isViewMode ? 'Visualizar Projeto' : isEditMode ? 'Editar Projeto' : 'Criar Novo Projeto'}
+                  </DialogTitle>
+                  <ProjetoForm
+                    projeto={selectedProjeto || undefined}
+                    onSuccess={handleFormSuccess}
+                    onCancel={() => setIsFormOpen(false)}
+                    readOnly={isViewMode}
+                  />
+                </DialogContent>
+              </Dialog>
+            </div>
           }
         />
 
