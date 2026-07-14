@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { sanitizeSearchParam } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -114,11 +115,11 @@ export function ContasReceberList() {
   // Data loading with pagination parameters
   const [contas] = useLoadAction(loadContasAction, []);
   const [contasReceber, loading, error, refreshContasReceber] = useLoadAction(loadContasReceberAction, [], {
-    searchCliente: searchCliente || null,
+    searchCliente: searchCliente ? sanitizeSearchParam(searchCliente) : null,
     searchStatus: (searchStatus && searchStatus !== 'all') ? searchStatus : null,
-    searchNumeroDocumento: searchNumeroDocumento || null,
-    searchProjeto: searchProjeto || null,
-    searchMatriz: searchMatriz || null,
+    searchNumeroDocumento: searchNumeroDocumento ? sanitizeSearchParam(searchNumeroDocumento) : null,
+    searchProjeto: searchProjeto ? sanitizeSearchParam(searchProjeto) : null,
+    searchMatriz: searchMatriz ? sanitizeSearchParam(searchMatriz) : null,
     dataVencimentoInicio: dataVencimentoInicio ? formatDateForDatabase(dataVencimentoInicio) : null,
     dataVencimentoFim: dataVencimentoFim ? formatDateForDatabase(dataVencimentoFim) : null,
     dataRecebimentoInicio: dataRecebimentoInicio ? formatDateForDatabase(dataRecebimentoInicio) : null,
@@ -130,11 +131,12 @@ export function ContasReceberList() {
 
   // Count total records when filters are applied
   const [totalCountResult] = useLoadAction(countContasReceberAction, [], {
-    searchCliente: hasFilters && searchCliente || null,
+    skipCount: !hasFilters,
+    searchCliente: hasFilters && searchCliente ? sanitizeSearchParam(searchCliente) : null,
     searchStatus: hasFilters && (searchStatus && searchStatus !== 'all') ? searchStatus : null,
-    searchNumeroDocumento: hasFilters && searchNumeroDocumento || null,
-    searchProjeto: hasFilters && searchProjeto || null,
-    searchMatriz: hasFilters && searchMatriz || null,
+    searchNumeroDocumento: hasFilters && searchNumeroDocumento ? sanitizeSearchParam(searchNumeroDocumento) : null,
+    searchProjeto: hasFilters && searchProjeto ? sanitizeSearchParam(searchProjeto) : null,
+    searchMatriz: hasFilters && searchMatriz ? sanitizeSearchParam(searchMatriz) : null,
     dataVencimentoInicio: hasFilters && dataVencimentoInicio ? formatDateForDatabase(dataVencimentoInicio) : null,
     dataVencimentoFim: hasFilters && dataVencimentoFim ? formatDateForDatabase(dataVencimentoFim) : null,
     dataRecebimentoInicio: hasFilters && dataRecebimentoInicio ? formatDateForDatabase(dataRecebimentoInicio) : null,
