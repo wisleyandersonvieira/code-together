@@ -18,13 +18,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FileManager } from '@/components/FileManager';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Save, Plus, Trash2, Calculator, CreditCard, Upload, FileText } from 'lucide-react';
+import { Save, Plus, Trash2, Calculator, CreditCard, Upload, FileText, ArrowLeft, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, parseLocalDate } from '@/utils/timezone';
 import {
-  FinanceDetailHeader,
   FinanceDetailSectionCard,
   financeDetailCardClassName,
   financeDetailFieldClassName,
@@ -58,6 +57,7 @@ import loadTitulosByContaPagarAction from '@/actions/loadTitulosByContaPagar';
 import updateTituloPagarAction from '@/actions/updateTituloPagar';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import { PaymentModalContent } from '@/components/ContasPagarPaymentModal';
+import { FornecedorForm } from '@/components/FornecedorForm';
 
 const itemSchema = z.object({
   produto_id: z.number().min(1, 'Produto é obrigatório'),
@@ -302,7 +302,10 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   const [parcelasPreview, setParcelasPreview] = useState<Array<{ parcela: number; data_vencimento: Date; valor: number }>>([]);
   const [showSaveAndPayModal, setShowSaveAndPayModal] = useState(false);
   const [contaIdParaPagamento, setContaIdParaPagamento] = useState<number | null>(null);
+  const [showFornecedorModal, setShowFornecedorModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const saveAndPayRef = useRef(false);
+  const fornecedorIdsAntesDoCadastroRef = useRef<number[] | null>(null);
   const isEditing = !!conta;
   const [paymentForm, setPaymentForm] = useState({
     conta_id: '',
@@ -312,7 +315,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
 
   // Data loading
   const [matrizes] = useLoadAction(loadMatrizesAction, [], { searchNome: null });
-  const [fornecedores] = useLoadAction(loadFornecedoresAction, [], { searchTerm: null });
+  const [fornecedores, , , refreshFornecedores] = useLoadAction(loadFornecedoresAction, [], { searchTerm: null });
   const [tiposDocumento] = useLoadAction(loadTiposDocumentoAction, [], { searchDescricao: null });
   const [produtos] = useLoadAction(loadProdutosDebitoAction, []);
   
@@ -326,6 +329,17 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
       }))
       .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [produtos]);
+
+  // Prepare fornecedor options for combobox (sorted alphabetically)
+  const fornecedorOptions = React.useMemo(() => {
+    if (!fornecedores) return [];
+    return fornecedores
+      .map((fornecedor: any) => ({
+        value: fornecedor.id.toString(),
+        label: fornecedor.name || '',
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+  }, [fornecedores]);
   const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
   const [contas] = useLoadAction(loadContasAction, []);
 
@@ -355,8 +369,8 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      matriz_id: Number(conta?.matriz_id) || 1,
-      fornecedor_id: Number(conta?.fornecedor_id) || 1,
+      matriz_id: conta?.matriz_id ? Number(conta.matriz_id) : 0,
+      fornecedor_id: conta?.fornecedor_id ? Number(conta.fornecedor_id) : 0,
       tipo_documento_id: Number(conta?.tipo_documento_id) || 1,
       numero_documento: conta?.numero_documento ? String(conta.numero_documento) : '',
       data_emissao: conta?.data_emissao ? parseLocalDate(conta.data_emissao) : new Date(),
@@ -382,6 +396,29 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   // Watch form values (must be before useEffect hooks that use them)
   const watchedItens = form.watch('itens');
   const watchedProjetosRateio = form.watch('projetos_rateio');
+
+  const handleOpenFornecedorModal = () => {
+    // Guarda os ids atuais para identificar o fornecedor criado após o refresh
+    fornecedorIdsAntesDoCadastroRef.current = (fornecedores || []).map((fornecedor: any) => Number(fornecedor.id));
+    setShowFornecedorModal(true);
+  };
+
+  const handleFornecedorCriado = () => {
+    setShowFornecedorModal(false);
+    refreshFornecedores();
+  };
+
+  // Seleciona automaticamente o fornecedor recém-cadastrado quando a lista é recarregada
+  React.useEffect(() => {
+    const idsAnteriores = fornecedorIdsAntesDoCadastroRef.current;
+    if (!idsAnteriores || !fornecedores) return;
+
+    const novoFornecedor = fornecedores.find((fornecedor: any) => !idsAnteriores.includes(Number(fornecedor.id)));
+    if (novoFornecedor) {
+      fornecedorIdsAntesDoCadastroRef.current = null;
+      form.setValue('fornecedor_id', Number(novoFornecedor.id), { shouldValidate: true });
+    }
+  }, [fornecedores, form]);
 
   // Load existing data when editing
   React.useEffect(() => {
@@ -629,16 +666,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
       return;
     }
 
-    // Debug: Log values being submitted
-    console.log('Submitting conta a pagar with values:', {
-      matriz_id: values.matriz_id,
-      fornecedor_id: values.fornecedor_id,
-      tipo_documento_id: values.tipo_documento_id,
-      numero_documento: values.numero_documento,
-      valor_total: valorTotalItens,
-      valor_original: conta?.valor_total,
-      is_valor_changed: isEditing && parseFloat(conta?.valor_total || 0) !== valorTotalItens
-    });
+    setIsSaving(true);
 
     try {
       // Validar período bloqueado para competência
@@ -726,9 +754,11 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
         currentContaPagarId = conta.id;
 
         // Delete existing items, projects and allocations
-        await deleteContaPagarItens({ contaPagarId: conta.id });
-        await deleteContaPagarProjetos({ contaPagarId: conta.id });
-        await deleteContaPagarOrcamentoAlocacoes({ contaPagarId: conta.id });
+        await Promise.all([
+          deleteContaPagarItens({ contaPagarId: conta.id }),
+          deleteContaPagarProjetos({ contaPagarId: conta.id }),
+          deleteContaPagarOrcamentoAlocacoes({ contaPagarId: conta.id }),
+        ]);
       } else {
         // Create new conta a pagar
         const contaPagarResult = await createContaPagar({
@@ -748,59 +778,68 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
       }
 
       // Create/recreate items
-      for (const item of values.itens) {
-        await createContaPagarItem({
+      const itensPromises = values.itens.map((item) =>
+        createContaPagarItem({
           conta_pagar_id: currentContaPagarId,
           produto_id: item.produto_id,
           quantidade: item.quantidade,
           valor_unitario: item.valor_unitario,
           valor_total: item.quantidade * item.valor_unitario,
-        });
-      }
+        }),
+      );
 
       // Create/recreate project allocations (only if there are projects)
-      if (values.projetos_rateio.length > 0) {
-        for (const projeto of values.projetos_rateio) {
-          await createContaPagarProjeto({
-            conta_pagar_id: currentContaPagarId,
-            projeto_id: projeto.projeto_id,
-            percentual: projeto.percentual,
-            valor_rateio: valorTotalItens * (projeto.percentual / 100),
-          });
-        }
+      const projetosPromises = values.projetos_rateio.map((projeto) =>
+        createContaPagarProjeto({
+          conta_pagar_id: currentContaPagarId,
+          projeto_id: projeto.projeto_id,
+          percentual: projeto.percentual,
+          valor_rateio: valorTotalItens * (projeto.percentual / 100),
+        }),
+      );
 
-        // Create/recreate budget allocations for all projects
-        for (const [projetoId, projetoAlocacoes] of Object.entries(orcamentosAlocacoes)) {
-          for (const [orcamentoId, valorAlocado] of Object.entries(projetoAlocacoes)) {
-            if (valorAlocado && valorAlocado > 0) {
-              await createContaPagarOrcamentoAlocacao({
-                conta_pagar_id: currentContaPagarId,
-                orcamento_id: parseInt(orcamentoId),
-                valor_alocado: valorAlocado,
-                observacoes: '',
-              });
-            }
-          }
-        }
-      }
+      // Create/recreate budget allocations for all projects
+      const alocacoesPromises =
+        values.projetos_rateio.length > 0
+          ? Object.values(orcamentosAlocacoes).flatMap((projetoAlocacoes) =>
+              Object.entries(projetoAlocacoes)
+                .filter(([, valorAlocado]) => valorAlocado && valorAlocado > 0)
+                .map(([orcamentoId, valorAlocado]) =>
+                  createContaPagarOrcamentoAlocacao({
+                    conta_pagar_id: currentContaPagarId,
+                    orcamento_id: parseInt(orcamentoId),
+                    valor_alocado: valorAlocado,
+                    observacoes: '',
+                  }),
+                ),
+            )
+          : [];
+
+      await Promise.all([...itensPromises, ...projetosPromises, ...alocacoesPromises]);
 
       if (!isEditing) {
         // Generate parcelas/títulos only for new accounts
-        const parcelas = parcelasPreview.length > 0 
-          ? parcelasPreview.map((p, i) => ({ ...p, total_parcelas: values.parcelas }))
+        const parcelas = parcelasPreview.length > 0
+          ? parcelasPreview.map((p) => ({ ...p, total_parcelas: values.parcelas }))
           : generateParcelas(values.data_vencimento, values.parcelas, valorTotalItens);
-        const titulosGerados = [];
-        
-        for (const parcela of parcelas) {
-          const tituloResult = await createTituloPagar({
-            conta_pagar_id: currentContaPagarId,
-            parcela: parcela.parcela,
-            total_parcelas: parcela.total_parcelas,
-            data_vencimento: parcela.data_vencimento.toISOString().split('T')[0],
-            valor: parcela.valor,
-          });
-          titulosGerados.push({ ...parcela, id: tituloResult[0]?.id });
-        }
+
+        // Promise.all preserva a ordem do array de entrada, mantendo a ordem das parcelas
+        const titulosResults = await Promise.all(
+          parcelas.map((parcela) =>
+            createTituloPagar({
+              conta_pagar_id: currentContaPagarId,
+              parcela: parcela.parcela,
+              total_parcelas: parcela.total_parcelas,
+              data_vencimento: parcela.data_vencimento.toISOString().split('T')[0],
+              valor: parcela.valor,
+            }),
+          ),
+        );
+        const titulosGerados = parcelas.map((parcela, index) => ({
+          ...parcela,
+          id: titulosResults[index]?.[0]?.id,
+        }));
+        setGeneratedTitulos(titulosGerados);
 
         // Upload pending files
         if (pendingFiles.length > 0) {
@@ -835,21 +874,25 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
         description: `Não foi possível ${isEditing ? 'atualizar' : 'criar'} a conta a pagar. ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handlePayment = async () => {
     try {
-      for (const index of selectedTitulos) {
-        const titulo = generatedTitulos[index];
-        await payTituloPagar({
-          id: titulo.id,
-          valor_pago: titulo.valor,
-          data_pagamento: paymentForm.data_pagamento.toISOString().split('T')[0],
-          conta_id: parseInt(paymentForm.conta_id),
-          observacoes_pagamento: paymentForm.observacoes,
-        });
-      }
+      await Promise.all(
+        selectedTitulos.map((index) => {
+          const titulo = generatedTitulos[index];
+          return payTituloPagar({
+            id: titulo.id,
+            valor_pago: titulo.valor,
+            data_pagamento: paymentForm.data_pagamento.toISOString().split('T')[0],
+            conta_id: parseInt(paymentForm.conta_id),
+            observacoes_pagamento: paymentForm.observacoes,
+          });
+        }),
+      );
 
       toast({
         title: "Pagamento realizado",
@@ -867,18 +910,19 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   };
 
   return (
-    <div className="space-y-8 pb-6">
-      <FinanceDetailHeader
-        title={isEditing ? 'Conta a Pagar' : 'Nova Conta a Pagar'}
-        subtitle={
-          isEditing
-            ? conta.titulos_pagos > 0
-              ? 'Visualização da conta com pagamentos já efetuados, mantendo toda a rastreabilidade financeira.'
-              : 'Edite as informações da conta a pagar com uma navegação mais leve, clara e organizada.'
-            : 'Preencha os dados da nova conta a pagar em uma estrutura mais limpa, elegante e objetiva.'
-        }
-        onBack={onCancel}
-      />
+    <div className="space-y-4 pb-6">
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onCancel}
+          className="h-9 rounded-xl border-slate-200 bg-white px-4 text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Voltar
+        </Button>
+      </div>
 
       <Form {...form}>
         <form
@@ -906,7 +950,10 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Matriz *</FormLabel>
-                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
+                        <Select
+                          value={field.value > 0 ? field.value.toString() : ''}
+                          onValueChange={(value) => field.onChange(parseInt(value) || 0)}
+                        >
                           <FormControl>
                             <SelectTrigger className={financeDetailFieldClassName}>
                               <SelectValue placeholder="Selecione a matriz" />
@@ -932,23 +979,31 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Fornecedor *</FormLabel>
-                          <Select 
-                            value={field.value > 0 ? field.value.toString() : ""} 
-                            onValueChange={(value) => field.onChange(parseInt(value) || 0)}
-                          >
-                            <FormControl>
-                              <SelectTrigger className={financeDetailFieldClassName}>
-                                <SelectValue placeholder="Selecione o fornecedor" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {fornecedores?.map((fornecedor: any) => (
-                                <SelectItem key={fornecedor.id} value={fornecedor.id.toString()}>
-                                  {fornecedor.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <FormControl>
+                                <Combobox
+                                  value={field.value > 0 ? field.value.toString() : undefined}
+                                  onValueChange={(value) => field.onChange(parseInt(value) || 0)}
+                                  options={fornecedorOptions}
+                                  className={financeDetailFieldClassName}
+                                  placeholder="Selecione o fornecedor"
+                                  searchPlaceholder="Buscar fornecedor..."
+                                  emptyText="Nenhum fornecedor encontrado"
+                                />
+                              </FormControl>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              title="Cadastrar novo fornecedor"
+                              onClick={handleOpenFornecedorModal}
+                              className="h-10 w-10 shrink-0 rounded-xl border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1707,6 +1762,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                 <Button
                   type="submit"
                   disabled={
+                    isSaving ||
                     isCreating ||
                     isUpdating ||
                     valorTotalItens === 0 ||
@@ -1717,18 +1773,19 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                   }
                   className="h-11 flex-1 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                 >
-                  <Save className="mr-2 h-4 w-4" />
+                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   {isEditing && conta.titulos_pagos > 0
                     ? 'Visualização'
                     : isEditing
-                      ? (isUpdating ? 'Salvando...' : 'Salvar Alterações')
-                      : (isCreating ? 'Salvando...' : 'Salvar Conta')
+                      ? (isSaving ? 'Salvando...' : 'Salvar Alterações')
+                      : (isSaving ? 'Salvando...' : 'Salvar Conta')
                   }
                 </Button>
                 {!isEditing && (
                   <Button
                     type="button"
                     disabled={
+                      isSaving ||
                       isCreating ||
                       isUpdating ||
                       valorTotalItens === 0 ||
@@ -1742,8 +1799,12 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                       form.handleSubmit(onSubmit)();
                     }}
                   >
-                    <CreditCard className="mr-2 h-4 w-4" />
-                    {isCreating ? 'Salvando...' : 'Salvar e Baixar'}
+                    {isSaving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CreditCard className="mr-2 h-4 w-4" />
+                    )}
+                    {isSaving ? 'Salvando...' : 'Salvar e Baixar'}
                   </Button>
                 )}
                 <Button type="button" variant="outline" onClick={onCancel} className="h-11 rounded-xl border-slate-200 bg-white px-5 text-slate-700 hover:border-slate-300 hover:bg-slate-50">
@@ -1754,6 +1815,19 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
           </Tabs>
         </form>
       </Form>
+
+      {/* Cadastro rápido de fornecedor */}
+      <Dialog open={showFornecedorModal} onOpenChange={setShowFornecedorModal}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Novo Fornecedor</DialogTitle>
+          </DialogHeader>
+          <FornecedorForm
+            onSuccess={handleFornecedorCriado}
+            onCancel={() => setShowFornecedorModal(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Save and Pay Modal */}
       <Dialog open={showSaveAndPayModal} onOpenChange={setShowSaveAndPayModal}>
