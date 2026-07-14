@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeadersFor } from "../_shared/cors.ts";
 
 // ─── Configuração ────────────────────────────────────────────────────────────
 
@@ -271,16 +271,18 @@ function processTemplate(query: string, params: Record<string, any>): string {
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 Deno.serve(async (req) => {
+  // Reflete a origem da requisição quando ela está na lista de ALLOWED_ORIGIN.
+  const cors = corsHeadersFor(req);
+
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: cors });
   }
 
   try {
