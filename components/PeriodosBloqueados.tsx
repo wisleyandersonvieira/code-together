@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/src/integrations/supabase/client';
+import { useMutateAction } from '@uibakery/data';
+import loadMatrizesAction from '@/actions/loadMatrizes';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -71,10 +73,15 @@ export function PeriodosBloqueados() {
   const currentYear = new Date().getFullYear();
   const anos = Array.from({ length: 10 }, (_, i) => (currentYear - 3 + i).toString());
 
+  // matrizes vem pelo execute-sql (role app_executor), não pelo PostgREST:
+  // com RLS ativo e sem policy, o SELECT via supabase.from('matrizes') devolveria
+  // lista vazia para o role authenticated.
+  const [fetchMatrizes] = useMutateAction(loadMatrizesAction);
+
   const loadMatrizes = useCallback(async () => {
-    const { data } = await supabase.from('matrizes').select('id, nome').order('nome');
-    if (data) setMatrizes(data as any);
-  }, []);
+    const data = await fetchMatrizes({ searchNome: null });
+    if (data) setMatrizes(data as Matriz[]);
+  }, [fetchMatrizes]);
 
   const loadBloqueios = useCallback(async () => {
     setLoading(true);
