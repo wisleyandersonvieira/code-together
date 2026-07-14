@@ -16,6 +16,7 @@ import loadDreContasPagarAction from '@/actions/loadDreContasPagar';
 import loadDreContasReceberAction from '@/actions/loadDreContasReceber';
 import loadAportesAction from '@/actions/loadAportes';
 import loadRetiradasAction from '@/actions/loadRetiradas';
+import loadDreEmprestimosAction from '@/actions/loadDreEmprestimos';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 
@@ -81,6 +82,12 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
     { matrizId, dataInicio, dataFim }
   );
 
+  const [emprestimos, loadingEmprestimos] = useLoadAction(
+    loadDreEmprestimosAction,
+    [],
+    { matrizId, dataInicio, dataFim }
+  );
+
   // Load additional data for PDF export
   const [estruturas] = useLoadAction(
     loadEstruturasDreAction,
@@ -93,7 +100,7 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
     { searchNome: null }
   );
 
-  const isLoading = loadingItens || loadingContasPagar || loadingContasReceber || loadingAportes || loadingRetiradas;
+  const isLoading = loadingItens || loadingContasPagar || loadingContasReceber || loadingAportes || loadingRetiradas || loadingEmprestimos;
 
   // Reset calculation when refreshTrigger changes
   useEffect(() => {
@@ -104,7 +111,7 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
   }, [refreshTrigger, refreshEstrutura]);
 
   useEffect(() => {
-    if (!isLoading && estruturaItens && contasPagar && contasReceber && aportes && retiradas && !hasCalculated) {
+    if (!isLoading && estruturaItens && contasPagar && contasReceber && aportes && retiradas && emprestimos && !hasCalculated) {
       console.log('Processando DRE - estruturaItens:', estruturaItens);
       
       // Process and calculate values for each structure item
@@ -137,6 +144,16 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
         } else if (item.tipo === 'RETIRADA') {
           // Sum all retiradas (negative)
           valor = -retiradas.reduce((sum: number, retirada: any) => sum + (Number(retirada.valor) || 0), 0);
+        } else if (item.tipo === 'EMPRESTIMO_ENTRADA') {
+          // Pagamentos de empréstimo entram no caixa (positive)
+          valor = emprestimos
+            .filter((e: any) => e.tipo === 'PAGAMENTO')
+            .reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+        } else if (item.tipo === 'EMPRESTIMO_SAIDA') {
+          // Empréstimos concedidos saem do caixa (negative)
+          valor = -emprestimos
+            .filter((e: any) => e.tipo === 'EMPRESTIMO')
+            .reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
         } else if (item.tipo === 'GRUPO') {
           // Group value is sum of its subgroups
           const subgroupValues = estruturaItens
@@ -191,7 +208,9 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
           const itemsAbove = sortedItems.slice(0, index).filter(aboveItem => 
             aboveItem.tipo === 'SUBGRUPO' || 
             aboveItem.tipo === 'APORTE' || 
-            aboveItem.tipo === 'RETIRADA'
+            aboveItem.tipo === 'RETIRADA' ||
+            aboveItem.tipo === 'EMPRESTIMO_ENTRADA' ||
+            aboveItem.tipo === 'EMPRESTIMO_SAIDA'
           );
           
           const somaValue = itemsAbove.reduce((sum: number, aboveItem) => {
@@ -210,7 +229,7 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
       setHasCalculated(true);
       onComplete();
     }
-  }, [isLoading, estruturaItens, contasPagar, contasReceber, aportes, retiradas, hasCalculated, onComplete]);
+  }, [isLoading, estruturaItens, contasPagar, contasReceber, aportes, retiradas, emprestimos, hasCalculated, onComplete]);
 
 
 
@@ -221,6 +240,8 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
       SOMA: 'outline',
       APORTE: 'default',
       RETIRADA: 'destructive',
+      EMPRESTIMO_ENTRADA: 'default',
+      EMPRESTIMO_SAIDA: 'destructive',
     } as const;
 
     return (
@@ -240,8 +261,8 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
   const getValueStyle = (item: DreItemResult) => {
     const baseStyle = `text-right ${getRowStyle(item)}`;
     
-    // Para RETIRADAS sempre vermelho (valores já negativos)
-    if (item.tipo === 'RETIRADA') {
+    // Para RETIRADAS e EMPRÉSTIMOS SAÍDA sempre vermelho (valores já negativos)
+    if (item.tipo === 'RETIRADA' || item.tipo === 'EMPRESTIMO_SAIDA') {
       return `${baseStyle} text-red-600`;
     }
     
@@ -290,6 +311,7 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
       {
         aportes,
         retiradas,
+        emprestimos,
       }
     );
 

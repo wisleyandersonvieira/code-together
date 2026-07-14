@@ -113,6 +113,7 @@ function buildDreExecutiveSummary(
   dreData: DreInfoExportItem[],
   aportes: any[],
   retiradas: any[],
+  emprestimos: any[],
   params: DreInfoExportParams,
   formatCurrency: (v: number) => string,
 ): string[] {
@@ -122,6 +123,10 @@ function buildDreExecutiveSummary(
 
   const totalAportes   = aportes.reduce((s, a) => s + safeNum(a.valor), 0);
   const totalRetiradas = retiradas.reduce((s, r) => s + safeNum(r.valor), 0);
+
+  // EMPRESTIMO = saída de caixa · PAGAMENTO = entrada de caixa
+  const totalEmprestimosSaida   = emprestimos.filter(e => e.tipo === 'EMPRESTIMO').reduce((s, e) => s + safeNum(e.valor), 0);
+  const totalEmprestimosEntrada = emprestimos.filter(e => e.tipo === 'PAGAMENTO').reduce((s, e) => s + safeNum(e.valor), 0);
 
   const criterio  = params.tipoData === 'competencia'
     ? 'competência'
@@ -145,6 +150,12 @@ function buildDreExecutiveSummary(
     );
   }
 
+  if (totalEmprestimosSaida > 0 || totalEmprestimosEntrada > 0) {
+    sentences.push(
+      `Os empréstimos concedidos somaram ${formatCurrency(totalEmprestimosSaida)} (saída de caixa) e os pagamentos de empréstimo somaram ${formatCurrency(totalEmprestimosEntrada)} (entrada de caixa).`,
+    );
+  }
+
   if (somaItems.length > 3) {
     const last = somaItems[somaItems.length - 1];
     sentences.push(
@@ -152,7 +163,7 @@ function buildDreExecutiveSummary(
     );
   }
 
-  return sentences.slice(0, 6);
+  return sentences.slice(0, 7);
 }
 
 // ─── Main export function ─────────────────────────────────────────────────────
@@ -161,9 +172,14 @@ export function exportDreInfoToPDF(
   dreData: DreInfoExportItem[],
   aportes: any[],
   retiradas: any[],
+  emprestimos: any[],
   params: DreInfoExportParams,
   formatCurrency: (v: number) => string,
 ): void {
+  // EMPRESTIMO = saída de caixa · PAGAMENTO = entrada de caixa
+  const emprestimosSaida   = (emprestimos || []).filter((e: any) => e.tipo === 'EMPRESTIMO');
+  const emprestimosEntrada = (emprestimos || []).filter((e: any) => e.tipo === 'PAGAMENTO');
+
   const doc          = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
   const pageWidth    = doc.internal.pageSize.width;
   const pageHeight   = doc.internal.pageSize.height;
@@ -371,6 +387,14 @@ export function exportDreInfoToPDF(
     cards.push({ label: 'Total de Aportes',   value: formatCurrency(totalAportes),   tone: 'positive' });
     cards.push({ label: 'Total de Retiradas', value: formatCurrency(totalRetiradas), tone: 'default'  });
 
+    // Empréstimos (entrada = pagamentos · saída = empréstimos concedidos)
+    const totalEmprestimosEntrada = emprestimosEntrada.reduce((sum: number, e: any) => sum + safeNum(e.valor), 0);
+    const totalEmprestimosSaida   = emprestimosSaida.reduce((sum: number, e: any) => sum + safeNum(e.valor), 0);
+    if (totalEmprestimosEntrada > 0 || totalEmprestimosSaida > 0) {
+      cards.push({ label: 'Empréstimo Entrada', value: formatCurrency(totalEmprestimosEntrada), tone: 'positive' });
+      cards.push({ label: 'Empréstimo Saída',   value: formatCurrency(totalEmprestimosSaida),   tone: 'default'  });
+    }
+
     // Limit to 8 cards
     const visibleCards = cards.slice(0, 8);
 
@@ -396,7 +420,7 @@ export function exportDreInfoToPDF(
   const drawExecutiveSummary = () => {
     drawSectionTitle('Leitura executiva', 'Resumo Executivo');
 
-    const sentences = buildDreExecutiveSummary(dreData, aportes, retiradas, params, formatCurrency);
+    const sentences = buildDreExecutiveSummary(dreData, aportes, retiradas, emprestimos || [], params, formatCurrency);
 
     setFill(doc, COLORS.light);
     setDraw(doc, COLORS.border);
@@ -461,6 +485,8 @@ export function exportDreInfoToPDF(
         tipo === 'SOMA'     ? { bg: COLORS.goldSoft, text: COLORS.gold } :
         tipo === 'APORTE'   ? { bg: COLORS.greenSoft, text: COLORS.green } :
         tipo === 'RETIRADA' ? { bg: COLORS.roseSoft, text: COLORS.rose } :
+        tipo === 'EMPRESTIMO_ENTRADA' ? { bg: COLORS.greenSoft, text: COLORS.green } :
+        tipo === 'EMPRESTIMO_SAIDA'   ? { bg: COLORS.roseSoft,  text: COLORS.rose } :
                               { bg: COLORS.light,     text: COLORS.graphite };
 
       setFill(doc, pal.bg);
@@ -468,7 +494,11 @@ export function exportDreInfoToPDF(
       setText(doc, pal.text);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.5);
-      doc.text(tipo, bx + 11, by + 3.5, { align: 'center' });
+      const badgeLabel =
+        tipo === 'EMPRESTIMO_ENTRADA' ? 'EMP. ENTRADA' :
+        tipo === 'EMPRESTIMO_SAIDA'   ? 'EMP. SAÍDA'   :
+        tipo;
+      doc.text(badgeLabel, bx + 11, by + 3.5, { align: 'center' });
     };
 
     drawTableHeader();
@@ -502,6 +532,8 @@ export function exportDreInfoToPDF(
         item.tipo === 'SOMA'     ? COLORS.goldSoft :
         item.tipo === 'APORTE'   ? COLORS.greenSoft :
         item.tipo === 'RETIRADA' ? COLORS.roseSoft :
+        item.tipo === 'EMPRESTIMO_ENTRADA' ? COLORS.greenSoft :
+        item.tipo === 'EMPRESTIMO_SAIDA'   ? COLORS.roseSoft :
         rowIndex % 2 === 0       ? COLORS.light : COLORS.white;
 
       setFill(doc, rowBg);
@@ -533,7 +565,7 @@ export function exportDreInfoToPDF(
       const valorNum = safeNum(item.valor);
       const valorFmt = formatCurrency(valorNum);
       const valorColor =
-        item.tipo === 'RETIRADA' || valorNum < 0 ? COLORS.rose :
+        item.tipo === 'RETIRADA' || item.tipo === 'EMPRESTIMO_SAIDA' || valorNum < 0 ? COLORS.rose :
         valorNum > 0                              ? COLORS.green :
                                                     COLORS.graphite;
       setText(doc, valorColor);
@@ -624,6 +656,49 @@ export function exportDreInfoToPDF(
 
         y += 2;
       }
+
+      // ── Sub-rows: EMPRÉSTIMO ENTRADA / SAÍDA participantes ───────────────────
+      const emprestimosDoItem =
+        item.tipo === 'EMPRESTIMO_ENTRADA' ? emprestimosEntrada :
+        item.tipo === 'EMPRESTIMO_SAIDA'   ? emprestimosSaida   :
+        [];
+
+      if (emprestimosDoItem.length > 0) {
+        const cor = item.tipo === 'EMPRESTIMO_ENTRADA' ? COLORS.green : COLORS.rose;
+
+        const socioMap = new Map<string, number>();
+        emprestimosDoItem.forEach((e: any) => {
+          const nome = e.socio_nome || 'N/A';
+          socioMap.set(nome, (socioMap.get(nome) || 0) + safeNum(e.valor));
+        });
+
+        socioMap.forEach((val, nomeSocio) => {
+          if (y + 7 > pageHeight - bottomRes) { addPage(); drawTableHeader(); }
+
+          setFill(doc, COLORS.light);
+          doc.rect(marginX, y, contentWidth, 7, 'F');
+          setDraw(doc, COLORS.border);
+          doc.setLineWidth(0.15);
+          doc.line(marginX, y + 7, pageWidth - marginX, y + 7);
+
+          setFill(doc, cor);
+          doc.circle(colX[2] + 8, y + 3.5, 1, 'F');
+
+          setText(doc, COLORS.graphite);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.8);
+          doc.text(nomeSocio, colX[2] + 11, y + 5);
+
+          setText(doc, cor);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.8);
+          doc.text(formatCurrency(safeNum(val)), colX[3] + COL_VALOR - 2, y + 5, { align: 'right' });
+
+          y += 7;
+        });
+
+        y += 2;
+      }
     });
 
     y += 6;
@@ -642,7 +717,8 @@ export function exportDreInfoToPDF(
       `Os valores seguem o critério de ${criterioLabel}.`,
       'A ordem e hierarquia das linhas respeitam integralmente a configuração de Estrutura DRE cadastrada no sistema.',
       'Grupos exibem a soma dos subgrupos vinculados. Linhas de SOMA agregam os itens imediatamente anteriores conforme a configuração.',
-      'Aportes e retiradas correspondem exclusivamente aos registros vinculados à matriz e ao período selecionado.',
+      'Aportes, retiradas e empréstimos correspondem exclusivamente aos registros vinculados à matriz e ao período selecionado.',
+      'Empréstimos concedidos reduzem o resultado (saída de caixa) e pagamentos de empréstimo o aumentam (entrada de caixa).',
       'Campos sem valor apurado no período são apresentados como R$ 0,00.',
       `Data e hora de emissão: ${issuedAt}.`,
     ];

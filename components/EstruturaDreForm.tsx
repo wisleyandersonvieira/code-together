@@ -22,7 +22,7 @@ import createEstruturaDreSomaItemAction from '@/actions/createEstruturaDreSomaIt
 
 interface EstruturaDreItem {
   id?: number;
-  tipo: 'GRUPO' | 'SUBGRUPO' | 'SOMA' | 'APORTE' | 'RETIRADA';
+  tipo: 'GRUPO' | 'SUBGRUPO' | 'SOMA' | 'APORTE' | 'RETIRADA' | 'EMPRESTIMO_ENTRADA' | 'EMPRESTIMO_SAIDA';
   nome: string;
   grupo_contabil_id?: number;
   subgrupo_contabil_id?: number;
@@ -33,7 +33,7 @@ interface EstruturaDreItem {
   subgrupo_nome?: string;
   subgrupo_funcao?: string;
   soma_referencias?: number[];
-  funcao?: 'CREDITO' | 'DEBITO'; // Fixed function for APORTE/RETIRADA
+  funcao?: 'CREDITO' | 'DEBITO'; // Fixed function for APORTE/RETIRADA/EMPRESTIMO_ENTRADA/EMPRESTIMO_SAIDA
 }
 
 interface EstruturaDreFormProps {
@@ -186,10 +186,37 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
     setNextOrder(nextOrder + 1);
   };
 
+  const addEmprestimoEntrada = () => {
+    const ordem = generateOrder('GRUPO');
+    const novoItem: EstruturaDreItem = {
+      tipo: 'EMPRESTIMO_ENTRADA',
+      nome: 'EMPRÉSTIMO ENTRADA',
+      ordem,
+      nivel: 1,
+      funcao: 'CREDITO',
+    };
+    setItens([...itens, novoItem]);
+    setNextOrder(nextOrder + 1);
+  };
+
+  const addEmprestimoSaida = () => {
+    const ordem = generateOrder('GRUPO');
+    const novoItem: EstruturaDreItem = {
+      tipo: 'EMPRESTIMO_SAIDA',
+      nome: 'EMPRÉSTIMO SAÍDA',
+      ordem,
+      nivel: 1,
+      funcao: 'DEBITO',
+    };
+    setItens([...itens, novoItem]);
+    setNextOrder(nextOrder + 1);
+  };
+
   const addLinhaSoma = () => {
     // Check if there are items available to sum
     const availableItems = itens.filter(item => 
-      (item.tipo === 'GRUPO' || item.tipo === 'SUBGRUPO' || item.tipo === 'APORTE' || item.tipo === 'RETIRADA') && 
+      (item.tipo === 'GRUPO' || item.tipo === 'SUBGRUPO' || item.tipo === 'APORTE' || item.tipo === 'RETIRADA' ||
+        item.tipo === 'EMPRESTIMO_ENTRADA' || item.tipo === 'EMPRESTIMO_SAIDA') && 
       item.nome.trim()
     );
     
@@ -320,7 +347,14 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
       
       for (let i = 0; i < itens.length; i++) {
         const item = itens[i];
-        if (item.tipo === 'GRUPO' || item.tipo === 'APORTE' || item.tipo === 'RETIRADA' || item.tipo === 'SOMA') {
+        if (
+          item.tipo === 'GRUPO' ||
+          item.tipo === 'APORTE' ||
+          item.tipo === 'RETIRADA' ||
+          item.tipo === 'EMPRESTIMO_ENTRADA' ||
+          item.tipo === 'EMPRESTIMO_SAIDA' ||
+          item.tipo === 'SOMA'
+        ) {
           try {
             if (item.id) {
               // Update existing item
@@ -457,6 +491,8 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
       SOMA: 'outline',
       APORTE: 'default',
       RETIRADA: 'destructive',
+      EMPRESTIMO_ENTRADA: 'default',
+      EMPRESTIMO_SAIDA: 'destructive',
     } as const;
 
     return (
@@ -526,6 +562,14 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
             <Button onClick={addRetirada} variant="outline" size="sm">
               <Plus className="mr-2 h-4 w-4" />
               Retirada
+            </Button>
+            <Button onClick={addEmprestimoEntrada} variant="outline" size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              Empréstimo Entrada
+            </Button>
+            <Button onClick={addEmprestimoSaida} variant="outline" size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              Empréstimo Saída
             </Button>
             <Button onClick={addLinhaSoma} variant="outline" size="sm">
               <Plus className="mr-2 h-4 w-4" />
@@ -612,7 +656,11 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                               </Select>
                             </div>
                           )}
-                          {(item.tipo === 'SOMA' || item.tipo === 'APORTE' || item.tipo === 'RETIRADA') && '-'}
+                          {(item.tipo === 'SOMA' ||
+                            item.tipo === 'APORTE' ||
+                            item.tipo === 'RETIRADA' ||
+                            item.tipo === 'EMPRESTIMO_ENTRADA' ||
+                            item.tipo === 'EMPRESTIMO_SAIDA') && '-'}
                         </TableCell>
                         <TableCell>
                           {item.tipo === 'SUBGRUPO' && (
@@ -651,6 +699,12 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
                             <Badge variant="default">Crédito</Badge>
                           )}
                           {item.tipo === 'RETIRADA' && (
+                            <Badge variant="secondary">Débito</Badge>
+                          )}
+                          {item.tipo === 'EMPRESTIMO_ENTRADA' && (
+                            <Badge variant="default">Crédito</Badge>
+                          )}
+                          {item.tipo === 'EMPRESTIMO_SAIDA' && (
                             <Badge variant="secondary">Débito</Badge>
                           )}
                           {item.tipo === 'SOMA' && (

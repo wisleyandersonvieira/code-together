@@ -37,7 +37,7 @@ import { useCurrency } from '@/hooks/use-currency';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
 import { exportExtratoBancarioPDF, exportExtratoBancarioExcel, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF, exportExtratoBySubgrupoContabilExcel } from '@/utils/export';
 
-type TipoMovimentacao = 'CP' | 'CR' | 'TR' | 'APORTE' | 'RETIRADA';
+type TipoMovimentacao = 'CP' | 'CR' | 'TR' | 'APORTE' | 'RETIRADA' | 'EMP' | 'PGEMP';
 
 interface ExtratoTransaction {
   data: string;
@@ -63,13 +63,15 @@ function getTipoLabel(tipo: TipoMovimentacao): string {
     TR: 'Transferência',
     APORTE: 'Aporte',
     RETIRADA: 'Retirada',
+    EMP: 'Empréstimo',
+    PGEMP: 'Pag. Empréstimo',
   };
   return labels[tipo] ?? tipo;
 }
 
 function getTipoTone(tipo: TipoMovimentacao): 'success' | 'danger' | 'neutral' | 'warning' {
-  if (tipo === 'CR' || tipo === 'APORTE') return 'success';
-  if (tipo === 'CP' || tipo === 'RETIRADA') return 'danger';
+  if (tipo === 'CR' || tipo === 'APORTE' || tipo === 'PGEMP') return 'success';
+  if (tipo === 'CP' || tipo === 'RETIRADA' || tipo === 'EMP') return 'danger';
   return 'neutral';
 }
 
@@ -143,6 +145,8 @@ export function ExtratoBancario() {
     { value: 'TR', label: 'Transferências' },
     { value: 'APORTE', label: 'Aportes' },
     { value: 'RETIRADA', label: 'Retiradas' },
+    { value: 'EMP', label: 'Empréstimos' },
+    { value: 'PGEMP', label: 'Pag. Empréstimos' },
   ];
 
   const transacoesComSaldo = useMemo((): TransacaoComSaldo[] => {

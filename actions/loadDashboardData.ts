@@ -75,6 +75,14 @@ function loadDashboardData() {
                 SELECT r.conta_id, -ABS(r.valor) as valor
                 FROM retiradas r
                 WHERE r.data_retirada IS NOT NULL AND r.data_retirada <= CURRENT_DATE
+                UNION ALL
+                SELECT e.conta_id, -ABS(e.valor) as valor
+                FROM emprestimos e
+                WHERE e.tipo = 'EMPRESTIMO' AND e.data_emprestimo IS NOT NULL AND e.data_emprestimo <= CURRENT_DATE
+                UNION ALL
+                SELECT e.conta_id, ABS(e.valor) as valor
+                FROM emprestimos e
+                WHERE e.tipo = 'PAGAMENTO' AND e.data_emprestimo IS NOT NULL AND e.data_emprestimo <= CURRENT_DATE
               ) movimentos ON c.id = movimentos.conta_id
               WHERE c.destaque = TRUE
               GROUP BY c.id, c.nome, c.banco, c.numero, c.saldo_inicial, c.data_saldo_inicial

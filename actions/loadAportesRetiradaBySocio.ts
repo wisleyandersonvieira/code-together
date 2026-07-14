@@ -36,6 +36,42 @@ function loadAportesRetiradaBySocio() {
         {{ params.matrizId   ? "AND r.matriz_id = " + params.matrizId : "" }}
       GROUP BY s.id, s.nome
 
+      UNION ALL
+
+      SELECT
+        s.id as socio_id,
+        s.nome as socio_nome,
+        'emprestimo' as tipo,
+        SUM(COALESCE(e.valor, 0)) as valor_total,
+        COUNT(e.id) as qtd_lancamentos
+      FROM emprestimos e
+      INNER JOIN socios s ON e.socio_id = s.id
+      WHERE e.conta_id = {{params.contaId}}
+        AND e.tipo = 'EMPRESTIMO'
+        AND e.data_emprestimo IS NOT NULL
+        {{ params.dataInicio ? "AND e.data_emprestimo >= '" + params.dataInicio + "'::date" : "" }}
+        {{ params.dataFim    ? "AND e.data_emprestimo <= '" + params.dataFim    + "'::date" : "" }}
+        {{ params.matrizId   ? "AND e.matriz_id = " + params.matrizId : "" }}
+      GROUP BY s.id, s.nome
+
+      UNION ALL
+
+      SELECT
+        s.id as socio_id,
+        s.nome as socio_nome,
+        'pagamento_emprestimo' as tipo,
+        SUM(COALESCE(e.valor, 0)) as valor_total,
+        COUNT(e.id) as qtd_lancamentos
+      FROM emprestimos e
+      INNER JOIN socios s ON e.socio_id = s.id
+      WHERE e.conta_id = {{params.contaId}}
+        AND e.tipo = 'PAGAMENTO'
+        AND e.data_emprestimo IS NOT NULL
+        {{ params.dataInicio ? "AND e.data_emprestimo >= '" + params.dataInicio + "'::date" : "" }}
+        {{ params.dataFim    ? "AND e.data_emprestimo <= '" + params.dataFim    + "'::date" : "" }}
+        {{ params.matrizId   ? "AND e.matriz_id = " + params.matrizId : "" }}
+      GROUP BY s.id, s.nome
+
       ORDER BY socio_nome, tipo;
     `,
   });

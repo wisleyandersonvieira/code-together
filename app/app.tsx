@@ -25,6 +25,7 @@ import {
   ChevronDown,
   CreditCard,
   DollarSign,
+  HandCoins,
   File,
   FileText,
   FolderOpen,
@@ -98,6 +99,7 @@ type TabType =
   | 'kanban'
   | 'aportes'
   | 'retiradas'
+  | 'emprestimos'
   | 'estruturas-dre'
   | 'create-estrutura-dre'
   | 'relatorio-dre'
@@ -151,6 +153,7 @@ const routes: Record<TabType, RouteDefinition> = {
   kanban: { path: '/painel', title: 'Painel' },
   aportes: { path: '/matriz/aportes', title: 'Aportes' },
   retiradas: { path: '/matriz/retiradas', title: 'Retiradas' },
+  emprestimos: { path: '/matriz/emprestimos', title: 'Empréstimos' },
   'estruturas-dre': { path: '/matriz/estrutura-dre', title: 'Estrutura DRE' },
   'create-estrutura-dre': { path: '/matriz/estrutura-dre/editar', title: 'Editar Estrutura DRE' },
   'relatorio-dre': { path: '/matriz/relatorio-dre', title: 'Relatorio DRE' },
@@ -218,6 +221,7 @@ const matrizTabs: TabType[] = [
   'matrizes',
   'aportes',
   'retiradas',
+  'emprestimos',
   'estruturas-dre',
   'create-estrutura-dre',
   'relatorio-dre',
@@ -289,6 +293,7 @@ const MatrizesList = lazy(() => import('@/components/MatrizesList').then((module
 const Kanban = lazy(() => import('@/components/Kanban').then((module) => ({ default: module.Kanban })));
 const AportesList = lazy(() => import('@/components/AportesList').then((module) => ({ default: module.AportesList })));
 const RetiradasList = lazy(() => import('@/components/RetiradasList').then((module) => ({ default: module.RetiradasList })));
+const EmprestimosList = lazy(() => import('@/components/EmprestimosList').then((module) => ({ default: module.EmprestimosList })));
 const EstruturasDreList = lazy(() => import('@/components/EstruturasDreList').then((module) => ({ default: module.EstruturasDreList })));
 const EstruturaDreForm = lazy(() => import('@/components/EstruturaDreForm').then((module) => ({ default: module.EstruturaDreForm })));
 const RelatorioDre = lazy(() => import('@/components/RelatorioDre').then((module) => ({ default: module.RelatorioDre })));
@@ -455,6 +460,7 @@ function MobileNavContent({
               {navItem('Matrizes', 'matrizes', <Building className="h-4 w-4" />)}
               {navItem('Aporte', 'aportes', <DollarSign className="h-4 w-4" />)}
               {navItem('Retirada', 'retiradas', <DollarSign className="h-4 w-4" />)}
+              {navItem('Empréstimos', 'emprestimos', <HandCoins className="h-4 w-4" />)}
               {navItem('Estrutura DRE', 'estruturas-dre', <FileText className="h-4 w-4" />)}
               {navItem('Relatório DRE', 'relatorio-dre', <PieChart className="h-4 w-4" />)}
               {navItem('DRE Info', 'relatorio-dre-info', <BarChart2 className="h-4 w-4" />)}
@@ -680,6 +686,8 @@ function App() {
         return <AportesList />;
       case 'retiradas':
         return <RetiradasList />;
+      case 'emprestimos':
+        return <EmprestimosList />;
       case 'estruturas-dre':
         return (
           <EstruturasDreList
@@ -1178,6 +1186,10 @@ function App() {
                 <DropdownMenuItem onClick={() => navigateTo('retiradas')}>
                   <DollarSign className="mr-2 h-4 w-4" />
                   Retirada
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('emprestimos')}>
+                  <HandCoins className="mr-2 h-4 w-4" />
+                  Empréstimos
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigateTo('estruturas-dre')}>
                   <FileText className="mr-2 h-4 w-4" />

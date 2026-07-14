@@ -70,6 +70,30 @@ function loadSaldoAtualConta() {
         WHERE r.conta_id = {{params.contaId}}
           AND r.data_retirada IS NOT NULL
           AND r.data_retirada <= CURRENT_DATE
+
+        UNION ALL
+
+        -- Empréstimos até hoje (Saídas - Débito)
+        SELECT
+          e.conta_id,
+          -ABS(e.valor) as valor
+        FROM emprestimos e
+        WHERE e.conta_id = {{params.contaId}}
+          AND e.tipo = 'EMPRESTIMO'
+          AND e.data_emprestimo IS NOT NULL
+          AND e.data_emprestimo <= CURRENT_DATE
+
+        UNION ALL
+
+        -- Pagamentos de Empréstimo até hoje (Entradas - Crédito)
+        SELECT
+          e.conta_id,
+          ABS(e.valor) as valor
+        FROM emprestimos e
+        WHERE e.conta_id = {{params.contaId}}
+          AND e.tipo = 'PAGAMENTO'
+          AND e.data_emprestimo IS NOT NULL
+          AND e.data_emprestimo <= CURRENT_DATE
       ),
       saldo_conta AS (
         SELECT 

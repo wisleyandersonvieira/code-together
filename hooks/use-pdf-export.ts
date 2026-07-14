@@ -13,6 +13,8 @@ interface DreItemResult {
 interface AportesRetiradas {
   aportes?: any[];
   retiradas?: any[];
+  // Registros de empréstimo do período (sem detalhe por sócio no DRE)
+  emprestimos?: any[];
 }
 
 export function usePdfExport() {
@@ -208,7 +210,7 @@ export function usePdfExport() {
         const valueWidth = doc.getTextWidth(valueText);
         
         // Set color based on value
-        if (item.valor < 0 || item.tipo === 'RETIRADA') {
+        if (item.valor < 0 || item.tipo === 'RETIRADA' || item.tipo === 'EMPRESTIMO_SAIDA') {
           doc.setTextColor(180, 20, 20); // Red for negative values
         } else if (item.valor > 0) {
           doc.setTextColor(20, 120, 20); // Green for positive values

@@ -1652,7 +1652,7 @@ export function exportExtratoByGrupoContabilPDF(
     if (!socioMap.has(key)) socioMap.set(key, { aportes: 0, retiradas: 0, qtdAportes: 0, qtdRetiradas: 0 });
     const s = socioMap.get(key)!;
     if (item.tipo === 'aporte') { s.aportes += Number(item.valor_total) || 0; s.qtdAportes += Number(item.qtd_lancamentos) || 0; }
-    else { s.retiradas += Number(item.valor_total) || 0; s.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
+    else if (item.tipo === 'retirada') { s.retiradas += Number(item.valor_total) || 0; s.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
   });
   const socios = Array.from(socioMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   const totalAportes = socios.reduce((s, [, v]) => s + v.aportes, 0);
@@ -1925,7 +1925,7 @@ export function exportExtratoBySubgrupoContabilPDF(
     if (!socioMap.has(key)) socioMap.set(key, { aportes: 0, retiradas: 0, qtdAportes: 0, qtdRetiradas: 0 });
     const s2 = socioMap.get(key)!;
     if (item.tipo === 'aporte') { s2.aportes += Number(item.valor_total) || 0; s2.qtdAportes += Number(item.qtd_lancamentos) || 0; }
-    else { s2.retiradas += Number(item.valor_total) || 0; s2.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
+    else if (item.tipo === 'retirada') { s2.retiradas += Number(item.valor_total) || 0; s2.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
   });
   const socios = Array.from(socioMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   const totalAportes = socios.reduce((s, [, v]) => s + v.aportes, 0);
@@ -2203,7 +2203,7 @@ export function exportExtratoBySubgrupoContabilExcel(
     if (!socioMap.has(key)) socioMap.set(key, { aportes: 0, retiradas: 0, qtdAportes: 0, qtdRetiradas: 0 });
     const s2 = socioMap.get(key)!;
     if (item.tipo === 'aporte') { s2.aportes += Number(item.valor_total) || 0; s2.qtdAportes += Number(item.qtd_lancamentos) || 0; }
-    else { s2.retiradas += Number(item.valor_total) || 0; s2.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
+    else if (item.tipo === 'retirada') { s2.retiradas += Number(item.valor_total) || 0; s2.qtdRetiradas += Number(item.qtd_lancamentos) || 0; }
   });
   const socios = Array.from(socioMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   const totalAportes = socios.reduce((s, [, v]) => s + v.aportes, 0);

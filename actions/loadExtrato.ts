@@ -176,6 +176,56 @@ function loadExtrato() {
           {{ params.dataFim    ? "AND r.data_retirada <= '" + params.dataFim    + "'::date" : "" }}
           {{ params.tipo       ? "AND 'RETIRADA' = '"       + params.tipo       + "'"       : "" }}
           {{ params.matrizId   ? "AND r.matriz_id = "       + params.matrizId              : "" }}
+
+        UNION ALL
+
+        -- Empréstimos (Saídas) — dinheiro emprestado sai da conta
+        SELECT
+          e.data_emprestimo::text                 AS data,
+          s.nome                                  AS fornecedor_creditor,
+          NULL                                    AS numero_documento,
+          NULL                                    AS projeto,
+          -e.valor::numeric(15,2)                 AS valor,
+          'EMP'                                   AS tipo,
+          m.nome                                  AS matriz_nome,
+          NULLIF(TRIM(COALESCE(e.observacoes, '')), '') AS observacoes,
+          e.data_emprestimo                       AS data_ordenacao,
+          e.created_at                            AS created_at_ordenacao
+        FROM emprestimos e
+        INNER JOIN socios s   ON e.socio_id  = s.id
+        LEFT  JOIN matrizes m ON e.matriz_id = m.id
+        WHERE e.conta_id = {{params.contaId}}
+          AND e.tipo = 'EMPRESTIMO'
+          AND e.data_emprestimo IS NOT NULL
+          {{ params.dataInicio ? "AND e.data_emprestimo >= '" + params.dataInicio + "'::date" : "" }}
+          {{ params.dataFim    ? "AND e.data_emprestimo <= '" + params.dataFim    + "'::date" : "" }}
+          {{ params.tipo       ? "AND 'EMP' = '"              + params.tipo       + "'"       : "" }}
+          {{ params.matrizId   ? "AND e.matriz_id = "         + params.matrizId              : "" }}
+
+        UNION ALL
+
+        -- Pagamentos de Empréstimo (Entradas) — dinheiro devolvido entra na conta
+        SELECT
+          e.data_emprestimo::text                 AS data,
+          s.nome                                  AS fornecedor_creditor,
+          NULL                                    AS numero_documento,
+          NULL                                    AS projeto,
+          e.valor::numeric(15,2)                  AS valor,
+          'PGEMP'                                 AS tipo,
+          m.nome                                  AS matriz_nome,
+          NULLIF(TRIM(COALESCE(e.observacoes, '')), '') AS observacoes,
+          e.data_emprestimo                       AS data_ordenacao,
+          e.created_at                            AS created_at_ordenacao
+        FROM emprestimos e
+        INNER JOIN socios s   ON e.socio_id  = s.id
+        LEFT  JOIN matrizes m ON e.matriz_id = m.id
+        WHERE e.conta_id = {{params.contaId}}
+          AND e.tipo = 'PAGAMENTO'
+          AND e.data_emprestimo IS NOT NULL
+          {{ params.dataInicio ? "AND e.data_emprestimo >= '" + params.dataInicio + "'::date" : "" }}
+          {{ params.dataFim    ? "AND e.data_emprestimo <= '" + params.dataFim    + "'::date" : "" }}
+          {{ params.tipo       ? "AND 'PGEMP' = '"            + params.tipo       + "'"       : "" }}
+          {{ params.matrizId   ? "AND e.matriz_id = "         + params.matrizId              : "" }}
       )
       SELECT * FROM movimentacoes
       ORDER BY data_ordenacao ASC, created_at_ordenacao ASC;

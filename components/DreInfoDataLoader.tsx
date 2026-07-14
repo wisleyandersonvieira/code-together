@@ -22,6 +22,7 @@ import loadDreInfoContasPagarAction from '@/actions/loadDreInfoContasPagar';
 import loadDreInfoContasReceberAction from '@/actions/loadDreInfoContasReceber';
 import loadAportesAction from '@/actions/loadAportes';
 import loadRetiradasAction from '@/actions/loadRetiradas';
+import loadEmprestimosAction from '@/actions/loadEmprestimos';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import { DreInfoSubgrupoDetalhe } from '@/components/DreInfoSubgrupoDetalhe';
@@ -113,11 +114,28 @@ export function DreInfoDataLoader({
     dataFim,
   });
 
+  // exportAll ignora a paginação da listagem: o DRE precisa de todos os registros
+  const [emprestimos, loadingEmprestimos] = useLoadAction(loadEmprestimosAction, [], {
+    matrizId,
+    dataInicio,
+    dataFim,
+    exportAll: true,
+  });
+
+  // EMPRESTIMO = saída de caixa · PAGAMENTO = entrada de caixa
+  const emprestimosSaida = (emprestimos as any[]).filter((e) => e.tipo === 'EMPRESTIMO');
+  const emprestimosEntrada = (emprestimos as any[]).filter((e) => e.tipo === 'PAGAMENTO');
+
   const [estruturas] = useLoadAction(loadEstruturasDreAction, []);
   const [matrizes] = useLoadAction(loadMatrizesAction, [], { searchNome: null });
 
   const isLoading =
-    loadingItens || loadingContasPagar || loadingContasReceber || loadingAportes || loadingRetiradas;
+    loadingItens ||
+    loadingContasPagar ||
+    loadingContasReceber ||
+    loadingAportes ||
+    loadingRetiradas ||
+    loadingEmprestimos;
 
   // ── Reset on refresh ────────────────────────────────────────────────────────
 
@@ -139,6 +157,7 @@ export function DreInfoDataLoader({
       contasReceber &&
       aportes &&
       retiradas &&
+      emprestimos &&
       !hasCalculated
     ) {
       const processedItems: DreItemResult[] = estruturaItens.map((item: any) => {
@@ -162,6 +181,10 @@ export function DreInfoDataLoader({
           valor = aportes.reduce((sum: number, a: any) => sum + (Number(a.valor) || 0), 0);
         } else if (item.tipo === 'RETIRADA') {
           valor = -retiradas.reduce((sum: number, r: any) => sum + (Number(r.valor) || 0), 0);
+        } else if (item.tipo === 'EMPRESTIMO_ENTRADA') {
+          valor = emprestimosEntrada.reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+        } else if (item.tipo === 'EMPRESTIMO_SAIDA') {
+          valor = -emprestimosSaida.reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
         } else if (item.tipo === 'GRUPO') {
           valor = estruturaItens
             .filter((sub: any) => sub.tipo === 'SUBGRUPO' && sub.parent_id === item.id)
@@ -205,7 +228,11 @@ export function DreInfoDataLoader({
             .slice(0, index)
             .filter(
               (above) =>
-                above.tipo === 'SUBGRUPO' || above.tipo === 'APORTE' || above.tipo === 'RETIRADA'
+                above.tipo === 'SUBGRUPO' ||
+                above.tipo === 'APORTE' ||
+                above.tipo === 'RETIRADA' ||
+                above.tipo === 'EMPRESTIMO_ENTRADA' ||
+                above.tipo === 'EMPRESTIMO_SAIDA'
             );
           const somaValue = itemsAbove.reduce((sum, above) => sum + above.valor, 0);
           return { ...item, valor: somaValue };
@@ -217,7 +244,7 @@ export function DreInfoDataLoader({
       setHasCalculated(true);
       onComplete();
     }
-  }, [isLoading, estruturaItens, contasPagar, contasReceber, aportes, retiradas, hasCalculated, onComplete]);
+  }, [isLoading, estruturaItens, contasPagar, contasReceber, aportes, retiradas, emprestimos, hasCalculated, onComplete]);
 
   // ── Expand / collapse ───────────────────────────────────────────────────────
 
@@ -234,7 +261,11 @@ export function DreInfoDataLoader({
   }, []);
 
   const isExpandable = (item: DreItemResult) =>
-    item.tipo === 'SUBGRUPO' || item.tipo === 'APORTE' || item.tipo === 'RETIRADA';
+    item.tipo === 'SUBGRUPO' ||
+    item.tipo === 'APORTE' ||
+    item.tipo === 'RETIRADA' ||
+    item.tipo === 'EMPRESTIMO_ENTRADA' ||
+    item.tipo === 'EMPRESTIMO_SAIDA';
 
   // ── Visual helpers (same as DreDataLoader) ──────────────────────────────────
 
@@ -245,6 +276,8 @@ export function DreInfoDataLoader({
       SOMA: 'outline',
       APORTE: 'default',
       RETIRADA: 'destructive',
+      EMPRESTIMO_ENTRADA: 'default',
+      EMPRESTIMO_SAIDA: 'destructive',
     };
     return <Badge variant={variants[tipo] || 'default'}>{tipo}</Badge>;
   };
@@ -254,7 +287,7 @@ export function DreInfoDataLoader({
 
   const getValueStyle = (item: DreItemResult) => {
     const base = `text-right ${getRowStyle(item)}`;
-    if (item.tipo === 'RETIRADA') return `${base} text-red-600`;
+    if (item.tipo === 'RETIRADA' || item.tipo === 'EMPRESTIMO_SAIDA') return `${base} text-red-600`;
     if (item.tipo === 'SUBGRUPO' && (item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO'))
       return `${base} text-red-600`;
     if (item.tipo === 'GRUPO' && item.valor < 0) return `${base} text-red-600`;
@@ -275,8 +308,9 @@ export function DreInfoDataLoader({
 
       exportDreInfoToPDF(
         dreData,
-        aportes   || [],
-        retiradas || [],
+        aportes     || [],
+        retiradas   || [],
+        emprestimos || [],
         { dataInicio, dataFim, tipoData, estruturaNome, matrizNome, projetoNome },
         formatCurrency,
       );
@@ -356,6 +390,22 @@ export function DreInfoDataLoader({
           consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
           (retiradas as any[]).forEach((r) => {
             consolidadoRows.push(['', '', `    ${r.data_retirada || '-'}`, r.socio_nome || '-', '', '', Number(r.valor) || 0]);
+          });
+        }
+
+        // If EMPRESTIMO_ENTRADA expanded, add pagamento detail rows
+        if (expandedRows.has(item.id) && item.tipo === 'EMPRESTIMO_ENTRADA' && emprestimosEntrada.length > 0) {
+          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          emprestimosEntrada.forEach((e: any) => {
+            consolidadoRows.push(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]);
+          });
+        }
+
+        // If EMPRESTIMO_SAIDA expanded, add empréstimo detail rows
+        if (expandedRows.has(item.id) && item.tipo === 'EMPRESTIMO_SAIDA' && emprestimosSaida.length > 0) {
+          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          emprestimosSaida.forEach((e: any) => {
+            consolidadoRows.push(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]);
           });
         }
       });
@@ -476,6 +526,26 @@ export function DreInfoDataLoader({
         XLSX.utils.book_append_sheet(wb, ws4, 'Retiradas');
       }
 
+      // ── Sheet 5: Empréstimos ──────────────────────────────────────────────
+
+      if (emprestimos && emprestimos.length > 0) {
+        const ws5 = XLSX.utils.json_to_sheet([]);
+        XLSX.utils.sheet_add_aoa(ws5, [['Data', 'Tipo', 'Sócio', 'Valor']]);
+        XLSX.utils.sheet_add_json(
+          ws5,
+          (emprestimos as any[]).map((e) => ({
+            Data: e.data_emprestimo || '',
+            Tipo: e.tipo === 'PAGAMENTO' ? 'Pagamento' : 'Empréstimo',
+            Sócio: e.socio_nome || '',
+            // Empréstimo sai do caixa (negativo), pagamento entra (positivo)
+            Valor: (e.tipo === 'PAGAMENTO' ? 1 : -1) * (Number(e.valor) || 0),
+          })),
+          { origin: 'A2', skipHeader: true }
+        );
+        ws5['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 35 }, { wch: 18 }];
+        XLSX.utils.book_append_sheet(wb, ws5, 'Empréstimos');
+      }
+
       const matrizNomeClean = matrizNome.replace(/[^a-zA-Z0-9]/g, '_');
       XLSX.writeFile(wb, `DRE_Info_${matrizNomeClean}_${dataInicio}_${dataFim}.xlsx`);
 
@@ -528,7 +598,9 @@ export function DreInfoDataLoader({
       <p className="text-xs text-muted-foreground italic">
         Clique na seta ao lado de um <Badge variant="secondary" className="text-[10px] px-1 py-0">SUBGRUPO</Badge>,{' '}
         <Badge variant="default" className="text-[10px] px-1 py-0">APORTE</Badge> ou{' '}
-        <Badge variant="destructive" className="text-[10px] px-1 py-0">RETIRADA</Badge> para expandir os lançamentos.
+        <Badge variant="destructive" className="text-[10px] px-1 py-0">RETIRADA</Badge>,{' '}
+        <Badge variant="default" className="text-[10px] px-1 py-0">EMPRESTIMO_ENTRADA</Badge> ou{' '}
+        <Badge variant="destructive" className="text-[10px] px-1 py-0">EMPRESTIMO_SAIDA</Badge> para expandir os lançamentos.
       </p>
 
       <div className="rounded-md border overflow-hidden">
@@ -716,6 +788,116 @@ export function DreInfoDataLoader({
                       )}
                     </>
                   )}
+                  {/* ── Expanded detail: EMPRESTIMO_ENTRADA (pagamentos) ──── */}
+                  {expanded && item.tipo === 'EMPRESTIMO_ENTRADA' && (
+                    <>
+                      {emprestimosEntrada.length === 0 ? (
+                        <TableRow className="bg-slate-50/60">
+                          <TableCell colSpan={3} className="py-2 px-4">
+                            <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
+                              Nenhum pagamento de empréstimo encontrado no período.
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <>
+                          <TableRow className="bg-blue-50/60 hover:bg-blue-50/60">
+                            <TableCell colSpan={3} className="py-1 px-4">
+                              <div
+                                className="grid text-xs font-semibold text-slate-500 border-l-2 border-blue-300 pl-3"
+                                style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
+                              >
+                                <span>Data</span>
+                                <span>Sócio</span>
+                                <span className="text-right">Valor</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {emprestimosEntrada.map((registro: any, idx: number) => (
+                            <TableRow
+                              key={`emprestimo_entrada_${idx}`}
+                              className="bg-slate-50/40 hover:bg-blue-50/30 border-b border-slate-100"
+                            >
+                              <TableCell colSpan={3} className="py-1 px-4">
+                                <div
+                                  className="grid text-xs items-center border-l-2 border-blue-100 pl-3"
+                                  style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
+                                >
+                                  <span className="text-muted-foreground font-mono">
+                                    {registro.data_emprestimo
+                                      ? new Date(String(registro.data_emprestimo).split('T')[0] + 'T00:00:00').toLocaleDateString('pt-BR')
+                                      : '-'}
+                                  </span>
+                                  <span className="font-medium text-slate-700">
+                                    {registro.socio_nome || '-'}
+                                  </span>
+                                  <span className="text-right font-mono font-medium text-green-700">
+                                    {formatCurrency(Number(registro.valor) || 0)}
+                                  </span>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {/* ── Expanded detail: EMPRESTIMO_SAIDA (empréstimos) ───── */}
+                  {expanded && item.tipo === 'EMPRESTIMO_SAIDA' && (
+                    <>
+                      {emprestimosSaida.length === 0 ? (
+                        <TableRow className="bg-slate-50/60">
+                          <TableCell colSpan={3} className="py-2 px-4">
+                            <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
+                              Nenhum empréstimo encontrado no período.
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <>
+                          <TableRow className="bg-red-50/60 hover:bg-red-50/60">
+                            <TableCell colSpan={3} className="py-1 px-4">
+                              <div
+                                className="grid text-xs font-semibold text-slate-500 border-l-2 border-red-300 pl-3"
+                                style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
+                              >
+                                <span>Data</span>
+                                <span>Sócio</span>
+                                <span className="text-right">Valor</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {emprestimosSaida.map((registro: any, idx: number) => (
+                            <TableRow
+                              key={`emprestimo_saida_${idx}`}
+                              className="bg-slate-50/40 hover:bg-red-50/30 border-b border-slate-100"
+                            >
+                              <TableCell colSpan={3} className="py-1 px-4">
+                                <div
+                                  className="grid text-xs items-center border-l-2 border-red-100 pl-3"
+                                  style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
+                                >
+                                  <span className="text-muted-foreground font-mono">
+                                    {registro.data_emprestimo
+                                      ? new Date(String(registro.data_emprestimo).split('T')[0] + 'T00:00:00').toLocaleDateString('pt-BR')
+                                      : '-'}
+                                  </span>
+                                  <span className="font-medium text-slate-700">
+                                    {registro.socio_nome || '-'}
+                                  </span>
+                                  <span className="text-right font-mono font-medium text-red-600">
+                                    {formatCurrency(Number(registro.valor) || 0)}
+                                  </span>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </>
+                      )}
+                    </>
+                  )}
+
                 </React.Fragment>
               );
             })}

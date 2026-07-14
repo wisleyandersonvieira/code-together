@@ -150,6 +150,10 @@ export function DreProjetoDataLoader({
         } else if (item.tipo === 'APORTE') {
           // Sum project-related aportes (positive)
           valor = aportes.reduce((sum: number, aporte: any) => sum + (Number(aporte.valor_rateado) || 0), 0);
+        } else if (item.tipo === 'EMPRESTIMO_ENTRADA' || item.tipo === 'EMPRESTIMO_SAIDA') {
+          // Empréstimos não possuem vínculo com projeto (não há rateio por projeto),
+          // portanto não compõem o DRE por Projeto: valor permanece 0.
+          valor = 0;
         } else if (item.tipo === 'GRUPO') {
           // Group value is sum of its subgroups
           const subgroupValues = estruturaItens
@@ -231,6 +235,8 @@ export function DreProjetoDataLoader({
       SOMA: 'outline',
       APORTE: 'default',
       RETIRADA: 'destructive',
+      EMPRESTIMO_ENTRADA: 'default',
+      EMPRESTIMO_SAIDA: 'destructive',
     } as const;
 
     return (

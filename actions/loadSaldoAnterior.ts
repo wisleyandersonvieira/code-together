@@ -58,6 +58,26 @@ function loadSaldoAnterior() {
         WHERE r.conta_id = {{params.contaId}}
           AND r.data_retirada IS NOT NULL
           {{ params.dataInicio ? "AND r.data_retirada < '" + params.dataInicio + "'::date" : "" }}
+
+        UNION ALL
+
+        -- Empréstimos antes do período (saída)
+        SELECT -e.valor::numeric(15,2) AS valor
+        FROM emprestimos e
+        WHERE e.conta_id = {{params.contaId}}
+          AND e.tipo = 'EMPRESTIMO'
+          AND e.data_emprestimo IS NOT NULL
+          {{ params.dataInicio ? "AND e.data_emprestimo < '" + params.dataInicio + "'::date" : "" }}
+
+        UNION ALL
+
+        -- Pagamentos de Empréstimo antes do período (entrada)
+        SELECT e.valor::numeric(15,2) AS valor
+        FROM emprestimos e
+        WHERE e.conta_id = {{params.contaId}}
+          AND e.tipo = 'PAGAMENTO'
+          AND e.data_emprestimo IS NOT NULL
+          {{ params.dataInicio ? "AND e.data_emprestimo < '" + params.dataInicio + "'::date" : "" }}
       ),
       saldo_conta AS (
         SELECT
