@@ -165,9 +165,13 @@ export function EmprestimosList() {
     setIsFormOpen(true);
   };
 
-  const handleFormSuccess = async () => {
-    setIsFormOpen(false);
-    setEditingEmprestimo(null);
+  const handleFormSuccess = async (options?: { keepOpen?: boolean }) => {
+    // Em novos cadastros mantemos o modal aberto (sócio/matriz/conta preenchidos)
+    // para agilizar múltiplos lançamentos; só fechamos ao editar.
+    if (!options?.keepOpen) {
+      setIsFormOpen(false);
+      setEditingEmprestimo(null);
+    }
     await refreshEmprestimos();
   };
 

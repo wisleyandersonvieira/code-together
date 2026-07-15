@@ -62,7 +62,11 @@ interface EmprestimoFormProps {
   /** Define o tipo gravado no registro e o título do modal */
   tipo: EmprestimoTipo;
   emprestimo?: Emprestimo | null;
-  onSuccess: () => void;
+  /**
+   * Chamado após salvar com sucesso. Quando `keepOpen` é true (cadastro de um
+   * novo registro), o modal deve permanecer aberto para agilizar novos lançamentos.
+   */
+  onSuccess: (options?: { keepOpen?: boolean }) => void;
   onCancel: () => void;
 }
 
@@ -106,6 +110,7 @@ export function EmprestimoForm({ tipo, emprestimo, onSuccess, onCancel }: Empres
           title: 'Registro atualizado',
           description: `O ${entidade} foi atualizado com sucesso.`,
         });
+        onSuccess();
       } else {
         await createEmprestimo({ tipo, ...data });
         toast({
@@ -114,8 +119,17 @@ export function EmprestimoForm({ tipo, emprestimo, onSuccess, onCancel }: Empres
             ? 'O pagamento de empréstimo foi cadastrado e a entrada foi registrada na conta.'
             : 'O empréstimo foi cadastrado e a saída foi registrada na conta.',
         });
+        // Mantém sócio, matriz e conta preenchidos e limpa apenas data, valor e
+        // observações, para facilitar o cadastro de vários lançamentos seguidos.
+        form.reset({
+          ...form.getValues(),
+          dataEmprestimo: new Date().toISOString().split('T')[0],
+          valor: undefined,
+          observacoes: '',
+        });
+        form.setFocus('valor');
+        onSuccess({ keepOpen: true });
       }
-      onSuccess();
     } catch (error: any) {
       toast({
         title: 'Erro',
