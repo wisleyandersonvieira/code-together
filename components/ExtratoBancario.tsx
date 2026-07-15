@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useLoadAction } from '@uibakery/data';
+import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Calendar, ChevronDown, FileDown, FileSpreadsheet, FileText, X } from 'lucide-react';
 
 import loadContasAction from '@/actions/loadContas';
@@ -11,6 +11,8 @@ import loadExtratoBySubgrupoAction from '@/actions/loadExtratoBySubgrupoContabil
 import loadAportesRetiradaBySocioAction from '@/actions/loadAportesRetiradaBySocio';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadSaldoAnteriorAction from '@/actions/loadSaldoAnterior';
+import loadConciliacoesAction from '@/actions/loadConciliacoes';
+import setConciliacaoAction from '@/actions/setConciliacao';
 import {
   FinanceStatusBadge,
   ListingEmptyState,
@@ -23,6 +25,7 @@ import {
   listingTableHeadClassName,
 } from '@/components/finance/listing-ui';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -34,6 +37,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCurrency } from '@/hooks/use-currency';
+import { useToast } from '@/hooks/use-toast';
+import { useCurrentUser } from '@/lib/userContext';
 import { formatDateForDatabase, formatDateForDisplay } from '@/utils/timezone';
 import { exportExtratoBancarioPDF, exportExtratoBancarioExcel, exportExtratoByGrupoContabilPDF, exportExtratoBySubgrupoContabilPDF, exportExtratoBySubgrupoContabilExcel } from '@/utils/export';
 
@@ -48,12 +53,16 @@ interface ExtratoTransaction {
   tipo: TipoMovimentacao;
   matriz_nome?: string;
   observacoes?: string;
+  // Identificador estável do lançamento de origem (par usado para conciliar).
+  origem: string;
+  origem_id: number;
 }
 
 interface TransacaoComSaldo extends ExtratoTransaction {
   saldo_linha: number;
   entrada: number;
   saida: number;
+  conciliado: boolean;
 }
 
 function getTipoLabel(tipo: TipoMovimentacao): string {
@@ -69,6 +78,31 @@ function getTipoLabel(tipo: TipoMovimentacao): string {
   return labels[tipo] ?? tipo;
 }
 
+// Siglas exibidas no badge de tipo (apenas na TELA; exports mantêm nome completo).
+function getTipoSigla(tipo: TipoMovimentacao): string {
+  const siglas: Record<TipoMovimentacao, string> = {
+    CP: 'PG',
+    CR: 'RC',
+    APORTE: 'AP',
+    RETIRADA: 'RET',
+    EMP: 'EMP',
+    TR: 'TRA',
+    PGEMP: 'P.EM',
+  };
+  return siglas[tipo] ?? tipo;
+}
+
+// Chave de conciliação = par (origem, origem_id), estável entre gerações.
+function conciliacaoKey(origem: string, origemId: number | string): string {
+  return `${origem}::${origemId}`;
+}
+
+interface ConciliacaoRow {
+  origem: string;
+  origem_id: number;
+  conciliado: boolean;
+}
+
 function getTipoTone(tipo: TipoMovimentacao): 'success' | 'danger' | 'neutral' | 'warning' {
   if (tipo === 'CR' || tipo === 'APORTE' || tipo === 'PGEMP') return 'success';
   if (tipo === 'CP' || tipo === 'RETIRADA' || tipo === 'EMP') return 'danger';
@@ -77,6 +111,8 @@ function getTipoTone(tipo: TipoMovimentacao): 'success' | 'danger' | 'neutral' |
 
 export function ExtratoBancario() {
   const { formatCurrency } = useCurrency();
+  const { toast } = useToast();
+  const currentUser = useCurrentUser();
   const [contas] = useLoadAction(loadContasAction, []);
   const [matrizes] = useLoadAction(loadMatrizesAction, [], { searchNome: null });
 
@@ -86,6 +122,14 @@ export function ExtratoBancario() {
   const [tipo, setTipo] = useState<string>('all');
   const [matrizId, setMatrizId] = useState<string>('all');
   const [showExtrato, setShowExtrato] = useState(false);
+  // Filtro de conciliação (client-side): 'all' | 'conciliados' | 'nao'.
+  const [conciliacaoFilter, setConciliacaoFilter] = useState<string>('all');
+  // Overrides otimistas por (origem, origem_id): sobrepõem o estado do servidor
+  // enquanto o UPSERT roda. Só guardam as linhas que o usuário tocou; qualquer
+  // outra linha continua vindo do servidor (persistindo entre gerações).
+  const [conciliadoOverrides, setConciliadoOverrides] = useState<Record<string, boolean>>({});
+
+  const [setConciliacao] = useMutateAction(setConciliacaoAction);
 
   const [transacoes, transacoesLoading, transacoesError] = useLoadAction(loadExtratoAction, [], {
     contaId: contaId ? parseInt(contaId) : null,
@@ -98,6 +142,12 @@ export function ExtratoBancario() {
   const [saldoData] = useLoadAction(loadSaldoAnteriorAction, [], {
     contaId: contaId ? parseInt(contaId) : null,
     dataInicio: dataInicio ? formatDateForDatabase(dataInicio) : null,
+  });
+
+  // Estado de conciliação persistido da conta (independe do período: a
+  // conciliação é permanente e casa com qualquer geração do extrato).
+  const [conciliacoesData] = useLoadAction(loadConciliacoesAction, [], {
+    contaId: contaId ? parseInt(contaId) : null,
   });
 
   const [extratoByGrupo] = useLoadAction(loadExtratoByGrupoAction, [], {
@@ -149,22 +199,52 @@ export function ExtratoBancario() {
     { value: 'PGEMP', label: 'Pag. Empréstimos' },
   ];
 
+  const conciliacaoOptions = [
+    { value: 'all', label: 'Todos' },
+    { value: 'conciliados', label: 'Conciliados' },
+    { value: 'nao', label: 'Não conciliados' },
+  ];
+
+  // Estado de conciliação vindo do servidor, indexado por (origem, origem_id).
+  const conciliadoServerMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    (conciliacoesData as ConciliacaoRow[] | null | undefined)?.forEach((c) => {
+      map[conciliacaoKey(c.origem, c.origem_id)] = Boolean(c.conciliado);
+    });
+    return map;
+  }, [conciliacoesData]);
+
   const transacoesComSaldo = useMemo((): TransacaoComSaldo[] => {
     if (!transacoes || !saldoData?.[0]) return [];
     const saldoAnterior = Number(saldoData[0].saldo_anterior) || 0;
     let acumulado = saldoAnterior;
+    // O saldo corrente é calculado sobre TODAS as linhas do extrato, na ordem
+    // cronológica — nunca depende do filtro de conciliação (que só oculta linhas).
     return transacoes.map((t: ExtratoTransaction) => {
       const valor = Number(t.valor) || 0;
       acumulado = Math.round((acumulado + valor) * 100) / 100;
+      const key = conciliacaoKey(t.origem, t.origem_id);
+      // Override otimista tem prioridade; senão usa o estado do servidor; senão false.
+      const conciliado =
+        key in conciliadoOverrides ? conciliadoOverrides[key] : conciliadoServerMap[key] ?? false;
       return {
         ...t,
         valor,
         saldo_linha: acumulado,
         entrada: valor > 0 ? valor : 0,
         saida: valor < 0 ? Math.abs(valor) : 0,
+        conciliado,
       };
     });
-  }, [transacoes, saldoData]);
+  }, [transacoes, saldoData, conciliadoServerMap, conciliadoOverrides]);
+
+  // Filtro de conciliação — CLIENT-SIDE, apenas oculta linhas para conferência.
+  // NÃO recalcula o saldo corrente: cada linha mantém o saldo do extrato completo.
+  const linhasVisiveis = useMemo(() => {
+    if (conciliacaoFilter === 'conciliados') return transacoesComSaldo.filter((t) => t.conciliado);
+    if (conciliacaoFilter === 'nao') return transacoesComSaldo.filter((t) => !t.conciliado);
+    return transacoesComSaldo;
+  }, [transacoesComSaldo, conciliacaoFilter]);
 
   const resumo = useMemo(() => {
     const saldoAnterior = Number(saldoData?.[0]?.saldo_anterior) || 0;
@@ -174,8 +254,43 @@ export function ExtratoBancario() {
       transacoesComSaldo.length > 0
         ? transacoesComSaldo[transacoesComSaldo.length - 1].saldo_linha
         : saldoAnterior;
-    return { saldoAnterior, totalEntradas, totalSaidas, saldoFinal, count: transacoesComSaldo.length };
+    // Contagem de conciliados sempre sobre o extrato completo (não sobre o filtro).
+    const conciliados = transacoesComSaldo.filter((t) => t.conciliado).length;
+    return {
+      saldoAnterior,
+      totalEntradas,
+      totalSaidas,
+      saldoFinal,
+      count: transacoesComSaldo.length,
+      conciliados,
+    };
   }, [transacoesComSaldo, saldoData]);
+
+  // Marca/desmarca uma linha: atualização otimista + UPSERT; em erro, reverte.
+  const handleToggleConciliacao = async (t: TransacaoComSaldo) => {
+    const key = conciliacaoKey(t.origem, t.origem_id);
+    const novoValor = !t.conciliado;
+    // Otimista: só a linha muda, sem regerar o extrato inteiro.
+    setConciliadoOverrides((prev) => ({ ...prev, [key]: novoValor }));
+    try {
+      await setConciliacao({
+        origem: t.origem,
+        origemId: t.origem_id,
+        contaId: contaId ? parseInt(contaId) : null,
+        conciliado: novoValor,
+        conciliadoPor: currentUser?.id ?? null,
+      });
+    } catch (error) {
+      console.error('Erro ao salvar conciliação:', error);
+      // Reverte para o estado anterior ao clique.
+      setConciliadoOverrides((prev) => ({ ...prev, [key]: t.conciliado }));
+      toast({
+        title: 'Erro ao conciliar',
+        description: 'Não foi possível salvar a conciliação. Tente novamente.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const contaInfo = saldoData?.[0];
 
@@ -190,6 +305,7 @@ export function ExtratoBancario() {
     setDataFim(undefined);
     setTipo('all');
     setMatrizId('all');
+    setConciliacaoFilter('all');
     setShowExtrato(false);
   };
 
@@ -430,6 +546,34 @@ export function ExtratoBancario() {
             </div>
           )}
 
+          {/* Barra de conciliação: filtro client-side + contador */}
+          {transacoesComSaldo.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-slate-700">Conciliação</label>
+                  <div className="w-48">
+                    <Combobox
+                      value={conciliacaoFilter}
+                      onValueChange={setConciliacaoFilter}
+                      options={conciliacaoOptions}
+                      placeholder="Todos"
+                    />
+                  </div>
+                </div>
+                <span className="text-sm text-slate-500">
+                  Conciliados: <span className="font-semibold text-slate-800">{resumo.conciliados}</span> de{' '}
+                  <span className="font-semibold text-slate-800">{resumo.count}</span>
+                </span>
+              </div>
+              {conciliacaoFilter !== 'all' && (
+                <span className="text-xs text-amber-600">
+                  Exibindo apenas {conciliacaoFilter === 'conciliados' ? 'conciliados' : 'não conciliados'} ({linhasVisiveis.length}) — os saldos referem-se ao extrato completo.
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Table */}
           <ListingTableCard>
             <CardContent className="p-0">
@@ -457,19 +601,31 @@ export function ExtratoBancario() {
                         <TableHead className={`${listingTableHeadClassName} text-right`}>Entrada</TableHead>
                         <TableHead className={`${listingTableHeadClassName} text-right`}>Saída</TableHead>
                         <TableHead className={`${listingTableHeadClassName} text-right`}>Saldo</TableHead>
+                        <TableHead className={`${listingTableHeadClassName} w-12 text-center`} title="Conciliação">
+                          Conc.
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {transacoesComSaldo.map((t, idx) => (
+                      {linhasVisiveis.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={10} className="py-8 text-center text-sm text-slate-500">
+                            Nenhuma linha para o filtro de conciliação selecionado.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        linhasVisiveis.map((t, idx) => (
                         <TableRow
-                          key={idx}
+                          key={conciliacaoKey(t.origem, t.origem_id)}
                           className={`border-b border-slate-100 hover:bg-slate-50/70 ${idx % 2 === 1 ? 'bg-slate-50/40' : ''}`}
                         >
                           <TableCell className={`${listingTableCellClassName} whitespace-nowrap font-medium text-slate-900`}>
                             {formatDateForDisplay(t.data)}
                           </TableCell>
                           <TableCell className={listingTableCellClassName}>
-                            <FinanceStatusBadge label={getTipoLabel(t.tipo)} tone={getTipoTone(t.tipo)} />
+                            <span title={getTipoLabel(t.tipo)}>
+                              <FinanceStatusBadge label={getTipoSigla(t.tipo)} tone={getTipoTone(t.tipo)} />
+                            </span>
                           </TableCell>
                           <TableCell className={`${listingTableCellClassName} max-w-[220px] truncate`}>
                             {t.fornecedor_creditor || '—'}
@@ -496,8 +652,17 @@ export function ExtratoBancario() {
                           >
                             {formatCurrency(t.saldo_linha)}
                           </TableCell>
+                          <TableCell className={`${listingTableCellClassName} text-center`}>
+                            <Checkbox
+                              checked={t.conciliado}
+                              onCheckedChange={() => handleToggleConciliacao(t)}
+                              aria-label={t.conciliado ? 'Desmarcar conciliação' : 'Marcar como conciliado'}
+                              title={t.conciliado ? 'Conciliado' : 'Não conciliado'}
+                            />
+                          </TableCell>
                         </TableRow>
-                      ))}
+                        ))
+                      )}
                     </TableBody>
                     <tfoot>
                       <tr className="border-t-2 border-slate-200 bg-slate-50">
@@ -515,6 +680,7 @@ export function ExtratoBancario() {
                         >
                           {formatCurrency(resumo.saldoFinal)}
                         </td>
+                        <td className="px-4 py-3" />
                       </tr>
                     </tfoot>
                   </Table>
