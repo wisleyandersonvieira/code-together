@@ -8,12 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Eye, ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight, Users, LayoutGrid, List } from 'lucide-react';
 import { useMutateAction } from '@uibakery/data';
 import loadProjetosAction from '@/actions/loadProjetos';
 import deleteProjetoAction from '@/actions/deleteProjeto';
 import checkProjetoRestrictiveRelationshipsAction from '@/actions/checkProjetoRestrictiveRelationships';
 import { ProjetoForm } from './ProjetoForm';
+import { ProjetoCards } from './ProjetoCards';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrency } from '@/hooks/use-currency';
 import {
@@ -77,6 +78,10 @@ export function ProjetoList({ onCreateNew, onOpenAportesPorCliente }: ProjetoLis
   const [filterStatus, setFilterStatus] = useState('Em andamento');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
+  // Visualização: cards (padrão) ou lista. Mantido em memória durante a navegação.
+  const [viewMode, setViewMode] = useState<'cards' | 'lista'>('cards');
+  // Bumped after mutations to force the cards query (independent from the list query) to reload.
+  const [cardsReloadToken, setCardsReloadToken] = useState(0);
 
   const handleEdit = (projeto: Projeto) => {
     setSelectedProjeto(projeto);
@@ -99,11 +104,24 @@ export function ProjetoList({ onCreateNew, onOpenAportesPorCliente }: ProjetoLis
     setIsFormOpen(true);
   };
 
+  // Card actions receive only the id — resolve to the full projeto (with orçamentos,
+  // members, etc.) from the list data so the form opens with complete information.
+  const handleViewById = (id: number) => {
+    const projeto = (projetos as Projeto[]).find((p) => p.id === id);
+    if (projeto) handleView(projeto);
+  };
+
+  const handleEditById = (id: number) => {
+    const projeto = (projetos as Projeto[]).find((p) => p.id === id);
+    if (projeto) handleEdit(projeto);
+  };
+
   const handleFormSuccess = () => {
     setIsFormOpen(false);
     setSelectedProjeto(null);
     setIsViewMode(false);
     refresh();
+    setCardsReloadToken((t) => t + 1);
   };
 
   const handleDelete = async (projetoId: number, projetoName: string) => {
@@ -154,6 +172,7 @@ export function ProjetoList({ onCreateNew, onOpenAportesPorCliente }: ProjetoLis
         await deleteProjeto({ id: projetoId });
         toast({ title: 'Sucesso', description: 'Projeto excluído com sucesso!' });
         refresh();
+        setCardsReloadToken((t) => t + 1);
       }
     } catch (error) {
       console.error('Erro ao excluir projeto:', error);
@@ -231,6 +250,30 @@ export function ProjetoList({ onCreateNew, onOpenAportesPorCliente }: ProjetoLis
           title="Projetos"
           action={
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="inline-flex items-center rounded-lg border border-slate-200 p-0.5">
+                <Button
+                  type="button"
+                  variant={viewMode === 'cards' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="px-2.5"
+                  onClick={() => setViewMode('cards')}
+                  aria-label="Visualização em cards"
+                  title="Visualização em cards"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === 'lista' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="px-2.5"
+                  onClick={() => setViewMode('lista')}
+                  aria-label="Visualização em lista"
+                  title="Visualização em lista"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </div>
               {onOpenAportesPorCliente ? (
                 <Button variant="outline" onClick={onOpenAportesPorCliente}>
                   <Users className="mr-2 h-4 w-4" />
@@ -305,6 +348,17 @@ export function ProjetoList({ onCreateNew, onOpenAportesPorCliente }: ProjetoLis
           </div>
         </div>
 
+        {viewMode === 'cards' ? (
+          <ProjetoCards
+            status={filterStatus}
+            filterName={filterName}
+            filterMember={filterMember}
+            reloadToken={cardsReloadToken}
+            onView={handleViewById}
+            onEdit={handleEditById}
+            onDelete={handleDelete}
+          />
+        ) : (
         <ListingTableCard>
           <CardContent className="p-0">
             {processedProjetos.length === 0 ? (
@@ -419,6 +473,7 @@ export function ProjetoList({ onCreateNew, onOpenAportesPorCliente }: ProjetoLis
             )}
           </CardContent>
         </ListingTableCard>
+        )}
       </div>
     </>
   );

@@ -1136,6 +1136,7 @@ export function ProjetoForm({ projeto, onSuccess, onCancel, readOnly = false }: 
                     entityId={savedProjetoId || projeto!.id}
                     acceptedTypes="image/*"
                     title="Fotos do Projeto"
+                    enableCover
                   />
                 ) : (
                   <Card>

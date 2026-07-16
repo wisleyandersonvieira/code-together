@@ -1,21 +1,25 @@
 'use client';
 
+import { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Image, Download, Trash2, Upload } from 'lucide-react';
+import { FileText, Image, Download, Trash2, Upload, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import uploadFileAction from '@/actions/uploadFile';
 import getFileAction from '@/actions/getFile';
 import loadFilesByEntityAction from '@/actions/loadFilesByEntity';
 import deleteFileAction from '@/actions/deleteFile';
+import setProjetoCoverAction from '@/actions/setProjetoCover';
 
 interface FileManagerProps {
   entityType: string;
   entityId: number;
   acceptedTypes?: string;
   title?: string;
+  // When true, image files can be marked as the project cover photo.
+  enableCover?: boolean;
 }
 
 interface ManagedFile {
@@ -24,6 +28,7 @@ interface ManagedFile {
   content_type: string;
   file_size: number;
   created_at: string;
+  is_cover?: boolean;
 }
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -50,19 +55,44 @@ function isAcceptedFileType(file: File, acceptedTypes: string): boolean {
   });
 }
 
-export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pdf,.doc,.docx", title = "Arquivos" }: FileManagerProps) {
+export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pdf,.doc,.docx", title = "Arquivos", enableCover = false }: FileManagerProps) {
   const { toast } = useToast();
   const [files, loading, error, refreshFiles] = useLoadAction(
-    loadFilesByEntityAction, 
-    [], 
+    loadFilesByEntityAction,
+    [],
     { entityType, entityId }
   );
   const [uploadFile, isUploading] = useMutateAction(uploadFileAction);
   const [deleteFile, isDeleting] = useMutateAction(deleteFileAction);
   const [getFile] = useMutateAction(getFileAction);
+  const [setProjetoCover] = useMutateAction(setProjetoCoverAction);
+
+  // Optimistic cover selection: reflects the click immediately, before the refresh lands.
+  const [pendingCoverId, setPendingCoverId] = useState<number | null>(null);
 
   const isImageType = (contentType: string) => {
     return contentType.startsWith('image/');
+  };
+
+  const handleSetCover = async (fileId: number) => {
+    const previous = pendingCoverId;
+    setPendingCoverId(fileId); // optimistic
+    try {
+      await setProjetoCover({ projetoId: entityId, fileId });
+      toast({
+        title: "Capa definida",
+        description: "Foto definida como capa do projeto.",
+      });
+      refreshFiles();
+    } catch (error) {
+      console.error('Error setting cover:', error);
+      setPendingCoverId(previous); // revert
+      toast({
+        title: "Erro",
+        description: "Não foi possível definir a foto como capa.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getFileIcon = (contentType: string) => {
@@ -268,8 +298,15 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {files.map((file: ManagedFile) => (
-            <Card key={file.id} className="hover:shadow-md transition-shadow">
+          {files.map((file: ManagedFile) => {
+            const isImage = isImageType(file.content_type);
+            const canBeCover = enableCover && isImage;
+            const isCover = pendingCoverId !== null ? pendingCoverId === file.id : !!file.is_cover;
+            return (
+            <Card
+              key={file.id}
+              className={`transition-shadow hover:shadow-md ${isCover ? 'border-2 border-amber-400 ring-1 ring-amber-200' : ''}`}
+            >
               <CardContent className="p-4">
                 <div className="flex flex-col space-y-3">
                   <div className="flex items-center gap-2">
@@ -277,14 +314,36 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
                     <span className="text-sm font-medium truncate" title={file.filename}>
                       {file.filename}
                     </span>
+                    {isCover && (
+                      <Badge className="ml-auto flex items-center gap-1 bg-amber-500 text-white hover:bg-amber-500">
+                        <Star className="h-3 w-3 fill-current" />
+                        Capa
+                      </Badge>
+                    )}
                   </div>
-                  
+
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>{formatFileSize(file.file_size)}</span>
                     <span>{new Date(file.created_at).toLocaleDateString()}</span>
                   </div>
-                  
+
                   <div className="flex gap-2">
+                    {canBeCover && (
+                      <Button
+                        variant={isCover ? 'default' : 'outline'}
+                        size="sm"
+                        type="button"
+                        title={isCover ? 'Foto de capa atual' : 'Definir como capa'}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!isCover) handleSetCover(file.id);
+                        }}
+                        className={isCover ? 'bg-amber-500 hover:bg-amber-500' : ''}
+                      >
+                        <Star className={`h-4 w-4 ${isCover ? 'fill-current' : ''}`} />
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -311,7 +370,8 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
