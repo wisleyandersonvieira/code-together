@@ -1,19 +1,18 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import { useDebounce } from '@/hooks/use-debounce';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { sanitizeSearchParam } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Combobox } from '@/components/ui/combobox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
+import {
   Plus,
   Receipt,
-  Search,
   X,
   ArrowUp,
   ArrowDown,
@@ -26,7 +25,9 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Filter
+  Filter,
+  List,
+  Loader2
 } from 'lucide-react';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -37,6 +38,10 @@ import { formatDateForDatabase } from '@/utils/timezone';
 import loadContasPagarAction from '@/actions/loadContasPagar';
 import countContasPagarAction from '@/actions/countContasPagar';
 import loadContasAction from '@/actions/loadContas';
+import loadContaPagarDetalhesAction from '@/actions/loadContaPagarDetalhes';
+import loadFornecedoresAction from '@/actions/loadFornecedores';
+import loadProjetosAction from '@/actions/loadProjetos';
+import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadTitulosByContaPagarAction from '@/actions/loadTitulosByContaPagar';
 import deleteContaPagarAction from '@/actions/deleteContaPagar';
 import reverseTituloPagarAction from '@/actions/reverseTituloPagar';
@@ -76,12 +81,6 @@ export function ContasPagarList() {
   const [tempDataPagamentoInicio, setTempDataPagamentoInicio] = useState<Date | undefined>();
   const [tempDataPagamentoFim, setTempDataPagamentoFim] = useState<Date | undefined>();
 
-  // Debounced text values — auto-apply after 450ms idle without needing "Buscar"
-  const debouncedFornecedor = useDebounce(tempSearchFornecedor, 450);
-  const debouncedNumeroDocumento = useDebounce(tempSearchNumeroDocumento, 450);
-  const debouncedProjeto = useDebounce(tempSearchProjeto, 450);
-  const debouncedMatriz = useDebounce(tempSearchMatriz, 450);
-
   // Applied filters (sent to API)
   const [searchFornecedor, setSearchFornecedor] = useState('');
   const [searchStatus, setSearchStatus] = useState('all');
@@ -93,15 +92,44 @@ export function ContasPagarList() {
   const [dataPagamentoInicio, setDataPagamentoInicio] = useState<Date | undefined>();
   const [dataPagamentoFim, setDataPagamentoFim] = useState<Date | undefined>();
 
-  // Sync debounced text values to applied state (resets page to 1)
-  useEffect(() => { setSearchFornecedor(debouncedFornecedor); setCurrentPage(1); }, [debouncedFornecedor]);
-  useEffect(() => { setSearchNumeroDocumento(debouncedNumeroDocumento); setCurrentPage(1); }, [debouncedNumeroDocumento]);
-  useEffect(() => { setSearchProjeto(debouncedProjeto); setCurrentPage(1); }, [debouncedProjeto]);
-  useEffect(() => { setSearchMatriz(debouncedMatriz); setCurrentPage(1); }, [debouncedMatriz]);
-
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
+
+  // "Exibir dados" — per-title detail (products / accounting groups / projects)
+  const [exibirDados, setExibirDados] = useState(false);
+  const [detalhes, setDetalhes] = useState<Record<number, { itens: any[]; projetos: any[] }>>({});
+  const [detalhesLoading, setDetalhesLoading] = useState(false);
+  const [loadContaPagarDetalhes] = useMutateAction(loadContaPagarDetalhesAction);
+
+  // Dropdown option sources for the filters (Fornecedor / Projeto / Matriz)
+  const [fornecedores] = useLoadAction(loadFornecedoresAction, []);
+  const [projetos] = useLoadAction(loadProjetosAction, []);
+  const [matrizes] = useLoadAction(loadMatrizesAction, []);
+
+  const fornecedorOptions = useMemo(() => {
+    const opts = (fornecedores || [])
+      .map((f: any) => ({ value: f.name || '', label: f.name || '' }))
+      .filter((o: { value: string }) => o.value)
+      .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label));
+    return [{ value: '', label: 'Todos' }, ...opts];
+  }, [fornecedores]);
+
+  const projetoOptions = useMemo(() => {
+    const opts = (projetos || [])
+      .map((p: any) => ({ value: p.name || '', label: p.name || '' }))
+      .filter((o: { value: string }) => o.value)
+      .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label));
+    return [{ value: '', label: 'Todos' }, ...opts];
+  }, [projetos]);
+
+  const matrizOptions = useMemo(() => {
+    const opts = (matrizes || [])
+      .map((m: any) => ({ value: m.nome || '', label: m.nome || '' }))
+      .filter((o: { value: string }) => o.value)
+      .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label));
+    return [{ value: '', label: 'Todos' }, ...opts];
+  }, [matrizes]);
 
   // Payment modal
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -330,6 +358,63 @@ export function ContasPagarList() {
     return sorted;
   }, [contasPagar, sortColumn, sortDirection]);
 
+  // IDs of the accounts currently shown on the page (used to fetch details in one shot)
+  const currentContaIds = useMemo(
+    () => sortedContasPagar.map((c: any) => c.id),
+    [sortedContasPagar]
+  );
+  const currentContaIdsKey = currentContaIds.join(',');
+
+  // When "Exibir dados" is active, (re)load the details for the accounts on the
+  // current page — a single call for every id (no N+1). Reruns when the page or
+  // the filtered result set changes.
+  useEffect(() => {
+    if (!exibirDados) {
+      setDetalhes({});
+      return;
+    }
+    if (currentContaIds.length === 0) {
+      setDetalhes({});
+      return;
+    }
+
+    let cancelled = false;
+    setDetalhesLoading(true);
+    loadContaPagarDetalhes({ contaIds: currentContaIds })
+      .then((rows: any[]) => {
+        if (cancelled) return;
+        const map: Record<number, { itens: any[]; projetos: any[] }> = {};
+        currentContaIds.forEach((id: number) => {
+          map[id] = { itens: [], projetos: [] };
+        });
+        (rows || []).forEach((row: any) => {
+          const bucket = map[row.conta_pagar_id] || (map[row.conta_pagar_id] = { itens: [], projetos: [] });
+          if (row.tipo === 'projeto') {
+            bucket.projetos.push(row);
+          } else {
+            bucket.itens.push(row);
+          }
+        });
+        setDetalhes(map);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        console.error('Error loading conta detalhes:', err);
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível carregar o detalhamento dos títulos.',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setDetalhesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [exibirDados, currentContaIdsKey]);
+
   const getSortIcon = (column: SortColumn) => {
     if (column !== sortColumn) {
       return <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-slate-400" />;
@@ -403,17 +488,16 @@ export function ContasPagarList() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="text-sm font-medium mb-1 block">Fornecedor</label>
-                <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Filtrar por fornecedor..."
-                    value={tempSearchFornecedor}
-                    onChange={(e) => setTempSearchFornecedor(e.target.value)}
-                    className="pl-8"
-                  />
-                </div>
+                <Combobox
+                  value={tempSearchFornecedor}
+                  onValueChange={setTempSearchFornecedor}
+                  options={fornecedorOptions}
+                  placeholder="Todos"
+                  searchPlaceholder="Buscar fornecedor..."
+                  emptyText="Nenhum fornecedor encontrado."
+                />
               </div>
-              
+
               <div>
                 <label className="text-sm font-medium mb-1 block">Nº Documento</label>
                 <Input
@@ -422,22 +506,28 @@ export function ContasPagarList() {
                   onChange={(e) => setTempSearchNumeroDocumento(e.target.value)}
                 />
               </div>
-              
+
               <div>
                 <label className="text-sm font-medium mb-1 block">Projeto</label>
-                <Input
-                  placeholder="Filtrar por projeto..."
+                <Combobox
                   value={tempSearchProjeto}
-                  onChange={(e) => setTempSearchProjeto(e.target.value)}
+                  onValueChange={setTempSearchProjeto}
+                  options={projetoOptions}
+                  placeholder="Todos"
+                  searchPlaceholder="Buscar projeto..."
+                  emptyText="Nenhum projeto encontrado."
                 />
               </div>
 
               <div>
                 <label className="text-sm font-medium mb-1 block">Matriz</label>
-                <Input
-                  placeholder="Filtrar por matriz..."
+                <Combobox
                   value={tempSearchMatriz}
-                  onChange={(e) => setTempSearchMatriz(e.target.value)}
+                  onValueChange={setTempSearchMatriz}
+                  options={matrizOptions}
+                  placeholder="Todos"
+                  searchPlaceholder="Buscar matriz..."
+                  emptyText="Nenhuma matriz encontrada."
                 />
               </div>
               
@@ -499,6 +589,13 @@ export function ContasPagarList() {
               <Button onClick={applyFilters}>
                 <Filter className="h-4 w-4 mr-2" />
                 FILTRAR
+              </Button>
+              <Button
+                variant={exibirDados ? 'default' : 'outline'}
+                onClick={() => setExibirDados((v) => !v)}
+              >
+                <List className="h-4 w-4 mr-2" />
+                Exibir dados
               </Button>
               <Button variant="outline" onClick={clearFilters}>
                 <X className="h-4 w-4 mr-2" />
@@ -568,7 +665,8 @@ export function ContasPagarList() {
             </TableHeader>
             <TableBody>
               {sortedContasPagar.map((conta: any) => (
-                <TableRow key={conta.id} className="border-b border-slate-100 hover:bg-slate-50/70">
+                <Fragment key={conta.id}>
+                <TableRow className="border-b border-slate-100 hover:bg-slate-50/70">
                   <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {conta.matriz_nome || '-'}
                   </TableCell>
@@ -613,6 +711,52 @@ export function ContasPagarList() {
                     </div>
                   </TableCell>
                 </TableRow>
+                {exibirDados && (
+                  <TableRow className="border-b border-slate-100 bg-muted/30 hover:bg-muted/30">
+                    <TableCell colSpan={10} className="px-6 py-3">
+                      {detalhesLoading && !detalhes[conta.id] ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Carregando detalhamento...
+                        </div>
+                      ) : (
+                        (() => {
+                          const det = detalhes[conta.id];
+                          const itens = det?.itens || [];
+                          const projetos = det?.projetos || [];
+                          return (
+                            <div className="space-y-1.5">
+                              {itens.length === 0 ? (
+                                <div className="text-xs italic text-muted-foreground">
+                                  Sem produtos vinculados
+                                </div>
+                              ) : (
+                                itens.map((item: any, i: number) => (
+                                  <div key={i} className="text-xs text-slate-600">
+                                    <span className="font-medium text-slate-700">Produto:</span> {item.produto_nome || '-'}
+                                    {' · '}
+                                    <span className="font-medium text-slate-700">Grupo:</span> {item.grupo_nome || '-'}
+                                    {' · '}
+                                    <span className="font-medium text-slate-700">Subgrupo:</span> {item.subgrupo_nome || '-'}
+                                    {' · '}
+                                    <span className="font-medium text-slate-700">Valor:</span> {formatCurrency(parseFloat(item.valor_total) || 0)}
+                                  </div>
+                                ))
+                              )}
+                              {projetos.length > 0 && (
+                                <div className="pt-0.5 text-xs text-slate-600">
+                                  <span className="font-medium text-slate-700">Projeto(s):</span>{' '}
+                                  {projetos.map((p: any) => p.projeto_nome).filter(Boolean).join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
               ))}
               {sortedContasPagar.length === 0 && (
                 <TableRow>
