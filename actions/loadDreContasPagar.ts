@@ -1,5 +1,5 @@
 import { action } from '@uibakery/data';
-import { andIdIn, andIdInWhenPagamento } from '@/lib/sql-filters';
+import { andIdIn, andIdInWhenPagamento, fatorRateioStatus } from '@/lib/sql-filters';
 
 function loadDreContasPagar() {
   return action('loadDreContasPagar', 'SQL', {
@@ -14,7 +14,7 @@ function loadDreContasPagar() {
         CASE
           WHEN '{{params.tipoData}}' = 'competencia' THEN (tp.valor * cpi.valor_total / NULLIF(cp.valor_total, 0))
           ELSE (tp.valor_pago * cpi.valor_total / NULLIF(cp.valor_total, 0))
-        END as valor_total,
+        END${fatorRateioStatus('cp.id', 'contas_pagar_projetos', 'conta_pagar_id')} as valor_total,
         CASE
           WHEN '{{params.tipoData}}' = 'competencia' THEN cp.data_competencia
           ELSE tp.data_pagamento

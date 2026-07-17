@@ -33,6 +33,12 @@ interface DreDataLoaderProps {
   tipoData: 'competencia' | 'pagamento';
   dataInicio: string;
   dataFim: string;
+  /**
+   * Status de projeto para rateio das contas (ex.: ['Em andamento']). Opcional
+   * e default-off: vazio/ausente → nenhum filtro enviado às actions, DRE
+   * idêntico ao atual. Não se aplica a aportes/retiradas/empréstimos.
+   */
+  statusProjeto?: string[];
   onComplete: () => void;
   refreshTrigger?: number;
 }
@@ -60,6 +66,7 @@ export function DreDataLoader({
   tipoData,
   dataInicio,
   dataFim,
+  statusProjeto,
   onComplete,
   refreshTrigger,
 }: DreDataLoaderProps) {
@@ -87,11 +94,26 @@ export function DreDataLoader({
     [tipoData, contaIds],
   );
 
+  // Filtro de status do projeto (aditivo, default-off). Vazio → não é enviado às
+  // actions, mantendo a query IDÊNTICA ao DRE atual.
+  const statusProjetoAplicado = useMemo(() => statusProjeto ?? [], [statusProjeto]);
+
   // Parâmetros comuns a todas as fontes financeiras. Uma única ida ao banco por
   // fonte, trazendo as N matrizes de uma vez (matriz_id volta em cada registro).
   const filtroBase = useMemo(
     () => ({ matrizIds, contaIds: contaIdsAplicados, tipoData, dataInicio, dataFim }),
     [matrizIds, contaIdsAplicados, tipoData, dataInicio, dataFim],
+  );
+
+  // Só as contas (pagar/receber) recebem o status; e só quando há algum
+  // selecionado — sem status, o objeto de params fica byte-idêntico ao atual.
+  // Aportes/retiradas/empréstimos nunca recebem status (não têm projeto).
+  const filtroContas = useMemo(
+    () =>
+      statusProjetoAplicado.length
+        ? { ...filtroBase, estruturaId, statusProjeto: statusProjetoAplicado }
+        : { ...filtroBase, estruturaId },
+    [filtroBase, estruturaId, statusProjetoAplicado],
   );
 
   // Load structure items — a estrutura é a mesma para todas as matrizes
@@ -105,13 +127,13 @@ export function DreDataLoader({
   const [contasPagar, loadingContasPagar] = useLoadAction(
     loadDreContasPagarAction,
     [],
-    { ...filtroBase, estruturaId }
+    filtroContas
   );
 
   const [contasReceber, loadingContasReceber] = useLoadAction(
     loadDreContasReceberAction,
     [],
-    { ...filtroBase, estruturaId }
+    filtroContas
   );
 
   const [aportes, loadingAportes] = useLoadAction(
@@ -287,6 +309,9 @@ export function DreDataLoader({
   const contasNomes = (contas || [])
     .filter((c: any) => contaIdsAplicados.includes(Number(c.id)))
     .map((c: any) => c.nome as string);
+  // Status já vêm legíveis ('Em andamento' / 'Concluído'); só aparecem quando o
+  // filtro está ativo (tela "DRE por Status"). No DRE atual fica sempre vazio.
+  const statusProjetoNomes = statusProjetoAplicado;
   /** Sufixo de nome de arquivo: nome da matriz quando só há uma. */
   const sufixoArquivo = matrizesNomes.length === 1 ? matrizesNomes[0] : `${matrizesNomes.length}_matrizes`;
 
@@ -310,6 +335,7 @@ export function DreDataLoader({
         estruturaNome,
         matrizesNomes,
         contasNomes: contasNomes.length ? contasNomes : undefined,
+        statusProjeto: statusProjetoNomes.length ? statusProjetoNomes.join(', ') : undefined,
       },
       {
         aportes,
@@ -372,6 +398,9 @@ export function DreDataLoader({
       ];
       if (contasNomes.length) {
         linhasInfo.push(['Contas:', contasNomes.join(', ')]);
+      }
+      if (statusProjetoNomes.length) {
+        linhasInfo.push(['Status do Projeto:', statusProjetoNomes.join(', ')]);
       }
       linhasInfo.push([''], cabecalho);
 
@@ -448,6 +477,7 @@ export function DreDataLoader({
           Período: {dataInicio} a {dataFim} |
           Critério: {tipoData === 'competencia' ? 'Data de Competência' : 'Data de Pagamento'}
           {contasNomes.length > 0 && <> | Contas: {contasNomes.join(', ')}</>}
+          {statusProjetoNomes.length > 0 && <> | Status do Projeto: {statusProjetoNomes.join(', ')}</>}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleExportPdf}>

@@ -41,3 +41,53 @@ export function toIdArray(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
   return value.map(Number).filter((n) => Number.isFinite(n) && n > 0);
 }
+
+/**
+ * Expressão JS (avaliada na edge function) que serializa params[param] numa
+ * lista de literais de texto SQL. Cada elemento é envolvido em aspas simples e
+ * tem suas aspas internas duplicadas — o `sanitiseParams` do shim só escapa
+ * strings de topo, então elementos de array precisam ser escapados aqui.
+ * Lista vazia gera `ARRAY[]::text[]`, válido e que não casa com nada.
+ */
+function textArrayExpr(param: string): string {
+  return `"ARRAY[" + params.${param}.map(s => "'" + String(s).replace(/'/g, "''") + "'").join(",") + "]::text[]"`;
+}
+
+/**
+ * Fator de rateio por status do projeto, para MULTIPLICAR o valor de um item do
+ * DRE. Retorna um fragmento que se anexa logo após a expressão de valor.
+ *
+ * - `params[param]` vazio/ausente → string vazia: o SQL sai IDÊNTICO ao atual,
+ *   sem qualquer multiplicação (regressão total do DRE existente).
+ * - `params[param]` com itens → ` * (CASE ... END)` com o fator:
+ *     • conta SEM vínculo de projeto (NOT EXISTS) → fator 1.0 (valor integral,
+ *       sempre exibido);
+ *     • conta COM vínculo, fração no status = X%   → fator X/100 (parte rateada);
+ *     • conta COM vínculo, nada no status          → fator 0 (excluída).
+ *
+ * A distinção "sem vínculo (1)" × "fora do status (0)" usa EXISTS, e não um
+ * simples COALESCE do SUM: `SUM(...)` sobre zero linhas devolve NULL, que cairia
+ * no ramo sem-vínculo por engano. O EXISTS resolve o "tem vínculo?" antes; o
+ * COALESCE interno cobre só o caso "tem vínculo, mas nenhum projeto no status".
+ *
+ * Segue o mesmo padrão de template de {@link andIdIn}: a expressão só referencia
+ * `params` e é avaliada na edge function; aqui apenas montamos o texto.
+ *
+ * @param contaCol      coluna da conta na query externa (ex.: 'cp.id')
+ * @param tabelaRateio  tabela N:N conta↔projeto (ex.: 'contas_pagar_projetos')
+ * @param fkCol         FK da conta na tabela de rateio (ex.: 'conta_pagar_id')
+ * @param param         nome do parâmetro com a lista de status (default statusProjeto)
+ */
+export function fatorRateioStatus(
+  contaCol: string,
+  tabelaRateio: string,
+  fkCol: string,
+  param = 'statusProjeto',
+): string {
+  const fatorSql =
+    `" * (CASE WHEN NOT EXISTS (SELECT 1 FROM ${tabelaRateio} r WHERE r.${fkCol} = ${contaCol}) THEN 1.0 ` +
+    `ELSE COALESCE((SELECT SUM(r.percentual) / 100.0 FROM ${tabelaRateio} r ` +
+    `JOIN projetos pr ON pr.id = r.projeto_id ` +
+    `WHERE r.${fkCol} = ${contaCol} AND pr.status = ANY(" + ${textArrayExpr(param)} + ")), 0) END)"`;
+  return `{{ params.${param} && params.${param}.length ? ${fatorSql} : "" }}`;
+}

@@ -92,6 +92,7 @@ type TabType =
   | 'relatorio-financeiro-entradas'
   | 'relatorio-projetos-geral'
   | 'relatorio-rentabilidade-projeto'
+  | 'dre-por-status'
   | 'socios'
   | 'matrizes'
   | 'kanban'
@@ -143,6 +144,7 @@ const routes: Record<TabType, RouteDefinition> = {
   'relatorio-financeiro-entradas': { path: '/relatorios/financeiro-entradas', title: 'Relatorio Financeiro Entradas' },
   'relatorio-projetos-geral': { path: '/relatorios/projetos-geral', title: 'Relatorio Projetos Geral' },
   'relatorio-rentabilidade-projeto': { path: '/relatorios/rentabilidade-projeto', title: 'Rentabilidade do Projeto' },
+  'dre-por-status': { path: '/relatorios/dre-por-status', title: 'DRE por Status' },
   socios: { path: '/matriz/socios', title: 'Socios' },
   matrizes: { path: '/matriz/matrizes', title: 'Matrizes' },
   kanban: { path: '/painel', title: 'Painel' },
@@ -206,6 +208,7 @@ const relatorioTabs: TabType[] = [
   'relatorio-financeiro-entradas',
   'relatorio-projetos-geral',
   'relatorio-rentabilidade-projeto',
+  'dre-por-status',
 ];
 
 const matrizTabs: TabType[] = [
@@ -289,6 +292,7 @@ const EmprestimosList = lazy(() => import('@/components/EmprestimosList').then((
 const EstruturasDreList = lazy(() => import('@/components/EstruturasDreList').then((module) => ({ default: module.EstruturasDreList })));
 const EstruturaDreForm = lazy(() => import('@/components/EstruturaDreForm').then((module) => ({ default: module.EstruturaDreForm })));
 const RelatorioDre = lazy(() => import('@/components/RelatorioDre').then((module) => ({ default: module.RelatorioDre })));
+const RelatorioDrePorStatus = lazy(() => import('@/components/RelatorioDrePorStatus').then((module) => ({ default: module.RelatorioDrePorStatus })));
 const RelatorioDreProjeto = lazy(() => import('@/components/RelatorioDreProjeto').then((module) => ({ default: module.RelatorioDreProjeto })));
 const RelatorioDreInfo = lazy(() => import('@/components/RelatorioDreInfo').then((module) => ({ default: module.RelatorioDreInfo })));
 const FornecedorSubcontratadoList = lazy(() => import('@/components/FornecedorSubcontratadoList').then((module) => ({ default: module.FornecedorSubcontratadoList })));
@@ -438,6 +442,7 @@ function MobileNavContent({
               {navItem('Financeiro Entradas', 'relatorio-financeiro-entradas', <DollarSign className="h-4 w-4" />)}
               {navItem('Projetos Geral', 'relatorio-projetos-geral', <BarChart3 className="h-4 w-4" />)}
               {navItem('Rentabilidade', 'relatorio-rentabilidade-projeto', <TrendingUp className="h-4 w-4" />)}
+              {navItem('DRE por Status', 'dre-por-status', <PieChart className="h-4 w-4" />)}
             </div>
           )}
         </div>
@@ -707,6 +712,8 @@ function App() {
         );
       case 'relatorio-dre':
         return <RelatorioDre />;
+      case 'dre-por-status':
+        return <RelatorioDrePorStatus />;
       case 'relatorio-dre-projeto':
         return <RelatorioDreProjeto />;
       case 'relatorio-dre-info':
@@ -1114,6 +1121,10 @@ function App() {
                 <DropdownMenuItem onClick={() => navigateTo('relatorio-rentabilidade-projeto')}>
                   <TrendingUp className="mr-2 h-4 w-4" />
                   Rentabilidade do Projeto
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('dre-por-status')}>
+                  <PieChart className="mr-2 h-4 w-4" />
+                  DRE por Status
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
