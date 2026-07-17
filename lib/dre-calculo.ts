@@ -41,6 +41,87 @@ export function aplicarSinalSubgrupo(valor: number, subgrupoFuncao?: string): nu
   return valor;
 }
 
+/**
+ * Sinal das linhas de sócio (APORTE/RETIRADA/EMPRÉSTIMOS): entradas somam
+ * (positivo), saídas subtraem (negativo). Regra única, usada tanto pelo cálculo
+ * da célula quanto pelo drill-down — garante que as sublinhas somem exatamente
+ * o valor da célula. Análogo a [[aplicarSinalSubgrupo]] para os subgrupos.
+ */
+export function aplicarSinalLinha(valor: number, tipo: string): number {
+  if (tipo === 'RETIRADA' || tipo === 'EMPRESTIMO_SAIDA') {
+    return -valor;
+  }
+  return valor;
+}
+
+/** Um lançamento individual que compõe a célula de APORTE/RETIRADA/EMPRÉSTIMO. */
+export interface DreLancamentoLinha {
+  /** Identificador do registro na sua fonte. */
+  id: string;
+  matrizId: number;
+  /** Data crua da fonte (data_aporte / data_retirada / data_referencia). */
+  data: string;
+  socioNome: string;
+  /** Já com o sinal da linha aplicado — soma exatamente à célula. */
+  valor: number;
+}
+
+/**
+ * Lançamentos que compõem a célula de uma linha de sócio (APORTE, RETIRADA,
+ * EMPRESTIMO_ENTRADA, EMPRESTIMO_SAIDA), para o drill-down.
+ *
+ * Usa os mesmos registros já em memória, o mesmo filtro por tipo de empréstimo
+ * (PAGAMENTO ↔ entrada, EMPRESTIMO ↔ saída) e o mesmo sinal do cálculo da
+ * célula. Somar estes lançamentos por matriz reproduz o valor da célula.
+ */
+export function lancamentosDaLinha(
+  tipo: string,
+  aportes: any[],
+  retiradas: any[],
+  emprestimos: any[],
+  matrizIds: number[],
+): DreLancamentoLinha[] {
+  let rows: any[] = [];
+  let dataCol = '';
+  if (tipo === 'APORTE') {
+    rows = aportes || [];
+    dataCol = 'data_aporte';
+  } else if (tipo === 'RETIRADA') {
+    rows = retiradas || [];
+    dataCol = 'data_retirada';
+  } else if (tipo === 'EMPRESTIMO_ENTRADA') {
+    rows = (emprestimos || []).filter((e: any) => e.tipo === 'PAGAMENTO');
+    dataCol = 'data_referencia';
+  } else if (tipo === 'EMPRESTIMO_SAIDA') {
+    rows = (emprestimos || []).filter((e: any) => e.tipo === 'EMPRESTIMO');
+    dataCol = 'data_referencia';
+  } else {
+    return [];
+  }
+
+  const lancamentos = rows
+    .filter((row: any) => matrizIds.includes(Number(row.matriz_id)))
+    .map((row: any) => ({
+      id: String(row.id),
+      matrizId: Number(row.matriz_id),
+      data: String(row[dataCol] ?? ''),
+      socioNome: row.socio_nome ?? '—',
+      valor: aplicarSinalLinha(Number(row.valor) || 0, tipo),
+    }));
+
+  // Ordenação: pela ordem das colunas de matriz, depois data decrescente (mais
+  // recente primeiro, como as actions de aportes/retiradas já listam) e, por
+  // fim, nome do sócio — determinístico para o mesmo dado.
+  return lancamentos.sort((a, b) => {
+    const posA = matrizIds.indexOf(a.matrizId);
+    const posB = matrizIds.indexOf(b.matrizId);
+    if (posA !== posB) return posA - posB;
+    const dataCmp = b.data.localeCompare(a.data);
+    if (dataCmp !== 0) return dataCmp;
+    return a.socioNome.localeCompare(b.socioNome, 'pt-BR');
+  });
+}
+
 /** Registros de uma fonte que pertencem a um subgrupo. */
 const porSubgrupo = (rows: any[], subgrupoContabilId: number) =>
   (rows || []).filter(
@@ -120,21 +201,27 @@ export function calcularItensParaMatriz(
 
       valor = aplicarSinalSubgrupo(contasPagarValues + contasReceberValues, item.subgrupo_funcao);
     } else if (item.tipo === 'APORTE') {
-      // Sum all aportes (positive)
-      valor = aportes.reduce((sum: number, aporte: any) => sum + (Number(aporte.valor) || 0), 0);
+      // Sum all aportes (positive) — sinal via regra central
+      valor = aportes.reduce(
+        (sum: number, aporte: any) => sum + aplicarSinalLinha(Number(aporte.valor) || 0, 'APORTE'),
+        0,
+      );
     } else if (item.tipo === 'RETIRADA') {
-      // Sum all retiradas (negative)
-      valor = -retiradas.reduce((sum: number, retirada: any) => sum + (Number(retirada.valor) || 0), 0);
+      // Sum all retiradas (negative) — sinal via regra central
+      valor = retiradas.reduce(
+        (sum: number, retirada: any) => sum + aplicarSinalLinha(Number(retirada.valor) || 0, 'RETIRADA'),
+        0,
+      );
     } else if (item.tipo === 'EMPRESTIMO_ENTRADA') {
-      // Pagamentos de empréstimo entram no caixa (positive)
+      // Pagamentos de empréstimo entram no caixa (positive) — sinal via regra central
       valor = emprestimos
         .filter((e: any) => e.tipo === 'PAGAMENTO')
-        .reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+        .reduce((sum: number, e: any) => sum + aplicarSinalLinha(Number(e.valor) || 0, 'EMPRESTIMO_ENTRADA'), 0);
     } else if (item.tipo === 'EMPRESTIMO_SAIDA') {
-      // Empréstimos concedidos saem do caixa (negative)
-      valor = -emprestimos
+      // Empréstimos concedidos saem do caixa (negative) — sinal via regra central
+      valor = emprestimos
         .filter((e: any) => e.tipo === 'EMPRESTIMO')
-        .reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+        .reduce((sum: number, e: any) => sum + aplicarSinalLinha(Number(e.valor) || 0, 'EMPRESTIMO_SAIDA'), 0);
     } else if (item.tipo === 'GRUPO') {
       // Group value is sum of its subgroups
       const subgroupValues = estruturaItens

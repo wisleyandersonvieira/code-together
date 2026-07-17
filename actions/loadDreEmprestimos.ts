@@ -7,17 +7,19 @@ function loadDreEmprestimos() {
     databaseName: 'provision',
     query: `
       SELECT
-        id,
-        matriz_id,
-        conta_id,
-        tipo,
-        valor,
-        data_emprestimo as data_referencia
-      FROM emprestimos
+        e.id,
+        e.matriz_id,
+        e.conta_id,
+        e.tipo,
+        e.valor,
+        e.data_emprestimo as data_referencia,
+        s.nome as socio_nome
+      FROM emprestimos e
+      LEFT JOIN socios s ON s.id = e.socio_id
       WHERE
-        data_emprestimo BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}'
-        ${andIdIn('matriz_id', 'matrizIds')}
-        ${andIdInWhenPagamento('conta_id', 'contaIds')};
+        e.data_emprestimo BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}'
+        ${andIdIn('e.matriz_id', 'matrizIds')}
+        ${andIdInWhenPagamento('e.conta_id', 'contaIds')};
     `,
   });
 }

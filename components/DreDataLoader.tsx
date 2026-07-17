@@ -19,7 +19,11 @@ import loadDreEmprestimosAction from '@/actions/loadDreEmprestimos';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadContasAction from '@/actions/loadContas';
-import { calcularItensParaMatriz, lancamentosDoSubgrupo, porMatriz } from '@/lib/dre-calculo';
+import { calcularItensParaMatriz, lancamentosDoSubgrupo, lancamentosDaLinha, porMatriz } from '@/lib/dre-calculo';
+import { formatDateForDisplay } from '@/utils/timezone';
+
+/** Linhas de sócio que ganham drill-down (mesma mecânica do subgrupo). */
+const TIPOS_LINHA_SOCIO = new Set(['APORTE', 'RETIRADA', 'EMPRESTIMO_ENTRADA', 'EMPRESTIMO_SAIDA']);
 
 interface DreDataLoaderProps {
   estruturaId: number;
@@ -475,11 +479,13 @@ export function DreDataLoader({
           </TableHeader>
           <TableBody>
             {linhasVisiveis.map((item) => {
-              const podeExpandir = item.tipo === 'SUBGRUPO' && !!item.subgrupo_contabil_id;
+              const ehSubgrupo = item.tipo === 'SUBGRUPO' && !!item.subgrupo_contabil_id;
+              const ehLinhaSocio = TIPOS_LINHA_SOCIO.has(item.tipo);
+              const podeExpandir = ehSubgrupo || ehLinhaSocio;
               const expandido = expandedSubgrupos.has(item.id);
               // Só monta o detalhe do que está aberto.
               const lancamentos =
-                podeExpandir && expandido
+                ehSubgrupo && expandido
                   ? lancamentosDoSubgrupo(
                       contasPagar,
                       contasReceber,
@@ -488,6 +494,11 @@ export function DreDataLoader({
                       matrizIds,
                     )
                   : [];
+              const lancamentosLinha =
+                ehLinhaSocio && expandido
+                  ? lancamentosDaLinha(item.tipo, aportes, retiradas, emprestimos, matrizIds)
+                  : [];
+              const semDetalhe = expandido && lancamentos.length === 0 && lancamentosLinha.length === 0;
 
               return (
                 <React.Fragment key={item.id}>
@@ -536,7 +547,7 @@ export function DreDataLoader({
 
                   {/* Sublinhas de detalhe: mesma grade de colunas da tabela, com o
                       valor na célula da matriz a que o lançamento pertence. */}
-                  {expandido && lancamentos.length === 0 && (
+                  {semDetalhe && (
                     <TableRow className="bg-muted/20 hover:bg-muted/20">
                       <TableCell colSpan={2 + colunas.length} className="py-2 text-xs text-muted-foreground">
                         <div style={{ paddingLeft: `${item.nivel * 20 + 12}px` }}>
@@ -557,6 +568,38 @@ export function DreDataLoader({
                             <span className="truncate">{lancamento.fornecedorNome}</span>
                             <span aria-hidden>·</span>
                             <span className="truncate">{lancamento.produtoNome}</span>
+                          </div>
+                        </TableCell>
+                        {colunas.map((col) => {
+                          // Um lançamento pertence a uma única matriz: só a coluna
+                          // dela (e a TOTAL) recebem valor; as demais ficam vazias.
+                          const pertence = col.key === 'TOTAL' || col.key === lancamento.matrizId;
+                          if (!pertence) return <TableCell key={String(col.key)} />;
+                          return (
+                            <TableCell
+                              key={String(col.key)}
+                              className={`py-1.5 text-right text-xs ${
+                                lancamento.valor < 0 ? 'text-red-600' : 'text-green-600'
+                              } ${col.key === 'TOTAL' ? 'font-medium' : ''}`}
+                            >
+                              {formatCurrency(lancamento.valor)}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+
+                  {/* Sublinhas de detalhe das linhas de sócio: Data · Nome do Sócio
+                      na área de Ordem+Nome; valor na coluna da matriz do lançamento. */}
+                  {expandido &&
+                    lancamentosLinha.map((lancamento) => (
+                      <TableRow key={`${item.id}-${lancamento.matrizId}-${lancamento.id}`} className="bg-muted/20 hover:bg-muted/30">
+                        {/* Data · Nome do Sócio ocupam a área de Ordem+Nome */}
+                        <TableCell colSpan={2} className="py-1.5 text-xs font-normal text-muted-foreground">
+                          <div className="flex items-center gap-2" style={{ paddingLeft: `${item.nivel * 20 + 12}px` }}>
+                            <span className="font-medium text-foreground">{formatDateForDisplay(lancamento.data)}</span>
+                            <span aria-hidden>·</span>
+                            <span className="truncate">{lancamento.socioNome}</span>
                           </div>
                         </TableCell>
                         {colunas.map((col) => {
