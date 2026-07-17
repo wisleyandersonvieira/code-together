@@ -5,19 +5,25 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-interface UpdateSomaButtonProps {
-  dreData: Array<{
-    id: number;
-    tipo: string;
-    nome: string;
-    valor: number;
-    ordem: number;
-  }>;
-  onSomaUpdated: (updatedData: any[]) => void;
-  estruturaItens: any[];
+interface UpdateSomaItem {
+  id: number;
+  tipo: string;
+  nome: string;
+  valor: number;
+  ordem: number;
+  /** Valor por matriz — chave é o id da matriz. */
+  valores?: Record<number, number>;
 }
 
-export function UpdateSomaButton({ dreData, onSomaUpdated, estruturaItens }: UpdateSomaButtonProps) {
+interface UpdateSomaButtonProps {
+  dreData: UpdateSomaItem[];
+  onSomaUpdated: (updatedData: any[]) => void;
+  estruturaItens: any[];
+  /** Matrizes que compõem as colunas; cada uma recalcula sua SOMA. */
+  matrizIds?: number[];
+}
+
+export function UpdateSomaButton({ dreData, onSomaUpdated, estruturaItens, matrizIds }: UpdateSomaButtonProps) {
   const { toast } = useToast();
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -26,15 +32,11 @@ export function UpdateSomaButton({ dreData, onSomaUpdated, estruturaItens }: Upd
 
     try {
 
-      // Criar um mapa dos valores calculados por ID
-      const valueMap = new Map<number, number>();
-      dreData.forEach(item => {
-        valueMap.set(item.id, item.valor);
-      });
-
-
       // Sort by order for correct calculation
       const sortedData = [...dreData].sort((a, b) => a.ordem - b.ordem);
+
+      // Colunas a recalcular: uma por matriz quando o DRE é multi-matriz.
+      const colunas = matrizIds ?? [];
 
       // Recalcular apenas os itens SOMA
       const updatedData = sortedData.map((item, index) => {
@@ -46,12 +48,24 @@ export function UpdateSomaButton({ dreData, onSomaUpdated, estruturaItens }: Upd
             aboveItem.tipo === 'APORTE' || 
             aboveItem.tipo === 'RETIRADA'
           );
-          
-          const somaValue = itemsAbove.reduce((sum: number, aboveItem) => {
-            return sum + aboveItem.valor;
-          }, 0);
 
-          return { ...item, valor: somaValue };
+          // Cada coluna de matriz soma independentemente; o total é a soma
+          // horizontal das colunas, mantendo TOTAL coerente com as parcelas.
+          const valores: Record<number, number> = {};
+          colunas.forEach((matrizId) => {
+            valores[matrizId] = itemsAbove.reduce(
+              (sum: number, aboveItem) => sum + (aboveItem.valores?.[matrizId] ?? 0),
+              0,
+            );
+          });
+
+          const somaValue = colunas.length
+            ? colunas.reduce((sum, matrizId) => sum + valores[matrizId], 0)
+            : itemsAbove.reduce((sum: number, aboveItem) => sum + aboveItem.valor, 0);
+
+          return colunas.length
+            ? { ...item, valores, valor: somaValue }
+            : { ...item, valor: somaValue };
         }
         return item;
       });

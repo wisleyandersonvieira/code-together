@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useCurrency } from '@/hooks/use-currency';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
+import loadContasAction from '@/actions/loadContas';
+import { MultiSelectIdFilter } from '@/components/ui/multi-select-filter';
 import { DreDataLoader } from '@/components/DreDataLoader';
 import {
   ListingFilterCard,
@@ -22,9 +24,13 @@ import {
 } from '@/components/finance/listing-ui';
 
 
+const TOOLTIP_CONTA_DESABILITADA = 'Disponível apenas para emissão por Data de Pagamento';
+
 interface DreParams {
   estruturaId: number;
-  matrizId: number;
+  matrizIds: number[];
+  /** Vazio = todas as contas. Só se aplica quando tipoData === 'pagamento'. */
+  contaIds: number[];
   tipoData: 'competencia' | 'pagamento';
   dataInicio: string;
   dataFim: string;
@@ -37,7 +43,8 @@ export function RelatorioDre() {
   const { formatCurrency } = useCurrency();
   const [params, setParams] = useState<DreParams>({
     estruturaId: 0,
-    matrizId: 0,
+    matrizIds: [],
+    contaIds: [],
     tipoData: 'competencia',
     dataInicio: '',
     dataFim: '',
@@ -48,6 +55,16 @@ export function RelatorioDre() {
   // Load data for selects
   const [estruturas] = useLoadAction(loadEstruturasDreAction, []);
   const [matrizes] = useLoadAction(loadMatrizesAction, [], { searchNome: null });
+  const [contas] = useLoadAction(loadContasAction, []);
+
+  const matrizOptions = (matrizes || []).map((m: any) => ({ id: Number(m.id), nome: m.nome }));
+  // Conta corrente identificada por nome + banco, que é como o usuário a reconhece.
+  const contaOptions = (contas || []).map((c: any) => ({
+    id: Number(c.id),
+    nome: c.banco ? `${c.nome} — ${c.banco}` : c.nome,
+  }));
+
+  const filtroContaHabilitado = params.tipoData === 'pagamento';
   
 
 
@@ -56,10 +73,10 @@ export function RelatorioDre() {
   };
 
   const generateDre = () => {
-    if (!params.estruturaId || !params.matrizId || !params.dataInicio || !params.dataFim) {
+    if (!params.estruturaId || params.matrizIds.length === 0 || !params.dataInicio || !params.dataFim) {
       toast({
         title: 'Erro',
-        description: 'Preencha todos os campos obrigatórios.',
+        description: 'Preencha todos os campos obrigatórios e selecione ao menos uma matriz.',
         variant: 'destructive',
       });
       return;
@@ -103,29 +120,28 @@ export function RelatorioDre() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Matriz *</label>
-                <Select
-                  value={params.matrizId.toString()}
-                  onValueChange={(value) => handleParamChange('matrizId', parseInt(value))}
-                >
-                  <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
-                    <SelectValue placeholder="Selecione a matriz" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {matrizes?.map((matriz: any) => (
-                      <SelectItem key={matriz.id} value={matriz.id.toString()}>
-                        {matriz.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label className="text-sm font-medium text-slate-700">Matrizes *</label>
+                <MultiSelectIdFilter
+                  placeholder="Selecione as matrizes"
+                  options={matrizOptions}
+                  selected={params.matrizIds}
+                  onChange={(ids) => handleParamChange('matrizIds', ids)}
+                />
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Emitir por *</label>
                 <Select
                   value={params.tipoData}
-                  onValueChange={(value) => handleParamChange('tipoData', value)}
+                  onValueChange={(value) =>
+                    setParams((prev) => ({
+                      ...prev,
+                      tipoData: value as DreParams['tipoData'],
+                      // Filtro de conta não se aplica a competência: limpa para
+                      // não sugerir um filtro que seria ignorado.
+                      contaIds: value === 'pagamento' ? prev.contaIds : [],
+                    }))
+                  }
                 >
                   <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm text-slate-700 shadow-sm">
                     <SelectValue />
@@ -135,6 +151,22 @@ export function RelatorioDre() {
                     <SelectItem value="pagamento">Data de Pagamento</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  className={`text-sm font-medium ${filtroContaHabilitado ? 'text-slate-700' : 'text-slate-400'}`}
+                >
+                  Conta Corrente
+                </label>
+                <MultiSelectIdFilter
+                  placeholder="Todas as contas"
+                  options={contaOptions}
+                  selected={params.contaIds}
+                  onChange={(ids) => handleParamChange('contaIds', ids)}
+                  disabled={!filtroContaHabilitado}
+                  title={filtroContaHabilitado ? undefined : TOOLTIP_CONTA_DESABILITADA}
+                />
               </div>
 
               <div className="space-y-2">
@@ -182,7 +214,8 @@ export function RelatorioDre() {
             <DreDataLoader
               key={refreshTrigger}
               estruturaId={params.estruturaId}
-              matrizId={params.matrizId}
+              matrizIds={params.matrizIds}
+              contaIds={params.contaIds}
               tipoData={params.tipoData}
               dataInicio={params.dataInicio}
               dataFim={params.dataFim}

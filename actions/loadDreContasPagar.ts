@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { andIdIn, andIdInWhenPagamento } from '@/lib/sql-filters';
 
 function loadDreContasPagar() {
   return action('loadDreContasPagar', 'SQL', {
@@ -26,12 +27,14 @@ function loadDreContasPagar() {
       INNER JOIN produtos p ON p.id = cpi.produto_id
       INNER JOIN subgrupos_contabeis sg ON sg.id = p.subgrupo_id
       INNER JOIN estruturas_dre_itens edi ON edi.subgrupo_contabil_id = sg.id AND edi.estrutura_dre_id = {{params.estruturaId}}
-      WHERE 
-        cp.matriz_id = {{params.matrizId}}
+      WHERE
+        1 = 1
+        ${andIdIn('cp.matriz_id', 'matrizIds')}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cp.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
           OR
-          ('{{params.tipoData}}' = 'pagamento' AND tp.data_pagamento BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}' AND tp.status = 'PAGO' AND tp.valor_pago IS NOT NULL AND tp.valor_pago > 0)
+          ('{{params.tipoData}}' = 'pagamento' AND tp.data_pagamento BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}' AND tp.status = 'PAGO' AND tp.valor_pago IS NOT NULL AND tp.valor_pago > 0
+            ${andIdInWhenPagamento('tp.conta_id', 'contaIds')})
         );
     `,
   });

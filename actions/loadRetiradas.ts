@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { andIdIn, andIdInWhenPagamento } from '@/lib/sql-filters';
 
 function loadRetiradas() {
   return action('loadRetiradas', 'SQL', {
@@ -19,6 +20,8 @@ function loadRetiradas() {
         {{ params.matrizId ? "AND r.matriz_id = " + params.matrizId : "" }}
         {{ params.socioId ? "AND r.socio_id = " + params.socioId : "" }}
         {{ params.contaId ? "AND r.conta_id = " + params.contaId : "" }}
+        ${andIdIn('r.matriz_id', 'matrizIds')}
+        ${andIdInWhenPagamento('r.conta_id', 'contaIds')}
       ORDER BY r.data_retirada DESC, r.created_at DESC;
     `,
   });

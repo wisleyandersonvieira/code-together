@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLoadAction } from '@uibakery/data';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Download, FileSpreadsheet } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
 import { UpdateSomaButton } from '@/components/UpdateSomaButton';
-import { usePdfExport } from '@/hooks/use-pdf-export';
+import { usePdfExport, type DreColuna } from '@/hooks/use-pdf-export';
 import { useToast } from '@/hooks/use-toast';
 import * as XLSX from 'xlsx';
 import loadEstruturaDreItensAction from '@/actions/loadEstruturaDreItens';
@@ -19,10 +19,14 @@ import loadRetiradasAction from '@/actions/loadRetiradas';
 import loadDreEmprestimosAction from '@/actions/loadDreEmprestimos';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
+import loadContasAction from '@/actions/loadContas';
+import { calcularItensParaMatriz, porMatriz } from '@/lib/dre-calculo';
 
 interface DreDataLoaderProps {
   estruturaId: number;
-  matrizId: number;
+  matrizIds: number[];
+  /** Só é aplicado quando tipoData === 'pagamento'. Vazio = todas as contas. */
+  contaIds?: number[];
   tipoData: 'competencia' | 'pagamento';
   dataInicio: string;
   dataFim: string;
@@ -30,7 +34,7 @@ interface DreDataLoaderProps {
   refreshTrigger?: number;
 }
 
-interface DreItemResult {
+export interface DreItemResult {
   id: number;
   tipo: string;
   nome: string;
@@ -39,18 +43,43 @@ interface DreItemResult {
   grupo_contabil_id?: number;
   subgrupo_contabil_id?: number;
   subgrupo_funcao?: string;
-  valor: number;
   parent_id?: number;
+  /** Valor por matriz — chave é o id da matriz. */
+  valores: Record<number, number>;
+  /** Soma dos valores de todas as matrizes selecionadas (coluna TOTAL). */
+  valor: number;
 }
 
-export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dataFim, onComplete, refreshTrigger }: DreDataLoaderProps) {
+export function DreDataLoader({
+  estruturaId,
+  matrizIds,
+  contaIds,
+  tipoData,
+  dataInicio,
+  dataFim,
+  onComplete,
+  refreshTrigger,
+}: DreDataLoaderProps) {
   const { formatCurrency } = useCurrency();
   const { exportDreToPdf } = usePdfExport();
   const { toast } = useToast();
   const [dreData, setDreData] = useState<DreItemResult[]>([]);
   const [hasCalculated, setHasCalculated] = useState(false);
 
-  // Load structure items
+  // O filtro de conta só existe na emissão por data de pagamento.
+  const contaIdsAplicados = useMemo(
+    () => (tipoData === 'pagamento' ? contaIds ?? [] : []),
+    [tipoData, contaIds],
+  );
+
+  // Parâmetros comuns a todas as fontes financeiras. Uma única ida ao banco por
+  // fonte, trazendo as N matrizes de uma vez (matriz_id volta em cada registro).
+  const filtroBase = useMemo(
+    () => ({ matrizIds, contaIds: contaIdsAplicados, tipoData, dataInicio, dataFim }),
+    [matrizIds, contaIdsAplicados, tipoData, dataInicio, dataFim],
+  );
+
+  // Load structure items — a estrutura é a mesma para todas as matrizes
   const [estruturaItens, loadingItens, , refreshEstrutura] = useLoadAction(
     loadEstruturaDreItensAction,
     [],
@@ -61,31 +90,31 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
   const [contasPagar, loadingContasPagar] = useLoadAction(
     loadDreContasPagarAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId }
+    { ...filtroBase, estruturaId }
   );
 
   const [contasReceber, loadingContasReceber] = useLoadAction(
     loadDreContasReceberAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId }
+    { ...filtroBase, estruturaId }
   );
 
   const [aportes, loadingAportes] = useLoadAction(
     loadAportesAction,
     [],
-    { matrizId, dataInicio, dataFim }
+    filtroBase
   );
 
   const [retiradas, loadingRetiradas] = useLoadAction(
     loadRetiradasAction,
     [],
-    { matrizId, dataInicio, dataFim }
+    filtroBase
   );
 
   const [emprestimos, loadingEmprestimos] = useLoadAction(
     loadDreEmprestimosAction,
     [],
-    { matrizId, dataInicio, dataFim }
+    filtroBase
   );
 
   // Load additional data for PDF export
@@ -93,14 +122,38 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
     loadEstruturasDreAction,
     []
   );
-  
+
   const [matrizes] = useLoadAction(
     loadMatrizesAction,
     [],
     { searchNome: null }
   );
 
+  const [contas] = useLoadAction(loadContasAction, []);
+
   const isLoading = loadingItens || loadingContasPagar || loadingContasReceber || loadingAportes || loadingRetiradas || loadingEmprestimos;
+
+  // Matrizes selecionadas na ordem do catálogo (alfabética), para as colunas
+  // ficarem estáveis independentemente da ordem de clique no filtro.
+  const matrizesSelecionadas = useMemo(() => {
+    const encontradas = (matrizes || []).filter((m: any) => matrizIds.includes(Number(m.id)));
+    // Enquanto o catálogo não carregou, ainda assim renderiza as colunas.
+    if (encontradas.length !== matrizIds.length) {
+      return matrizIds.map((id) => {
+        const m = (matrizes || []).find((mat: any) => Number(mat.id) === id);
+        return { id, nome: m?.nome ?? `Matriz ${id}` };
+      });
+    }
+    return encontradas.map((m: any) => ({ id: Number(m.id), nome: m.nome as string }));
+  }, [matrizes, matrizIds]);
+
+  const mostrarTotal = matrizesSelecionadas.length > 1;
+
+  const colunas: DreColuna[] = useMemo(() => {
+    const cols: DreColuna[] = matrizesSelecionadas.map((m) => ({ key: m.id, label: m.nome }));
+    if (mostrarTotal) cols.push({ key: 'TOTAL', label: 'TOTAL' });
+    return cols;
+  }, [matrizesSelecionadas, mostrarTotal]);
 
   // Reset calculation when refreshTrigger changes
   useEffect(() => {
@@ -112,71 +165,28 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
 
   useEffect(() => {
     if (!isLoading && estruturaItens && contasPagar && contasReceber && aportes && retiradas && emprestimos && !hasCalculated) {
-      
-      // Process and calculate values for each structure item
-      const processedItems: DreItemResult[] = estruturaItens.map((item: any) => {
-        let valor = 0;
 
-        if (item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
-          // Calculate value from contas pagar/receber
-          // Use Number() to handle PostgreSQL NUMERIC types returned as strings
-          const contasPagarValues = contasPagar
-            .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
-            .reduce((sum: number, cp: any) => sum + (Number(cp.valor_total) || 0), 0);
+      // Roda a mesma fórmula, uma vez por matriz, sobre os registros da matriz.
+      const valoresPorMatriz = new Map<number, Map<number, number>>();
+      matrizIds.forEach((matrizId) => {
+        const itens = calcularItensParaMatriz(
+          estruturaItens,
+          porMatriz(contasPagar, matrizId),
+          porMatriz(contasReceber, matrizId),
+          porMatriz(aportes, matrizId),
+          porMatriz(retiradas, matrizId),
+          porMatriz(emprestimos, matrizId),
+        );
+        valoresPorMatriz.set(matrizId, new Map(itens.map((i) => [i.id, i.valor])));
+      });
 
-          const contasReceberValues = contasReceber
-            .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
-            .reduce((sum: number, cr: any) => sum + (Number(cr.valor_total) || 0), 0);
-
-          valor = contasPagarValues + contasReceberValues;
-
-          // Apply sign based on function from structure (débito = negative, crédito = positive)
-          if (item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO') {
-            valor = -valor;
-          }
-        } else if (item.tipo === 'APORTE') {
-          // Sum all aportes (positive)
-          valor = aportes.reduce((sum: number, aporte: any) => sum + (Number(aporte.valor) || 0), 0);
-        } else if (item.tipo === 'RETIRADA') {
-          // Sum all retiradas (negative)
-          valor = -retiradas.reduce((sum: number, retirada: any) => sum + (Number(retirada.valor) || 0), 0);
-        } else if (item.tipo === 'EMPRESTIMO_ENTRADA') {
-          // Pagamentos de empréstimo entram no caixa (positive)
-          valor = emprestimos
-            .filter((e: any) => e.tipo === 'PAGAMENTO')
-            .reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
-        } else if (item.tipo === 'EMPRESTIMO_SAIDA') {
-          // Empréstimos concedidos saem do caixa (negative)
-          valor = -emprestimos
-            .filter((e: any) => e.tipo === 'EMPRESTIMO')
-            .reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
-        } else if (item.tipo === 'GRUPO') {
-          // Group value is sum of its subgroups
-          const subgroupValues = estruturaItens
-            .filter((subitem: any) => subitem.tipo === 'SUBGRUPO' && subitem.parent_id === item.id)
-            .reduce((sum: number, subitem: any) => {
-              // Calculate subgroup value (same logic as above)
-              let subgroupValue = 0;
-              if (subitem.subgrupo_contabil_id) {
-                const contasPagarValues = contasPagar
-                  .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(subitem.subgrupo_contabil_id))
-                  .reduce((sum: number, cp: any) => sum + (Number(cp.valor_total) || 0), 0);
-
-                const contasReceberValues = contasReceber
-                  .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(subitem.subgrupo_contabil_id))
-                  .reduce((sum: number, cr: any) => sum + (Number(cr.valor_total) || 0), 0);
-
-                subgroupValue = contasPagarValues + contasReceberValues;
-
-                // Get subgroup function from structure
-                if (subitem.subgrupo_funcao === 'Débito' || subitem.subgrupo_funcao === 'DEBITO') {
-                  subgroupValue = -subgroupValue;
-                }
-              }
-              return sum + subgroupValue;
-            }, 0);
-          valor = subgroupValues;
-        }
+      const finalItems: DreItemResult[] = estruturaItens.map((item: any) => {
+        const valores: Record<number, number> = {};
+        matrizIds.forEach((matrizId) => {
+          valores[matrizId] = valoresPorMatriz.get(matrizId)?.get(item.id) ?? 0;
+        });
+        // Coluna TOTAL: soma horizontal das matrizes selecionadas.
+        const valor = matrizIds.reduce((sum, matrizId) => sum + valores[matrizId], 0);
 
         return {
           id: item.id,
@@ -188,42 +198,16 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
           subgrupo_contabil_id: item.subgrupo_contabil_id,
           subgrupo_funcao: item.subgrupo_funcao,
           parent_id: item.parent_id,
+          valores,
           valor,
         };
-      });
-
-      // Sort items by order to process SOMA lines correctly
-      const sortedItems = processedItems.sort((a, b) => a.ordem - b.ordem);
-
-      // Calculate SOMA items: sum all items with lower order numbers
-      const finalItems = sortedItems.map((item, index) => {
-        if (item.tipo === 'SOMA') {
-          
-          // Sum only SUBGRUPOS, APORTES e RETIRADAS above this SOMA line (exclude GRUPOS to avoid duplication)
-          const itemsAbove = sortedItems.slice(0, index).filter(aboveItem => 
-            aboveItem.tipo === 'SUBGRUPO' || 
-            aboveItem.tipo === 'APORTE' || 
-            aboveItem.tipo === 'RETIRADA' ||
-            aboveItem.tipo === 'EMPRESTIMO_ENTRADA' ||
-            aboveItem.tipo === 'EMPRESTIMO_SAIDA'
-          );
-          
-          const somaValue = itemsAbove.reduce((sum: number, aboveItem) => {
-            return sum + aboveItem.valor;
-          }, 0);
-          
-          return { ...item, valor: somaValue };
-        }
-        return item;
       });
 
       setDreData(finalItems.sort((a, b) => a.ordem - b.ordem));
       setHasCalculated(true);
       onComplete();
     }
-  }, [isLoading, estruturaItens, contasPagar, contasReceber, aportes, retiradas, emprestimos, hasCalculated, onComplete]);
-
-
+  }, [isLoading, estruturaItens, contasPagar, contasReceber, aportes, retiradas, emprestimos, hasCalculated, onComplete, matrizIds]);
 
   const getItemTypeBadge = (tipo: string) => {
     const variants = {
@@ -250,32 +234,44 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
     return '';
   };
 
-  const getValueStyle = (item: DreItemResult) => {
+  /** Mesma coloração de antes, agora avaliada célula a célula. */
+  const getValueStyle = (item: DreItemResult, valor: number) => {
     const baseStyle = `text-right ${getRowStyle(item)}`;
-    
+
     // Para RETIRADAS e EMPRÉSTIMOS SAÍDA sempre vermelho (valores já negativos)
     if (item.tipo === 'RETIRADA' || item.tipo === 'EMPRESTIMO_SAIDA') {
       return `${baseStyle} text-red-600`;
     }
-    
+
     // Para SUBGRUPOS com função DÉBITO, exibir em vermelho (valores já negativos)
     if (item.tipo === 'SUBGRUPO' && (item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO')) {
       return `${baseStyle} text-red-600`;
     }
-    
+
     // Para GRUPOS que contêm apenas DÉBITOS, também exibir em vermelho
-    if (item.tipo === 'GRUPO' && item.valor < 0) {
+    if (item.tipo === 'GRUPO' && valor < 0) {
       return `${baseStyle} text-red-600`;
     }
-    
+
     // Para valores negativos em geral (inclui SOMA que pode ser negativa)
-    if (item.valor < 0) {
+    if (valor < 0) {
       return `${baseStyle} text-red-600`;
     }
-    
+
     // Para valores positivos
     return `${baseStyle} text-green-600`;
   };
+
+  const valorDaColuna = (item: DreItemResult, coluna: DreColuna) =>
+    coluna.key === 'TOTAL' ? item.valor : item.valores[coluna.key] ?? 0;
+
+  const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
+  const matrizesNomes = matrizesSelecionadas.map((m) => m.nome);
+  const contasNomes = (contas || [])
+    .filter((c: any) => contaIdsAplicados.includes(Number(c.id)))
+    .map((c: any) => c.nome as string);
+  /** Sufixo de nome de arquivo: nome da matriz quando só há uma. */
+  const sufixoArquivo = matrizesNomes.length === 1 ? matrizesNomes[0] : `${matrizesNomes.length}_matrizes`;
 
   const handleExportPdf = () => {
     if (!dreData || dreData.length === 0) {
@@ -287,9 +283,6 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
       return;
     }
 
-    const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
-    const matrizNome = matrizes?.find((m: any) => m.id === matrizId)?.nome || 'N/A';
-
     const success = exportDreToPdf(
       dreData,
       'Demonstrativo de Resultado do Exercício',
@@ -298,13 +291,15 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
         dataFim,
         tipoData,
         estruturaNome,
-        matrizNome,
+        matrizesNomes,
+        contasNomes: contasNomes.length ? contasNomes : undefined,
       },
       {
         aportes,
         retiradas,
         emprestimos,
-      }
+      },
+      colunas,
     );
 
     if (success) {
@@ -332,37 +327,46 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
     }
 
     try {
-      const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
-      const matrizNome = matrizes?.find((m: any) => m.id === matrizId)?.nome || 'N/A';
-
-      // Preparar dados para Excel
-      const excelData = dreData.map((item) => ({
-        Ordem: item.ordem,
-        Tipo: item.tipo,
-        Nome: item.nome,
-        Valor: item.valor,
-      }));
+      // Uma coluna de valor por matriz (+ TOTAL quando houver 2 ou mais)
+      const excelData = dreData.map((item) => {
+        const linha: Record<string, any> = {
+          Ordem: item.ordem,
+          Tipo: item.tipo,
+          Nome: item.nome,
+        };
+        colunas.forEach((col) => {
+          linha[col.label] = valorDaColuna(item, col);
+        });
+        return linha;
+      });
 
       // Criar workbook e worksheet
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet([]);
 
-      // Adicionar cabeçalho com informações do relatório
-      XLSX.utils.sheet_add_aoa(ws, [
+      const cabecalho = ['Ordem', 'Tipo', 'Nome', ...colunas.map((c) => c.label)];
+      const linhasInfo: any[][] = [
         ['Demonstrativo de Resultado do Exercício'],
         [''],
         ['Estrutura:', estruturaNome],
-        ['Matriz:', matrizNome],
+        [matrizesNomes.length > 1 ? 'Matrizes:' : 'Matriz:', matrizesNomes.join(', ')],
         ['Período:', `${dataInicio} a ${dataFim}`],
         ['Critério:', tipoData === 'competencia' ? 'Data de Competência' : 'Data de Pagamento'],
-        [''],
-        ['Ordem', 'Tipo', 'Nome', 'Valor'],
-      ]);
+      ];
+      if (contasNomes.length) {
+        linhasInfo.push(['Contas:', contasNomes.join(', ')]);
+      }
+      linhasInfo.push([''], cabecalho);
 
-      // Adicionar dados do DRE
+      // Adicionar cabeçalho com informações do relatório
+      XLSX.utils.sheet_add_aoa(ws, linhasInfo);
+
+      // Os dados começam logo após as linhas de informação + cabeçalho
+      const primeiraLinhaDados = linhasInfo.length; // índice 0-based da 1ª linha de dados
       XLSX.utils.sheet_add_json(ws, excelData, {
-        origin: 'A9',
+        origin: `A${primeiraLinhaDados + 1}`,
         skipHeader: true,
+        header: cabecalho,
       });
 
       // Ajustar largura das colunas
@@ -370,22 +374,24 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
         { wch: 10 },  // Ordem
         { wch: 15 },  // Tipo
         { wch: 50 },  // Nome
-        { wch: 20 },  // Valor
+        ...colunas.map(() => ({ wch: 20 })), // uma por matriz (+ TOTAL)
       ];
 
-      // Aplicar formatação de moeda na coluna Valor
+      // Aplicar formatação de moeda nas colunas de valor
       const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-      for (let R = 8; R <= range.e.r; ++R) {
-        const cellAddress = XLSX.utils.encode_cell({ r: R, c: 3 }); // Coluna D (Valor)
-        if (!ws[cellAddress]) continue;
-        ws[cellAddress].z = '#,##0.00';
+      for (let R = primeiraLinhaDados; R <= range.e.r; ++R) {
+        for (let C = 3; C < 3 + colunas.length; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+          ws[cellAddress].z = '#,##0.00';
+        }
       }
 
       // Adicionar worksheet ao workbook
       XLSX.utils.book_append_sheet(wb, ws, 'DRE');
 
       // Gerar arquivo
-      const fileName = `DRE_${matrizNome}_${dataInicio}_${dataFim}.xlsx`;
+      const fileName = `DRE_${sufixoArquivo}_${dataInicio}_${dataFim}.xlsx`;
       XLSX.writeFile(wb, fileName);
 
       toast({
@@ -402,22 +408,36 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
     }
   };
 
+  // Guarda: sem matriz não há filtro de matriz no SQL, o que traria todas as
+  // matrizes. O botão "Gerar DRE" já valida isso; aqui é defesa em profundidade.
+  if (matrizIds.length === 0) {
+    return <div className="text-center py-4">Selecione ao menos uma matriz.</div>;
+  }
+
   if (isLoading) {
     return <div className="text-center py-4">Carregando dados do DRE...</div>;
   }
+
+  // Mantém o comportamento atual (ocultar linhas zeradas); no multi-matriz a
+  // linha aparece se qualquer coluna tiver valor.
+  const linhasVisiveis = dreData.filter(
+    (item) => item.valor !== 0 || Object.values(item.valores).some((v) => v !== 0),
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
-          Período: {dataInicio} a {dataFim} | 
+          Período: {dataInicio} a {dataFim} |
           Critério: {tipoData === 'competencia' ? 'Data de Competência' : 'Data de Pagamento'}
+          {contasNomes.length > 0 && <> | Contas: {contasNomes.join(', ')}</>}
         </div>
         <div className="flex gap-2">
           <UpdateSomaButton
             dreData={dreData}
             onSomaUpdated={setDreData}
             estruturaItens={estruturaItens || []}
+            matrizIds={matrizIds}
           />
           <Button variant="outline" size="sm" onClick={handleExportPdf}>
             <Download className="mr-2 h-4 w-4" />
@@ -429,18 +449,25 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
           </Button>
         </div>
       </div>
-      
-      <div className="rounded-md border">
+
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Ordem</TableHead>
               <TableHead>Nome</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
+              {colunas.map((col) => (
+                <TableHead
+                  key={String(col.key)}
+                  className={`text-right ${col.key === 'TOTAL' ? 'font-bold text-slate-900' : ''}`}
+                >
+                  {col.label}
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {dreData.filter((item) => item.valor !== 0).map((item) => (
+            {linhasVisiveis.map((item) => (
               <TableRow key={item.id} className={getRowStyle(item)}>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -453,9 +480,17 @@ export function DreDataLoader({ estruturaId, matrizId, tipoData, dataInicio, dat
                     {item.nome}
                   </div>
                 </TableCell>
-                <TableCell className={getValueStyle(item)}>
-                  {formatCurrency(item.valor)}
-                </TableCell>
+                {colunas.map((col) => {
+                  const valor = valorDaColuna(item, col);
+                  return (
+                    <TableCell
+                      key={String(col.key)}
+                      className={`${getValueStyle(item, valor)} ${col.key === 'TOTAL' ? 'font-bold' : ''}`}
+                    >
+                      {formatCurrency(valor)}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
             ))}
           </TableBody>

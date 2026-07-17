@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { andIdIn, andIdInWhenPagamento } from '@/lib/sql-filters';
 
 // Retorna o campo tipo para o DRE separar EMPRESTIMO (saída) de PAGAMENTO (entrada)
 function loadDreEmprestimos() {
@@ -8,13 +9,15 @@ function loadDreEmprestimos() {
       SELECT
         id,
         matriz_id,
+        conta_id,
         tipo,
         valor,
         data_emprestimo as data_referencia
       FROM emprestimos
       WHERE
-        matriz_id = {{params.matrizId}}
-        AND data_emprestimo BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}';
+        data_emprestimo BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}'
+        ${andIdIn('matriz_id', 'matrizIds')}
+        ${andIdInWhenPagamento('conta_id', 'contaIds')};
     `,
   });
 }

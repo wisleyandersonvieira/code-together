@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { andIdIn, andIdInWhenPagamento } from '@/lib/sql-filters';
 
 function loadAportes() {
   return action('loadAportes', 'SQL', {
@@ -19,6 +20,8 @@ function loadAportes() {
         {{ params.matrizId ? "AND a.matriz_id = " + params.matrizId : "" }}
         {{ params.socioId ? "AND a.socio_id = " + params.socioId : "" }}
         {{ params.contaId ? "AND a.conta_id = " + params.contaId : "" }}
+        ${andIdIn('a.matriz_id', 'matrizIds')}
+        ${andIdInWhenPagamento('a.conta_id', 'contaIds')}
       ORDER BY a.data_aporte DESC, a.created_at DESC;
     `,
   });
