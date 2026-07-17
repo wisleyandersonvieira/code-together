@@ -20,11 +20,17 @@ function loadDreContasPagar() {
           ELSE tp.data_pagamento
         END as data_referencia,
         sg.id as subgrupo_contabil_id,
-        sg.funcao
+        sg.funcao,
+        cp.numero_documento,
+        f.name as fornecedor_nome,
+        p.descricao as produto_nome
       FROM contas_pagar cp
       INNER JOIN titulos_pagar tp ON tp.conta_pagar_id = cp.id
       INNER JOIN contas_pagar_itens cpi ON cpi.conta_pagar_id = cp.id
       INNER JOIN produtos p ON p.id = cpi.produto_id
+      -- LEFT JOIN apenas de exibição (drill-down): não pode alterar a contagem
+      -- de linhas nem, portanto, o valor somado.
+      LEFT JOIN fornecedores f ON f.id = cp.fornecedor_id
       INNER JOIN subgrupos_contabeis sg ON sg.id = p.subgrupo_id
       INNER JOIN estruturas_dre_itens edi ON edi.subgrupo_contabil_id = sg.id AND edi.estrutura_dre_id = {{params.estruturaId}}
       WHERE

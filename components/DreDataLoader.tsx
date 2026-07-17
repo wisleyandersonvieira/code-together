@@ -5,7 +5,7 @@ import { useLoadAction } from '@uibakery/data';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Download, FileSpreadsheet } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, FileSpreadsheet } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
 import { usePdfExport, type DreColuna } from '@/hooks/use-pdf-export';
 import { useToast } from '@/hooks/use-toast';
@@ -19,7 +19,7 @@ import loadDreEmprestimosAction from '@/actions/loadDreEmprestimos';
 import loadEstruturasDreAction from '@/actions/loadEstruturasDre';
 import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadContasAction from '@/actions/loadContas';
-import { calcularItensParaMatriz, porMatriz } from '@/lib/dre-calculo';
+import { calcularItensParaMatriz, lancamentosDoSubgrupo, porMatriz } from '@/lib/dre-calculo';
 
 interface DreDataLoaderProps {
   estruturaId: number;
@@ -64,6 +64,18 @@ export function DreDataLoader({
   const { toast } = useToast();
   const [dreData, setDreData] = useState<DreItemResult[]>([]);
   const [hasCalculated, setHasCalculated] = useState(false);
+  // Drill-down: chave é o id do ITEM da estrutura (não o subgrupo_contabil_id),
+  // pois o mesmo subgrupo contábil pode aparecer em mais de uma linha.
+  const [expandedSubgrupos, setExpandedSubgrupos] = useState<Set<number>>(new Set());
+
+  const toggleSubgrupo = (itemId: number) => {
+    setExpandedSubgrupos((prev) => {
+      const proximo = new Set(prev);
+      if (proximo.has(itemId)) proximo.delete(itemId);
+      else proximo.add(itemId);
+      return proximo;
+    });
+  };
 
   // O filtro de conta só existe na emissão por data de pagamento.
   const contaIdsAplicados = useMemo(
@@ -203,6 +215,8 @@ export function DreDataLoader({
       });
 
       setDreData(finalItems.sort((a, b) => a.ordem - b.ordem));
+      // Novo relatório começa com todos os subgrupos recolhidos.
+      setExpandedSubgrupos(new Set());
       setHasCalculated(true);
       onComplete();
     }
@@ -460,32 +474,112 @@ export function DreDataLoader({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {linhasVisiveis.map((item) => (
-              <TableRow key={item.id} className={getRowStyle(item)}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    {item.ordem}
-                    {getItemTypeBadge(item.tipo)}
-                  </div>
-                </TableCell>
-                <TableCell className={getRowStyle(item)}>
-                  <div style={{ paddingLeft: `${(item.nivel - 1) * 20}px` }}>
-                    {item.nome}
-                  </div>
-                </TableCell>
-                {colunas.map((col) => {
-                  const valor = valorDaColuna(item, col);
-                  return (
-                    <TableCell
-                      key={String(col.key)}
-                      className={`${getValueStyle(item, valor)} ${col.key === 'TOTAL' ? 'font-bold' : ''}`}
-                    >
-                      {formatCurrency(valor)}
+            {linhasVisiveis.map((item) => {
+              const podeExpandir = item.tipo === 'SUBGRUPO' && !!item.subgrupo_contabil_id;
+              const expandido = expandedSubgrupos.has(item.id);
+              // Só monta o detalhe do que está aberto.
+              const lancamentos =
+                podeExpandir && expandido
+                  ? lancamentosDoSubgrupo(
+                      contasPagar,
+                      contasReceber,
+                      Number(item.subgrupo_contabil_id),
+                      item.subgrupo_funcao,
+                      matrizIds,
+                    )
+                  : [];
+
+              return (
+                <React.Fragment key={item.id}>
+                  <TableRow className={getRowStyle(item)}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {item.ordem}
+                        {getItemTypeBadge(item.tipo)}
+                      </div>
                     </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
+                    <TableCell className={getRowStyle(item)}>
+                      <div
+                        className="flex items-center gap-1"
+                        style={{ paddingLeft: `${(item.nivel - 1) * 20}px` }}
+                      >
+                        {podeExpandir ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleSubgrupo(item.id)}
+                            aria-expanded={expandido}
+                            aria-label={`${expandido ? 'Recolher' : 'Detalhar'} lançamentos de ${item.nome}`}
+                            className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            {expandido ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
+                        ) : null}
+                        {item.nome}
+                      </div>
+                    </TableCell>
+                    {colunas.map((col) => {
+                      const valor = valorDaColuna(item, col);
+                      return (
+                        <TableCell
+                          key={String(col.key)}
+                          className={`${getValueStyle(item, valor)} ${col.key === 'TOTAL' ? 'font-bold' : ''}`}
+                        >
+                          {formatCurrency(valor)}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+
+                  {/* Sublinhas de detalhe: mesma grade de colunas da tabela, com o
+                      valor na célula da matriz a que o lançamento pertence. */}
+                  {expandido && lancamentos.length === 0 && (
+                    <TableRow className="bg-muted/20 hover:bg-muted/20">
+                      <TableCell colSpan={2 + colunas.length} className="py-2 text-xs text-muted-foreground">
+                        <div style={{ paddingLeft: `${item.nivel * 20 + 12}px` }}>
+                          Sem lançamentos para detalhar
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  {expandido &&
+                    lancamentos.map((lancamento) => (
+                      <TableRow key={`${item.id}-${lancamento.origem}-${lancamento.id}`} className="bg-muted/20 hover:bg-muted/30">
+                        {/* Número · Fornecedor · Produto ocupam a área de Ordem+Nome */}
+                        <TableCell colSpan={2} className="py-1.5 text-xs font-normal text-muted-foreground">
+                          <div className="flex items-center gap-2" style={{ paddingLeft: `${item.nivel * 20 + 12}px` }}>
+                            <span className="font-medium text-foreground">{lancamento.numeroDocumento}</span>
+                            <span aria-hidden>·</span>
+                            <span className="truncate">{lancamento.fornecedorNome}</span>
+                            <span aria-hidden>·</span>
+                            <span className="truncate">{lancamento.produtoNome}</span>
+                          </div>
+                        </TableCell>
+                        {colunas.map((col) => {
+                          // Um lançamento pertence a uma única matriz: só a coluna
+                          // dela (e a TOTAL) recebem valor; as demais ficam vazias.
+                          const pertence = col.key === 'TOTAL' || col.key === lancamento.matrizId;
+                          if (!pertence) return <TableCell key={String(col.key)} />;
+                          return (
+                            <TableCell
+                              key={String(col.key)}
+                              className={`py-1.5 text-right text-xs ${
+                                lancamento.valor < 0 ? 'text-red-600' : 'text-green-600'
+                              } ${col.key === 'TOTAL' ? 'font-medium' : ''}`}
+                            >
+                              {formatCurrency(lancamento.valor)}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                </React.Fragment>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

@@ -20,11 +20,30 @@ function loadDreContasReceber() {
           ELSE tr.data_recebimento
         END as data_referencia,
         sg.id as subgrupo_contabil_id,
-        sg.funcao
+        sg.funcao,
+        cr.numero_documento,
+        -- Contraparte polimórfica: entity_type/entity_id (cliente|empresa|grupo),
+        -- com fallback para o cliente_id legado. Mesma regra de loadContasReceber.
+        COALESCE(
+          CASE
+            WHEN cr.entity_type = 'cliente' THEN cl.name
+            WHEN cr.entity_type = 'empresa' THEN e.name
+            WHEN cr.entity_type = 'grupo' THEN g.name
+            ELSE c.name
+          END,
+          c.name
+        ) as fornecedor_nome,
+        p.descricao as produto_nome
       FROM contas_receber cr
       INNER JOIN titulos_receber tr ON tr.conta_receber_id = cr.id
       INNER JOIN contas_receber_itens cri ON cri.conta_receber_id = cr.id
       INNER JOIN produtos p ON p.id = cri.produto_id
+      -- LEFT JOINs apenas de exibição (drill-down): não podem alterar a
+      -- contagem de linhas nem, portanto, o valor somado.
+      LEFT JOIN clientes c ON cr.cliente_id = c.id
+      LEFT JOIN clientes cl ON cr.entity_type = 'cliente' AND cr.entity_id = cl.id
+      LEFT JOIN empresas e ON cr.entity_type = 'empresa' AND cr.entity_id = e.id
+      LEFT JOIN grupos g ON cr.entity_type = 'grupo' AND cr.entity_id = g.id
       INNER JOIN subgrupos_contabeis sg ON sg.id = p.subgrupo_id
       INNER JOIN estruturas_dre_itens edi ON edi.subgrupo_contabil_id = sg.id AND edi.estrutura_dre_id = {{params.estruturaId}}
       WHERE
