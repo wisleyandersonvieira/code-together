@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Download, FileSpreadsheet } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
-import { UpdateSomaButton } from '@/components/UpdateSomaButton';
 import { usePdfExport, type DreColuna } from '@/hooks/use-pdf-export';
 import { useToast } from '@/hooks/use-toast';
 import * as XLSX from 'xlsx';
@@ -433,12 +432,6 @@ export function DreDataLoader({
           {contasNomes.length > 0 && <> | Contas: {contasNomes.join(', ')}</>}
         </div>
         <div className="flex gap-2">
-          <UpdateSomaButton
-            dreData={dreData}
-            onSomaUpdated={setDreData}
-            estruturaItens={estruturaItens || []}
-            matrizIds={matrizIds}
-          />
           <Button variant="outline" size="sm" onClick={handleExportPdf}>
             <Download className="mr-2 h-4 w-4" />
             Exportar PDF
