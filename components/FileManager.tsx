@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FileText, Image, Download, Trash2, Upload, Star } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import uploadFileAction from '@/actions/uploadFile';
@@ -12,6 +13,96 @@ import getFileAction from '@/actions/getFile';
 import loadFilesByEntityAction from '@/actions/loadFilesByEntity';
 import deleteFileAction from '@/actions/deleteFile';
 import setProjetoCoverAction from '@/actions/setProjetoCover';
+
+type LoadFile = (params: { fileId: number }) => Promise<any[]>;
+
+// Lazily fetches the image binary only when the card scrolls near the viewport.
+function FileThumbnail({
+  fileId,
+  filename,
+  contentType,
+  loadFile,
+  onOpen,
+}: {
+  fileId: number;
+  filename: string;
+  contentType: string;
+  loadFile: LoadFile;
+  onOpen: (src: string, filename: string) => void;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const requestedRef = useRef(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '150px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible || requestedRef.current) return;
+    requestedRef.current = true;
+    let cancelled = false;
+    loadFile({ fileId })
+      .then((rows: any[]) => {
+        if (cancelled) return;
+        const f = rows?.[0];
+        if (f?.file_data) {
+          setSrc(
+            f.file_data.startsWith('data:')
+              ? f.file_data
+              : `data:${f.content_type || contentType || 'image/jpeg'};base64,${f.file_data}`
+          );
+        } else {
+          setFailed(true);
+        }
+      })
+      .catch((err) => {
+        console.error('Error loading image:', err);
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, fileId, contentType, loadFile]);
+
+  return (
+    <div
+      ref={ref}
+      className="h-40 w-full overflow-hidden rounded-lg bg-slate-100"
+      onClick={() => src && onOpen(src, filename)}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={filename}
+          className="h-full w-full cursor-zoom-in object-cover transition-transform hover:scale-105"
+          loading="lazy"
+        />
+      ) : failed ? (
+        <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+          Não foi possível carregar a imagem
+        </div>
+      ) : (
+        <div className="h-full w-full animate-pulse bg-slate-200" />
+      )}
+    </div>
+  );
+}
+
 
 interface FileManagerProps {
   entityType: string;
@@ -69,6 +160,7 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
 
   // Optimistic cover selection: reflects the click immediately, before the refresh lands.
   const [pendingCoverId, setPendingCoverId] = useState<number | null>(null);
+  const [preview, setPreview] = useState<{ src: string; filename: string } | null>(null);
 
   const isImageType = (contentType: string) => {
     return contentType.startsWith('image/');
@@ -309,6 +401,16 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
             >
               <CardContent className="p-4">
                 <div className="flex flex-col space-y-3">
+                  {isImage && (
+                    <FileThumbnail
+                      fileId={file.id}
+                      filename={file.filename}
+                      contentType={file.content_type}
+                      loadFile={getFile}
+                      onOpen={(src, name) => setPreview({ src, filename: name })}
+                    />
+                  )}
+
                   <div className="flex items-center gap-2">
                     {getFileIcon(file.content_type)}
                     <span className="text-sm font-medium truncate" title={file.filename}>
@@ -374,6 +476,21 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
           })}
         </div>
       )}
+
+      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-8">{preview?.filename}</DialogTitle>
+          </DialogHeader>
+          {preview && (
+            <img
+              src={preview.src}
+              alt={preview.filename}
+              className="max-h-[75vh] w-full rounded-lg object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
