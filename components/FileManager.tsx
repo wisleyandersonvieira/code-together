@@ -476,6 +476,21 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
           })}
         </div>
       )}
+
+      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-8">{preview?.filename}</DialogTitle>
+          </DialogHeader>
+          {preview && (
+            <img
+              src={preview.src}
+              alt={preview.filename}
+              className="max-h-[75vh] w-full rounded-lg object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
