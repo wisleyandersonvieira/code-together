@@ -400,6 +400,16 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
             >
               <CardContent className="p-4">
                 <div className="flex flex-col space-y-3">
+                  {isImage && (
+                    <FileThumbnail
+                      fileId={file.id}
+                      filename={file.filename}
+                      contentType={file.content_type}
+                      loadFile={getFile}
+                      onOpen={(src, name) => setPreview({ src, filename: name })}
+                    />
+                  )}
+
                   <div className="flex items-center gap-2">
                     {getFileIcon(file.content_type)}
                     <span className="text-sm font-medium truncate" title={file.filename}>
