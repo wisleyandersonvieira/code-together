@@ -57,8 +57,8 @@ function ProjetoCardImage({
   loadFile: LoadFile;
 }) {
   const [src, setSrc] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
+  const requestedRef = useRef(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,9 +79,11 @@ function ProjetoCardImage({
   }, [fileId]);
 
   useEffect(() => {
-    if (!visible || !fileId || src || loading) return;
+    // `requestedRef` (not state) guards the single fetch: putting a loading flag
+    // in the deps array would re-run this effect and cancel the in-flight request.
+    if (!visible || !fileId || requestedRef.current) return;
+    requestedRef.current = true;
     let cancelled = false;
-    setLoading(true);
     loadFile({ fileId })
       .then((rows: any[]) => {
         if (cancelled) return;
@@ -95,14 +97,12 @@ function ProjetoCardImage({
       })
       .catch((err) => {
         console.error('Error loading cover image:', err);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [visible, fileId, src, loading, loadFile]);
+  }, [visible, fileId, loadFile]);
+
 
   // No cover set → neutral placeholder with the project name.
   if (!fileId) {
