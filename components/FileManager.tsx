@@ -160,6 +160,7 @@ export function FileManager({ entityType, entityId, acceptedTypes = "image/*,.pd
 
   // Optimistic cover selection: reflects the click immediately, before the refresh lands.
   const [pendingCoverId, setPendingCoverId] = useState<number | null>(null);
+  const [preview, setPreview] = useState<{ src: string; filename: string } | null>(null);
 
   const isImageType = (contentType: string) => {
     return contentType.startsWith('image/');
