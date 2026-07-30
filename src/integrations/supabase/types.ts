@@ -385,6 +385,44 @@ export type Database = {
         }
         Relationships: []
       }
+      conciliacoes_extrato: {
+        Row: {
+          conciliado: boolean
+          conciliado_em: string | null
+          conciliado_por: string | null
+          conta_id: number
+          id: number
+          origem: string
+          origem_id: number
+        }
+        Insert: {
+          conciliado?: boolean
+          conciliado_em?: string | null
+          conciliado_por?: string | null
+          conta_id: number
+          id?: number
+          origem: string
+          origem_id: number
+        }
+        Update: {
+          conciliado?: boolean
+          conciliado_em?: string | null
+          conciliado_por?: string | null
+          conta_id?: number
+          id?: number
+          origem?: string
+          origem_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conciliacoes_extrato_conta_id_fkey"
+            columns: ["conta_id"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conta_pagar_orcamento_alocacao: {
         Row: {
           conta_pagar_id: number
@@ -823,6 +861,67 @@ export type Database = {
         }
         Relationships: []
       }
+      emprestimos: {
+        Row: {
+          conta_id: number
+          created_at: string | null
+          data_emprestimo: string
+          id: number
+          matriz_id: number
+          observacoes: string | null
+          socio_id: number
+          tipo: string
+          updated_at: string | null
+          valor: number
+        }
+        Insert: {
+          conta_id: number
+          created_at?: string | null
+          data_emprestimo: string
+          id?: number
+          matriz_id: number
+          observacoes?: string | null
+          socio_id: number
+          tipo: string
+          updated_at?: string | null
+          valor: number
+        }
+        Update: {
+          conta_id?: number
+          created_at?: string | null
+          data_emprestimo?: string
+          id?: number
+          matriz_id?: number
+          observacoes?: string | null
+          socio_id?: number
+          tipo?: string
+          updated_at?: string | null
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emprestimos_conta_id_fkey"
+            columns: ["conta_id"]
+            isOneToOne: false
+            referencedRelation: "contas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "emprestimos_matriz_id_fkey"
+            columns: ["matriz_id"]
+            isOneToOne: false
+            referencedRelation: "matrizes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "emprestimos_socio_id_fkey"
+            columns: ["socio_id"]
+            isOneToOne: false
+            referencedRelation: "socios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       estruturas_dre: {
         Row: {
           created_at: string | null
@@ -917,6 +1016,7 @@ export type Database = {
           file_size: number | null
           filename: string | null
           id: number
+          is_cover: boolean
           updated_at: string | null
         }
         Insert: {
@@ -928,6 +1028,7 @@ export type Database = {
           file_size?: number | null
           filename?: string | null
           id?: number
+          is_cover?: boolean
           updated_at?: string | null
         }
         Update: {
@@ -939,6 +1040,7 @@ export type Database = {
           file_size?: number | null
           filename?: string | null
           id?: number
+          is_cover?: boolean
           updated_at?: string | null
         }
         Relationships: []
