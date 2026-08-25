@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  AlarmClock,
   ArrowLeftRight,
   Banknote,
   BarChart2,
@@ -22,6 +23,7 @@ import {
   Building,
   Building2,
   Calculator,
+  CalendarClock,
   ChevronDown,
   CreditCard,
   DollarSign,
@@ -31,6 +33,7 @@ import {
   FolderOpen,
   Github,
   Home,
+  Inbox,
   ListChecks,
   LogOut,
   Menu,
@@ -56,6 +59,7 @@ import {
 } from '@/components/ui/sheet';
 import { LoginForm } from '@/components/LoginForm';
 import { ResetPasswordPage } from '@/components/ResetPasswordPage';
+import { OperacaoAlertaSino } from '@/components/operacao/OperacaoAlertaSino';
 import { NetworkStatus } from '@/components/NetworkStatus';
 import { DatabaseConnectionStatus } from '@/components/DatabaseConnectionStatus';
 import { ProvisonLogo } from '@/components/ProvisonLogo';
@@ -111,7 +115,12 @@ type TabType =
   | 'auditoria-fornecedores-relatorios'
   | 'periodos-bloqueados'
   | 'jornada-cliente'
-  | 'jornada-etapas'
+  | 'jornada-fluxos'
+  | 'operacao-painel'
+  | 'operacao-minhas-tarefas'
+  | 'operacao-obrigacoes'
+  | 'operacao-catalogo-obrigacoes'
+  | 'operacao-relatorios'
   | 'export-project';
 
 type RouteDefinition = {
@@ -165,8 +174,13 @@ const routes: Record<TabType, RouteDefinition> = {
   'auditoria-fornecedores-relatorios': { path: '/matriz/auditoria/relatorios', title: 'Relatorios Auditoria Fornecedores' },
   'periodos-bloqueados': { path: '/matriz/periodos', title: 'Controle de Períodos' },
   'export-project': { path: '/matriz/exportar-github', title: 'Exportar para GitHub' },
+  'operacao-painel': { path: '/operacao/painel-prazos', title: 'Painel de Prazos' },
+  'operacao-minhas-tarefas': { path: '/operacao/minhas-tarefas', title: 'Minhas Tarefas' },
   'jornada-cliente': { path: '/operacao/jornada-cliente', title: 'Jornada do Cliente' },
-  'jornada-etapas': { path: '/operacao/etapas-jornada', title: 'Etapas da Jornada' },
+  'operacao-obrigacoes': { path: '/operacao/obrigacoes', title: 'Obrigações do Cliente' },
+  'operacao-relatorios': { path: '/operacao/relatorios', title: 'Relatórios da Operação' },
+  'jornada-fluxos': { path: '/operacao/fluxos', title: 'Fluxos e Etapas' },
+  'operacao-catalogo-obrigacoes': { path: '/operacao/catalogo-obrigacoes', title: 'Catálogo de Obrigações' },
 };
 
 const pathToTab = Object.entries(routes).reduce<Record<string, TabType>>((acc, [tab, route]) => {
@@ -218,8 +232,13 @@ const relatorioTabs: TabType[] = [
 ];
 
 const operacaoTabs: TabType[] = [
+  'operacao-painel',
+  'operacao-minhas-tarefas',
   'jornada-cliente',
-  'jornada-etapas',
+  'operacao-obrigacoes',
+  'operacao-relatorios',
+  'jornada-fluxos',
+  'operacao-catalogo-obrigacoes',
 ];
 
 const matrizTabs: TabType[] = [
@@ -312,7 +331,12 @@ const AuditoriaFornecedorReports = lazy(() => import('@/components/AuditoriaForn
 const ExportProject = lazy(() => import('@/components/ExportProject').then((module) => ({ default: module.ExportProject })));
 const PeriodosBloqueados = lazy(() => import('@/components/PeriodosBloqueados').then((module) => ({ default: module.PeriodosBloqueados })));
 const JornadaClienteModule = lazyWithRetry(() => import('@/components/JornadaClienteModule').then((module) => ({ default: module.JornadaClienteModule })));
-const JornadaEtapasList = lazyWithRetry(() => import('@/components/JornadaEtapasList').then((module) => ({ default: module.JornadaEtapasList })));
+const JornadaFluxosList = lazyWithRetry(() => import('@/components/JornadaFluxosList').then((module) => ({ default: module.JornadaFluxosList })));
+const ObrigacoesCatalogoList = lazyWithRetry(() => import('@/components/ObrigacoesCatalogoList').then((module) => ({ default: module.ObrigacoesCatalogoList })));
+const ObrigacoesClienteModule = lazyWithRetry(() => import('@/components/ObrigacoesClienteModule').then((module) => ({ default: module.ObrigacoesClienteModule })));
+const OperacaoPainelPrazos = lazyWithRetry(() => import('@/components/OperacaoPainelPrazos').then((module) => ({ default: module.OperacaoPainelPrazos })));
+const OperacaoMinhasTarefas = lazyWithRetry(() => import('@/components/OperacaoMinhasTarefas').then((module) => ({ default: module.OperacaoMinhasTarefas })));
+const OperacaoRelatorios = lazyWithRetry(() => import('@/components/OperacaoRelatorios').then((module) => ({ default: module.OperacaoRelatorios })));
 
 function LoadingPage() {
   return (
@@ -438,8 +462,13 @@ function MobileNavContent({
           {sectionHeader('Operação', 'operacao', <Route className="h-4 w-4" />)}
           {openSection === 'operacao' && (
             <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Painel de Prazos', 'operacao-painel', <AlarmClock className="h-4 w-4" />)}
+              {navItem('Minhas Tarefas', 'operacao-minhas-tarefas', <Inbox className="h-4 w-4" />)}
               {navItem('Jornada do Cliente', 'jornada-cliente', <Route className="h-4 w-4" />)}
-              {navItem('Etapas da Jornada', 'jornada-etapas', <ListChecks className="h-4 w-4" />)}
+              {navItem('Obrigações do Cliente', 'operacao-obrigacoes', <CalendarClock className="h-4 w-4" />)}
+              {navItem('Relatórios da Operação', 'operacao-relatorios', <BarChart3 className="h-4 w-4" />)}
+              {navItem('Fluxos e Etapas', 'jornada-fluxos', <ListChecks className="h-4 w-4" />)}
+              {navItem('Catálogo de Obrigações', 'operacao-catalogo-obrigacoes', <CalendarClock className="h-4 w-4" />)}
             </div>
           )}
         </div>
@@ -758,8 +787,18 @@ function App() {
         return <PeriodosBloqueados />;
       case 'jornada-cliente':
         return <JornadaClienteModule />;
-      case 'jornada-etapas':
-        return <JornadaEtapasList />;
+      case 'jornada-fluxos':
+        return <JornadaFluxosList />;
+      case 'operacao-painel':
+        return <OperacaoPainelPrazos />;
+      case 'operacao-minhas-tarefas':
+        return <OperacaoMinhasTarefas />;
+      case 'operacao-obrigacoes':
+        return <ObrigacoesClienteModule />;
+      case 'operacao-catalogo-obrigacoes':
+        return <ObrigacoesCatalogoList />;
+      case 'operacao-relatorios':
+        return <OperacaoRelatorios />;
       case 'dashboard':
       default:
         return <Dashboard onNavigate={(tab) => navigateTo(tab as TabType)} />;
@@ -957,6 +996,8 @@ function App() {
               <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-slate-900">PROVISON</h1>
             </div>
             <div className="flex items-center gap-3 sm:gap-5">
+              <OperacaoAlertaSino onNavigate={navigateTo} />
+
               {/* Hide user info on mobile */}
               <div className="hidden sm:flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
                 <Badge variant="outline" className="border-slate-300 bg-white text-slate-700">
@@ -1082,13 +1123,34 @@ function App() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
+                <DropdownMenuItem onClick={() => navigateTo('operacao-painel')}>
+                  <AlarmClock className="mr-2 h-4 w-4" />
+                  Painel de Prazos
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('operacao-minhas-tarefas')}>
+                  <Inbox className="mr-2 h-4 w-4" />
+                  Minhas Tarefas
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigateTo('jornada-cliente')}>
                   <Route className="mr-2 h-4 w-4" />
                   Jornada do Cliente
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigateTo('jornada-etapas')}>
+                <DropdownMenuItem onClick={() => navigateTo('operacao-obrigacoes')}>
+                  <CalendarClock className="mr-2 h-4 w-4" />
+                  Obrigações do Cliente
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('operacao-relatorios')}>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Relatórios da Operação
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigateTo('jornada-fluxos')}>
                   <ListChecks className="mr-2 h-4 w-4" />
-                  Etapas da Jornada
+                  Fluxos e Etapas
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('operacao-catalogo-obrigacoes')}>
+                  <CalendarClock className="mr-2 h-4 w-4" />
+                  Catálogo de Obrigações
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -1,14 +1,14 @@
 import { action } from '@uibakery/data';
 
-function deleteJornadaEtapa() {
-  return action('deleteJornadaEtapa', 'SQL', {
+function deleteJornadaFluxo() {
+  return action('deleteJornadaFluxo', 'SQL', {
     databaseName: 'provision',
     query: `
-      SELECT public.delete_jornada_etapa(
+      SELECT public.delete_jornada_fluxo(
         {{ params && params.id ? Number(params.id) : "NULL" }}
       ) AS result;
     `,
   });
 }
 
-export default deleteJornadaEtapa;
+export default deleteJornadaFluxo;
