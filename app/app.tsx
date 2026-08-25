@@ -31,11 +31,13 @@ import {
   FolderOpen,
   Github,
   Home,
+  ListChecks,
   LogOut,
   Menu,
   Package,
   PieChart,
   Receipt,
+  Route,
   Settings,
   Truck,
   User as UserIcon,
@@ -108,6 +110,8 @@ type TabType =
   | 'auditoria-fornecedores'
   | 'auditoria-fornecedores-relatorios'
   | 'periodos-bloqueados'
+  | 'jornada-cliente'
+  | 'jornada-etapas'
   | 'export-project';
 
 type RouteDefinition = {
@@ -161,6 +165,8 @@ const routes: Record<TabType, RouteDefinition> = {
   'auditoria-fornecedores-relatorios': { path: '/matriz/auditoria/relatorios', title: 'Relatorios Auditoria Fornecedores' },
   'periodos-bloqueados': { path: '/matriz/periodos', title: 'Controle de Períodos' },
   'export-project': { path: '/matriz/exportar-github', title: 'Exportar para GitHub' },
+  'jornada-cliente': { path: '/operacao/jornada-cliente', title: 'Jornada do Cliente' },
+  'jornada-etapas': { path: '/operacao/etapas-jornada', title: 'Etapas da Jornada' },
 };
 
 const pathToTab = Object.entries(routes).reduce<Record<string, TabType>>((acc, [tab, route]) => {
@@ -209,6 +215,11 @@ const relatorioTabs: TabType[] = [
   'relatorio-projetos-geral',
   'relatorio-rentabilidade-projeto',
   'dre-por-status',
+];
+
+const operacaoTabs: TabType[] = [
+  'jornada-cliente',
+  'jornada-etapas',
 ];
 
 const matrizTabs: TabType[] = [
@@ -300,6 +311,8 @@ const AuditoriaFornecedoresModule = lazy(() => import('@/components/AuditoriaFor
 const AuditoriaFornecedorReports = lazy(() => import('@/components/AuditoriaFornecedorReports').then((module) => ({ default: module.AuditoriaFornecedorReports })));
 const ExportProject = lazy(() => import('@/components/ExportProject').then((module) => ({ default: module.ExportProject })));
 const PeriodosBloqueados = lazy(() => import('@/components/PeriodosBloqueados').then((module) => ({ default: module.PeriodosBloqueados })));
+const JornadaClienteModule = lazyWithRetry(() => import('@/components/JornadaClienteModule').then((module) => ({ default: module.JornadaClienteModule })));
+const JornadaEtapasList = lazyWithRetry(() => import('@/components/JornadaEtapasList').then((module) => ({ default: module.JornadaEtapasList })));
 
 function LoadingPage() {
   return (
@@ -332,6 +345,7 @@ interface MobileNavContentProps {
   isFinanceiroActive: boolean;
   isRelatorioActive: boolean;
   isMatrizActive: boolean;
+  isOperacaoActive: boolean;
   onLogout: () => void;
   currentUser: User;
 }
@@ -344,6 +358,7 @@ function MobileNavContent({
   isFinanceiroActive,
   isRelatorioActive,
   isMatrizActive,
+  isOperacaoActive,
   onLogout,
   currentUser,
 }: MobileNavContentProps) {
@@ -355,7 +370,9 @@ function MobileNavContent({
         ? 'relatorios'
         : isMatrizActive
           ? 'matriz'
-          : null;
+          : isOperacaoActive
+            ? 'operacao'
+            : null;
 
   const [openSection, setOpenSection] = useState<string | null>(activeSection);
   const toggleSection = (s: string) => setOpenSection(prev => prev === s ? null : s);
@@ -416,6 +433,16 @@ function MobileNavContent({
 
         {navItem('Projetos', 'projetos', <Home className="h-4 w-4" />)}
         {navItem('Painel', 'kanban', <BarChart3 className="h-4 w-4" />)}
+
+        <div>
+          {sectionHeader('Operação', 'operacao', <Route className="h-4 w-4" />)}
+          {openSection === 'operacao' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Jornada do Cliente', 'jornada-cliente', <Route className="h-4 w-4" />)}
+              {navItem('Etapas da Jornada', 'jornada-etapas', <ListChecks className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
 
         <div>
           {sectionHeader('Financeiro', 'financeiro', <Banknote className="h-4 w-4" />)}
@@ -566,6 +593,7 @@ function App() {
   const isFinanceiroActive = financeiroTabs.includes(activeTab);
   const isRelatorioActive = relatorioTabs.includes(activeTab);
   const isMatrizActive = matrizTabs.includes(activeTab);
+  const isOperacaoActive = operacaoTabs.includes(activeTab);
   const isAdmin = currentUser?.role === 'admin';
 
   const navigateTo = (tab: TabType, options?: { replace?: boolean }) => {
@@ -728,6 +756,10 @@ function App() {
         return <ExportProject />;
       case 'periodos-bloqueados':
         return <PeriodosBloqueados />;
+      case 'jornada-cliente':
+        return <JornadaClienteModule />;
+      case 'jornada-etapas':
+        return <JornadaEtapasList />;
       case 'dashboard':
       default:
         return <Dashboard onNavigate={(tab) => navigateTo(tab as TabType)} />;
@@ -912,6 +944,7 @@ function App() {
                     isFinanceiroActive={isFinanceiroActive}
                     isRelatorioActive={isRelatorioActive}
                     isMatrizActive={isMatrizActive}
+                    isOperacaoActive={isOperacaoActive}
                     onLogout={handleLogout}
                     currentUser={currentUser}
                   />
@@ -1039,6 +1072,26 @@ function App() {
               <BarChart3 className="mr-2 h-4 w-4" />
               Painel
             </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className={getNavItemClasses(isOperacaoActive)}>
+                  <Route className="mr-2 h-4 w-4" />
+                  Operação
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
+                <DropdownMenuItem onClick={() => navigateTo('jornada-cliente')}>
+                  <Route className="mr-2 h-4 w-4" />
+                  Jornada do Cliente
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('jornada-etapas')}>
+                  <ListChecks className="mr-2 h-4 w-4" />
+                  Etapas da Jornada
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
