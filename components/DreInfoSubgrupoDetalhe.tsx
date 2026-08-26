@@ -9,12 +9,14 @@ import loadDreInfoDetalheContasPagarAction from '@/actions/loadDreInfoDetalheCon
 import loadDreInfoDetalheContasReceberAction from '@/actions/loadDreInfoDetalheContasReceber';
 
 interface DreInfoSubgrupoDetalheProps {
-  matrizId: number;
+  matrizIds: number[];
   subgrupoId: number;
   tipoData: 'competencia' | 'pagamento';
   dataInicio: string;
   dataFim: string;
-  projetoId?: number | null;
+  projetoIds?: number[];
+  contaIds?: number[];
+  statusProjeto?: string;
   funcao?: string;
   nivel: number;
   onDataLoaded?: (subgrupoId: number, items: DetalheItem[]) => void;
@@ -40,12 +42,14 @@ function formatDate(dateStr: string | null): string {
 }
 
 export function DreInfoSubgrupoDetalhe({
-  matrizId,
+  matrizIds,
   subgrupoId,
   tipoData,
   dataInicio,
   dataFim,
-  projetoId,
+  projetoIds,
+  contaIds,
+  statusProjeto,
   funcao,
   nivel,
   onDataLoaded,
@@ -55,13 +59,13 @@ export function DreInfoSubgrupoDetalhe({
   const [cpDetalhe, loadingCp] = useLoadAction(
     loadDreInfoDetalheContasPagarAction,
     [],
-    { matrizId, subgrupoId, tipoData, dataInicio, dataFim, projetoId }
+    { matrizIds, subgrupoId, tipoData, dataInicio, dataFim, projetoIds, contaIds, statusProjeto }
   );
 
   const [crDetalhe, loadingCr] = useLoadAction(
     loadDreInfoDetalheContasReceberAction,
     [],
-    { matrizId, subgrupoId, tipoData, dataInicio, dataFim, projetoId }
+    { matrizIds, subgrupoId, tipoData, dataInicio, dataFim, projetoIds, contaIds, statusProjeto }
   );
 
   const isLoading = loadingCp || loadingCr;
