@@ -127,6 +127,10 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const [tiposDocumento] = useLoadAction(loadTiposDocumentoAction, [], { searchDescricao: null });
   const [produtos] = useLoadAction(loadProdutosCreditoAction, []);
   const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
+  const projetosOrdenados = useMemo(() => {
+    if (!projetos) return [];
+    return [...projetos].sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [projetos]);
   const [contas] = useLoadAction(loadContasAction, []);
 
   // Load existing items and projects when editing
