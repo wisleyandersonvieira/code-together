@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { validarPeriodoBloqueado } from '@/hooks/use-periodo-bloqueado';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -341,6 +341,10 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
       .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [fornecedores]);
   const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
+  const projetosOrdenados = useMemo(() => {
+    if (!projetos) return [];
+    return [...projetos].sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [projetos]);
   const [contas] = useLoadAction(loadContasAction, []);
 
   // Load existing items and projects when editing
@@ -1281,19 +1285,19 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                   control={form.control}
                                       name={`projetos_rateio.${index}.projeto_id`}
                                       render={({ field }) => (
-                                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
-                                      <SelectTrigger className={financeDetailFieldClassName}>
-                                        <SelectValue placeholder="Selecionar" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {projetos?.map((projeto: any) => (
-                                          <SelectItem key={projeto.id} value={projeto.id.toString()}>
-                                            {projeto.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  )}
+                                        <Combobox
+                                          value={field.value?.toString()}
+                                          onValueChange={(value) => field.onChange(parseInt(value))}
+                                          options={projetosOrdenados.map((projeto: any) => ({
+                                            value: projeto.id.toString(),
+                                            label: projeto.name,
+                                          }))}
+                                          placeholder="Selecionar"
+                                          searchPlaceholder="Filtrar projeto..."
+                                          emptyText="Nenhum projeto encontrado."
+                                          className={financeDetailFieldClassName}
+                                        />
+                                      )}
                                 />
                               </TableCell>
                               <TableCell>

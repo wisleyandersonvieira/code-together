@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.4"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -1201,6 +1201,486 @@ export type Database = {
         }
         Relationships: []
       }
+      jornada_etapa_historico: {
+        Row: {
+          created_at: string
+          dias_no_status: number
+          id: number
+          item_id: number
+          jornada_id: number
+          observacao: string | null
+          status_anterior: string | null
+          status_novo: string
+          user_id: number | null
+        }
+        Insert: {
+          created_at?: string
+          dias_no_status?: number
+          id?: number
+          item_id: number
+          jornada_id: number
+          observacao?: string | null
+          status_anterior?: string | null
+          status_novo: string
+          user_id?: number | null
+        }
+        Update: {
+          created_at?: string
+          dias_no_status?: number
+          id?: number
+          item_id?: number
+          jornada_id?: number
+          observacao?: string | null
+          status_anterior?: string | null
+          status_novo?: string
+          user_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jornada_etapa_historico_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_etapa_itens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_etapa_historico_jornada_id_fkey"
+            columns: ["jornada_id"]
+            isOneToOne: false
+            referencedRelation: "jornadas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_etapa_historico_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jornada_etapa_itens: {
+        Row: {
+          aguardando_motivo: string | null
+          checklist_concluidos: number
+          checklist_total: number
+          created_at: string
+          data_conclusao: string | null
+          data_inicio: string | null
+          data_limite: string | null
+          data_prevista: string | null
+          dias_pausados: number
+          etapa_id: number | null
+          fluxo_etapa_id: number
+          id: number
+          jornada_id: number
+          observacoes: string | null
+          ordem: number
+          pausado_em: string | null
+          prazo_dias: number | null
+          responsavel_user_id: number | null
+          status: string
+          status_desde: string
+          updated_at: string
+        }
+        Insert: {
+          aguardando_motivo?: string | null
+          checklist_concluidos?: number
+          checklist_total?: number
+          created_at?: string
+          data_conclusao?: string | null
+          data_inicio?: string | null
+          data_limite?: string | null
+          data_prevista?: string | null
+          dias_pausados?: number
+          etapa_id?: number | null
+          fluxo_etapa_id: number
+          id?: number
+          jornada_id: number
+          observacoes?: string | null
+          ordem?: number
+          pausado_em?: string | null
+          prazo_dias?: number | null
+          responsavel_user_id?: number | null
+          status?: string
+          status_desde?: string
+          updated_at?: string
+        }
+        Update: {
+          aguardando_motivo?: string | null
+          checklist_concluidos?: number
+          checklist_total?: number
+          created_at?: string
+          data_conclusao?: string | null
+          data_inicio?: string | null
+          data_limite?: string | null
+          data_prevista?: string | null
+          dias_pausados?: number
+          etapa_id?: number | null
+          fluxo_etapa_id?: number
+          id?: number
+          jornada_id?: number
+          observacoes?: string | null
+          ordem?: number
+          pausado_em?: string | null
+          prazo_dias?: number | null
+          responsavel_user_id?: number | null
+          status?: string
+          status_desde?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jornada_etapa_itens_etapa_id_fkey"
+            columns: ["etapa_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_etapas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_etapa_itens_fluxo_etapa_id_fkey"
+            columns: ["fluxo_etapa_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_fluxo_etapas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_etapa_itens_jornada_id_fkey"
+            columns: ["jornada_id"]
+            isOneToOne: false
+            referencedRelation: "jornadas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_etapa_itens_responsavel_user_id_fkey"
+            columns: ["responsavel_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jornada_etapas: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          id: number
+          nome: string
+          ordem: number
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: number
+          nome: string
+          ordem?: number
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: number
+          nome?: string
+          ordem?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jornada_fluxo_checklist: {
+        Row: {
+          created_at: string
+          descricao: string
+          fluxo_etapa_id: number
+          id: number
+          obrigatorio: boolean
+          ordem: number
+        }
+        Insert: {
+          created_at?: string
+          descricao: string
+          fluxo_etapa_id: number
+          id?: number
+          obrigatorio?: boolean
+          ordem?: number
+        }
+        Update: {
+          created_at?: string
+          descricao?: string
+          fluxo_etapa_id?: number
+          id?: number
+          obrigatorio?: boolean
+          ordem?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jornada_fluxo_checklist_fluxo_etapa_id_fkey"
+            columns: ["fluxo_etapa_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_fluxo_etapas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jornada_fluxo_etapas: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          fluxo_id: number
+          id: number
+          legacy_etapa_id: number | null
+          nome: string
+          ordem: number
+          prazo_dias: number | null
+          responsavel_padrao_user_id: number | null
+          setor: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          fluxo_id: number
+          id?: number
+          legacy_etapa_id?: number | null
+          nome: string
+          ordem?: number
+          prazo_dias?: number | null
+          responsavel_padrao_user_id?: number | null
+          setor?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          fluxo_id?: number
+          id?: number
+          legacy_etapa_id?: number | null
+          nome?: string
+          ordem?: number
+          prazo_dias?: number | null
+          responsavel_padrao_user_id?: number | null
+          setor?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jornada_fluxo_etapas_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_fluxos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_fluxo_etapas_responsavel_padrao_user_id_fkey"
+            columns: ["responsavel_padrao_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jornada_fluxos: {
+        Row: {
+          ativo: boolean
+          avanco_automatico: boolean
+          created_at: string
+          descricao: string | null
+          entity_type: string | null
+          id: number
+          nome: string
+          padrao: boolean
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          avanco_automatico?: boolean
+          created_at?: string
+          descricao?: string | null
+          entity_type?: string | null
+          id?: number
+          nome: string
+          padrao?: boolean
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          avanco_automatico?: boolean
+          created_at?: string
+          descricao?: string | null
+          entity_type?: string | null
+          id?: number
+          nome?: string
+          padrao?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jornada_item_checklist: {
+        Row: {
+          concluido: boolean
+          concluido_em: string | null
+          concluido_por_user_id: number | null
+          created_at: string
+          descricao: string
+          fluxo_checklist_id: number | null
+          id: number
+          item_id: number
+          obrigatorio: boolean
+          ordem: number
+        }
+        Insert: {
+          concluido?: boolean
+          concluido_em?: string | null
+          concluido_por_user_id?: number | null
+          created_at?: string
+          descricao: string
+          fluxo_checklist_id?: number | null
+          id?: number
+          item_id: number
+          obrigatorio?: boolean
+          ordem?: number
+        }
+        Update: {
+          concluido?: boolean
+          concluido_em?: string | null
+          concluido_por_user_id?: number | null
+          created_at?: string
+          descricao?: string
+          fluxo_checklist_id?: number | null
+          id?: number
+          item_id?: number
+          obrigatorio?: boolean
+          ordem?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jornada_item_checklist_concluido_por_user_id_fkey"
+            columns: ["concluido_por_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_item_checklist_fluxo_checklist_id_fkey"
+            columns: ["fluxo_checklist_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_fluxo_checklist"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornada_item_checklist_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_etapa_itens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      jornadas: {
+        Row: {
+          created_at: string
+          created_by_user_id: number | null
+          data_conclusao: string | null
+          data_inicio: string
+          entity_id: number
+          entity_type: string
+          etapa_atual_id: number | null
+          etapa_atual_item_id: number | null
+          etapas_concluidas: number
+          fluxo_id: number | null
+          id: number
+          observacoes: string | null
+          progresso: number
+          responsavel_user_id: number | null
+          status: string
+          total_etapas: number
+          updated_at: string
+          updated_by_user_id: number | null
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id?: number | null
+          data_conclusao?: string | null
+          data_inicio?: string
+          entity_id: number
+          entity_type: string
+          etapa_atual_id?: number | null
+          etapa_atual_item_id?: number | null
+          etapas_concluidas?: number
+          fluxo_id?: number | null
+          id?: number
+          observacoes?: string | null
+          progresso?: number
+          responsavel_user_id?: number | null
+          status?: string
+          total_etapas?: number
+          updated_at?: string
+          updated_by_user_id?: number | null
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: number | null
+          data_conclusao?: string | null
+          data_inicio?: string
+          entity_id?: number
+          entity_type?: string
+          etapa_atual_id?: number | null
+          etapa_atual_item_id?: number | null
+          etapas_concluidas?: number
+          fluxo_id?: number | null
+          id?: number
+          observacoes?: string | null
+          progresso?: number
+          responsavel_user_id?: number | null
+          status?: string
+          total_etapas?: number
+          updated_at?: string
+          updated_by_user_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "jornadas_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornadas_etapa_atual_id_fkey"
+            columns: ["etapa_atual_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_etapas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornadas_fluxo_id_fkey"
+            columns: ["fluxo_id"]
+            isOneToOne: false
+            referencedRelation: "jornada_fluxos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornadas_responsavel_user_id_fkey"
+            columns: ["responsavel_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "jornadas_updated_by_user_id_fkey"
+            columns: ["updated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kanban_columns: {
         Row: {
           color: string | null
@@ -1278,6 +1758,196 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      obrigacoes_catalogo: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          dia_vencimento: number
+          id: number
+          mes_ancora: number | null
+          mes_offset: number
+          nome: string
+          periodicidade: string
+          prazo_interno_dias: number
+          setor: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          dia_vencimento?: number
+          id?: number
+          mes_ancora?: number | null
+          mes_offset?: number
+          nome: string
+          periodicidade?: string
+          prazo_interno_dias?: number
+          setor?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          dia_vencimento?: number
+          id?: number
+          mes_ancora?: number | null
+          mes_offset?: number
+          nome?: string
+          periodicidade?: string
+          prazo_interno_dias?: number
+          setor?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      obrigacoes_cliente: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          created_by_user_id: number | null
+          data_fim: string | null
+          data_inicio: string
+          entity_id: number
+          entity_type: string
+          id: number
+          obrigacao_id: number
+          observacoes: string | null
+          responsavel_user_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          created_by_user_id?: number | null
+          data_fim?: string | null
+          data_inicio?: string
+          entity_id: number
+          entity_type: string
+          id?: number
+          obrigacao_id: number
+          observacoes?: string | null
+          responsavel_user_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          created_by_user_id?: number | null
+          data_fim?: string | null
+          data_inicio?: string
+          entity_id?: number
+          entity_type?: string
+          id?: number
+          obrigacao_id?: number
+          observacoes?: string | null
+          responsavel_user_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obrigacoes_cliente_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obrigacoes_cliente_obrigacao_id_fkey"
+            columns: ["obrigacao_id"]
+            isOneToOne: false
+            referencedRelation: "obrigacoes_catalogo"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obrigacoes_cliente_responsavel_user_id_fkey"
+            columns: ["responsavel_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      obrigacoes_competencias: {
+        Row: {
+          aguardando_motivo: string | null
+          competencia_ano: number
+          competencia_label: string
+          competencia_mes: number
+          created_at: string
+          data_entrega: string | null
+          data_limite_interna: string
+          data_vencimento: string
+          dias_pausados: number
+          id: number
+          obrigacao_cliente_id: number
+          observacoes: string | null
+          pausado_em: string | null
+          protocolo: string | null
+          responsavel_user_id: number | null
+          status: string
+          status_desde: string
+          updated_at: string
+        }
+        Insert: {
+          aguardando_motivo?: string | null
+          competencia_ano: number
+          competencia_label: string
+          competencia_mes: number
+          created_at?: string
+          data_entrega?: string | null
+          data_limite_interna: string
+          data_vencimento: string
+          dias_pausados?: number
+          id?: number
+          obrigacao_cliente_id: number
+          observacoes?: string | null
+          pausado_em?: string | null
+          protocolo?: string | null
+          responsavel_user_id?: number | null
+          status?: string
+          status_desde?: string
+          updated_at?: string
+        }
+        Update: {
+          aguardando_motivo?: string | null
+          competencia_ano?: number
+          competencia_label?: string
+          competencia_mes?: number
+          created_at?: string
+          data_entrega?: string | null
+          data_limite_interna?: string
+          data_vencimento?: string
+          dias_pausados?: number
+          id?: number
+          obrigacao_cliente_id?: number
+          observacoes?: string | null
+          pausado_em?: string | null
+          protocolo?: string | null
+          responsavel_user_id?: number | null
+          status?: string
+          status_desde?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "obrigacoes_competencias_obrigacao_cliente_id_fkey"
+            columns: ["obrigacao_cliente_id"]
+            isOneToOne: false
+            referencedRelation: "obrigacoes_cliente"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "obrigacoes_competencias_responsavel_user_id_fkey"
+            columns: ["responsavel_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       orcamentos: {
         Row: {
@@ -2149,11 +2819,73 @@ export type Database = {
           },
         ]
       }
+      vw_operacao_entidades: {
+        Row: {
+          entity_id: number | null
+          entity_name: string | null
+          entity_type: string | null
+        }
+        Relationships: []
+      }
+      vw_operacao_tarefas: {
+        Row: {
+          aguardando: boolean | null
+          aguardando_motivo: string | null
+          checklist_concluidos: number | null
+          checklist_total: number | null
+          cliente_nome: string | null
+          contexto: string | null
+          data_limite: string | null
+          data_vencimento_legal: string | null
+          dias_atraso: number | null
+          dias_no_status: number | null
+          dias_parados: number | null
+          entity_id: number | null
+          entity_type: string | null
+          jornada_id: number | null
+          origem: string | null
+          referencia_id: number | null
+          responsavel_nome: string | null
+          responsavel_user_id: number | null
+          setor: string | null
+          status: string | null
+          titulo: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       delete_auditoria_fornecedor: {
         Args: { p_auditoria_id: number }
         Returns: undefined
+      }
+      delete_jornada: { Args: { p_jornada_id: number }; Returns: Json }
+      delete_jornada_etapa: { Args: { p_etapa_id: number }; Returns: Json }
+      delete_jornada_fluxo: { Args: { p_fluxo_id: number }; Returns: Json }
+      delete_jornada_item_checklist: {
+        Args: { p_checklist_id: number }
+        Returns: Json
+      }
+      delete_obrigacao_catalogo: {
+        Args: { p_obrigacao_id: number }
+        Returns: Json
+      }
+      delete_obrigacao_cliente: { Args: { p_id: number }; Returns: Json }
+      gerar_obrigacoes_competencias: {
+        Args: {
+          p_meses_futuro?: number
+          p_meses_passado?: number
+          p_obrigacao_cliente_id?: number
+        }
+        Returns: Json
+      }
+      obrigacao_competencia_label: {
+        Args: { p_ano: number; p_mes: number; p_periodicidade: string }
+        Returns: string
+      }
+      obrigacao_data_vencimento: {
+        Args: { p_ano: number; p_dia: number; p_mes: number; p_offset: number }
+        Returns: string
       }
       recalc_auditoria_fornecedor: {
         Args: { p_auditoria_id: number }
@@ -2163,13 +2895,46 @@ export type Database = {
         Args: { p_item_id: number }
         Returns: undefined
       }
+      recalc_jornada: { Args: { p_jornada_id: number }; Returns: undefined }
       save_auditoria_fornecedor: {
         Args: { p_payload: Json; p_user_id?: number }
+        Returns: Json
+      }
+      save_jornada: {
+        Args: { p_payload: Json; p_user_id?: number }
+        Returns: Json
+      }
+      save_jornada_etapa: { Args: { p_payload: Json }; Returns: Json }
+      save_jornada_fluxo: { Args: { p_payload: Json }; Returns: Json }
+      save_jornada_item: {
+        Args: { p_payload: Json; p_user_id?: number }
+        Returns: Json
+      }
+      save_jornada_item_checklist: { Args: { p_payload: Json }; Returns: Json }
+      save_obrigacao_catalogo: { Args: { p_payload: Json }; Returns: Json }
+      save_obrigacao_cliente: {
+        Args: { p_payload: Json; p_user_id?: number }
+        Returns: Json
+      }
+      save_obrigacao_competencia: {
+        Args: { p_payload: Json; p_user_id?: number }
+        Returns: Json
+      }
+      sincronizar_jornada_etapas: {
+        Args: { p_jornada_id: number }
         Returns: Json
       }
       sync_auditoria_fornecedor_parcelas_total: {
         Args: { p_item_id: number }
         Returns: undefined
+      }
+      toggle_jornada_item_checklist: {
+        Args: {
+          p_checklist_id: number
+          p_concluido: boolean
+          p_user_id?: number
+        }
+        Returns: Json
       }
     }
     Enums: {
