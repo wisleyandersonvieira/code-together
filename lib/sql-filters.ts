@@ -91,3 +91,39 @@ export function fatorRateioStatus(
     `WHERE r.${fkCol} = ${contaCol} AND pr.status = ANY(" + ${textArrayExpr(param)} + ")), 0) END)"`;
   return `{{ params.${param} && params.${param}.length ? ${fatorSql} : "" }}`;
 }
+
+/**
+ * `AND EXISTS (... tabela de rateio ... AND projeto_id = ANY(ARRAY[...]))`
+ * quando `params[param]` tem itens; string vazia caso contrário.
+ */
+export function andProjetoIdIn(
+  contaCol: string,
+  tabelaRateio: string,
+  fkCol: string,
+  param = 'projetoIds',
+): string {
+  const sql =
+    `"AND EXISTS (SELECT 1 FROM ${tabelaRateio} rp WHERE rp.${fkCol} = ${contaCol} ` +
+    `AND rp.projeto_id = ANY(" + ${intArrayExpr(param)} + "))"`;
+  return `{{ params.${param} && params.${param}.length ? ${sql} : "" }}`;
+}
+
+/**
+ * Filtro por status de projeto que EXIGE vínculo com projeto:
+ * - `params[param]` vazio/ausente → sem filtro (SQL idêntico ao atual);
+ * - `params[param] === 'todos'`   → apenas lançamentos com projeto vinculado;
+ * - qualquer outro valor          → projeto vinculado com aquele status.
+ */
+export function andProjetoStatus(
+  contaCol: string,
+  tabelaRateio: string,
+  fkCol: string,
+  param = 'statusProjeto',
+): string {
+  const statusSql =
+    `(params.${param} === 'todos' ? "" : " AND ps.status = '" + String(params.${param}).replace(/'/g, "''") + "'")`;
+  const sql =
+    `"AND EXISTS (SELECT 1 FROM ${tabelaRateio} rs JOIN projetos ps ON ps.id = rs.projeto_id ` +
+    `WHERE rs.${fkCol} = ${contaCol}" + ${statusSql} + ")"`;
+  return `{{ params.${param} ? ${sql} : "" }}`;
+}
