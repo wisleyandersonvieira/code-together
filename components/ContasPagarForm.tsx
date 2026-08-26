@@ -341,6 +341,10 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
       .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [fornecedores]);
   const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
+  const projetosOrdenados = useMemo(() => {
+    if (!projetos) return [];
+    return [...projetos].sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [projetos]);
   const [contas] = useLoadAction(loadContasAction, []);
 
   // Load existing items and projects when editing
