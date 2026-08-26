@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { andIdIn, andIdInWhenPagamento } from '@/lib/sql-filters';
 
 function loadEmprestimos() {
   return action('loadEmprestimos', 'SQL', {
@@ -20,6 +21,8 @@ function loadEmprestimos() {
         {{ params && params.socioId ? "AND e.socio_id = " + params.socioId : "" }}
         {{ params && params.contaId ? "AND e.conta_id = " + params.contaId : "" }}
         {{ params && params.tipo ? "AND e.tipo = '" + params.tipo + "'" : "" }}
+        ${andIdIn('e.matriz_id', 'matrizIds')}
+        ${andIdInWhenPagamento('e.conta_id', 'contaIds')}
       ORDER BY e.data_emprestimo DESC, e.created_at DESC
       {{ params && !params.exportAll && params.hasFilters ? "LIMIT 10" : "" }}
       {{ params && !params.exportAll && params.hasFilters && params.page ? "OFFSET " + ((params.page - 1) * 10) : "" }}

@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { andIdIn, andIdInWhenPagamento, andProjetoIdIn, andProjetoStatus } from '@/lib/sql-filters';
 
 function loadDreInfoDetalheContasReceber() {
   return action('loadDreInfoDetalheContasReceber', 'SQL', {
@@ -40,14 +41,17 @@ function loadDreInfoDetalheContasReceber() {
       LEFT JOIN contas_receber_projetos crp2 ON crp2.conta_receber_id = cr.id
       LEFT JOIN projetos proj ON proj.id = crp2.projeto_id
       WHERE
-        {{ params.matrizId ? "cr.matriz_id = " + params.matrizId : "1=1" }}
+        1=1
+        ${andIdIn('cr.matriz_id', 'matrizIds')}
         AND sg.id = {{params.subgrupoId}}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cr.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
           OR
           ('{{params.tipoData}}' = 'pagamento' AND tr.data_recebimento BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}' AND tr.status = 'RECEBIDO' AND tr.valor_recebido IS NOT NULL AND tr.valor_recebido > 0)
         )
-        {{ params.projetoId ? "AND EXISTS (SELECT 1 FROM contas_receber_projetos crp WHERE crp.conta_receber_id = cr.id AND crp.projeto_id = " + params.projetoId + ")" : "" }}
+        ${andProjetoIdIn('cr.id', 'contas_receber_projetos', 'conta_receber_id')}
+        ${andProjetoStatus('cr.id', 'contas_receber_projetos', 'conta_receber_id')}
+        ${andIdInWhenPagamento('tr.conta_id', 'contaIds')}
       GROUP BY cr.id, cli_legacy.name, cli_entity.name, e.name, grp.name, cr.entity_type, cr.observacoes, cr.data_competencia
       ORDER BY data_referencia ASC, cr.id ASC
     `,

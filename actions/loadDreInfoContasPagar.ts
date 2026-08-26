@@ -1,4 +1,5 @@
 import { action } from '@uibakery/data';
+import { andIdIn, andIdInWhenPagamento, andProjetoIdIn, andProjetoStatus } from '@/lib/sql-filters';
 
 function loadDreInfoContasPagar() {
   return action('loadDreInfoContasPagar', 'SQL', {
@@ -24,9 +25,11 @@ function loadDreInfoContasPagar() {
       INNER JOIN subgrupos_contabeis sg ON sg.id = p.subgrupo_id
       INNER JOIN estruturas_dre_itens edi ON edi.subgrupo_contabil_id = sg.id AND edi.estrutura_dre_id = {{params.estruturaId}}
       WHERE
-        {{ params.matrizId ? "cp.matriz_id = " + params.matrizId : "1=1" }}
-        {{ params.projetoId ? "AND EXISTS (SELECT 1 FROM contas_pagar_projetos cpp WHERE cpp.conta_pagar_id = cp.id AND cpp.projeto_id = " + params.projetoId + ")" : "" }}
-        {{ params.contaId ? "AND tp.conta_id = " + params.contaId : "" }}
+        1=1
+        ${andIdIn('cp.matriz_id', 'matrizIds')}
+        ${andProjetoIdIn('cp.id', 'contas_pagar_projetos', 'conta_pagar_id')}
+        ${andProjetoStatus('cp.id', 'contas_pagar_projetos', 'conta_pagar_id')}
+        ${andIdInWhenPagamento('tp.conta_id', 'contaIds')}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cp.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
           OR
