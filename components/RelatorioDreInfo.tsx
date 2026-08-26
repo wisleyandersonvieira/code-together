@@ -19,6 +19,7 @@ import loadMatrizesAction from '@/actions/loadMatrizes';
 import loadProjetosAction from '@/actions/loadProjetos';
 import loadContasAction from '@/actions/loadContas';
 import { DreInfoDataLoader } from '@/components/DreInfoDataLoader';
+import { MultiSelectIdFilter } from '@/components/ui/multi-select-filter';
 import {
   ListingFilterCard,
   ListingPageHeader,
@@ -29,12 +30,14 @@ import {
 
 interface DreInfoParams {
   estruturaId: number;
-  matrizId: number;
+  matrizIds: number[];
   tipoData: 'competencia' | 'pagamento';
   dataInicio: string;
   dataFim: string;
-  projetoId: number | null;
-  contaId: number | null;
+  projetoIds: number[];
+  contaIds: number[];
+  /** '' = sem filtro · 'todos' = só com projeto vinculado · status específico. */
+  statusProjeto: string;
 }
 
 export function RelatorioDreInfo() {
@@ -42,12 +45,13 @@ export function RelatorioDreInfo() {
 
   const [params, setParams] = useState<DreInfoParams>({
     estruturaId: 0,
-    matrizId: 0,
+    matrizIds: [],
     tipoData: 'competencia',
     dataInicio: '',
     dataFim: '',
-    projetoId: null,
-    contaId: null,
+    projetoIds: [],
+    contaIds: [],
+    statusProjeto: '',
   });
 
   const [showReport, setShowReport] = useState(false);
@@ -66,9 +70,26 @@ export function RelatorioDreInfo() {
     setParams((prev) => ({ ...prev, [field]: value }));
   };
 
+  const matrizOptions = ((matrizes as any[]) || []).map((m: any) => ({
+    id: Number(m.id),
+    nome: m.nome,
+  }));
+
+  const projetoOptions = ((projetos as any[]) || [])
+    .map((p: any) => ({ id: Number(p.id), nome: p.name }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  const contaOptions = ((contas as any[]) || []).map((c: any) => ({
+    id: Number(c.id),
+    nome: c.banco ? `${c.nome} — ${c.banco}` : c.nome,
+  }));
+
   const projetoNome =
-    params.projetoId
-      ? (projetos as any[])?.find((p: any) => p.id === params.projetoId)?.name || undefined
+    params.projetoIds.length > 0
+      ? projetoOptions
+          .filter((p) => params.projetoIds.includes(p.id))
+          .map((p) => p.nome)
+          .join(', ')
       : undefined;
 
   const generateReport = () => {
@@ -122,25 +143,15 @@ export function RelatorioDreInfo() {
                 </Select>
               </div>
 
-              {/* Matriz */}
+              {/* Matrizes */}
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Matriz *</label>
-                <Select
-                  value={params.matrizId !== null ? params.matrizId.toString() : 'todas'}
-                  onValueChange={(v) => handleChange('matrizId', v === 'todas' ? 0 : parseInt(v))}
-                >
-                  <SelectTrigger className={triggerClass}>
-                    <SelectValue placeholder="Selecione a matriz" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todas">Todas as matrizes</SelectItem>
-                    {(matrizes as any[])?.map((m: any) => (
-                      <SelectItem key={m.id} value={m.id.toString()}>
-                        {m.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <label className="text-sm font-medium text-slate-700">Matrizes</label>
+                <MultiSelectIdFilter
+                  placeholder="Todas as matrizes"
+                  options={matrizOptions}
+                  selected={params.matrizIds}
+                  onChange={(ids) => handleChange('matrizIds', ids)}
+                />
               </div>
 
               {/* Critério de Apuração */}
@@ -182,52 +193,51 @@ export function RelatorioDreInfo() {
                 />
               </div>
 
-              {/* Projeto (opcional) */}
+              {/* Status do Projeto */}
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">
-                  Projeto{' '}
-                  <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
-                </label>
+                <label className="text-sm font-medium text-slate-700">Status do Projeto</label>
                 <Select
-                  value={params.projetoId ? params.projetoId.toString() : 'todos'}
-                  onValueChange={(v) => handleChange('projetoId', v === 'todos' ? null : parseInt(v))}
+                  value={params.statusProjeto || 'sem_filtro'}
+                  onValueChange={(v) => handleChange('statusProjeto', v === 'sem_filtro' ? '' : v)}
                 >
                   <SelectTrigger className={triggerClass}>
-                    <SelectValue placeholder="Todos os projetos" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Todos os projetos</SelectItem>
-                    {(projetos as any[])?.map((p: any) => (
-                      <SelectItem key={p.id} value={p.id.toString()}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="sem_filtro">Sem filtro (todos os lançamentos)</SelectItem>
+                    <SelectItem value="Em andamento">Somente projetos em andamento</SelectItem>
+                    <SelectItem value="Concluído">Somente projetos concluídos</SelectItem>
+                    <SelectItem value="todos">Somente lançamentos com projeto</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Conta Corrente (opcional) */}
+              {/* Projetos (opcional) */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">
-                  Conta Corrente{' '}
+                  Projetos{' '}
                   <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
                 </label>
-                <Select
-                  value={params.contaId ? params.contaId.toString() : 'todas'}
-                  onValueChange={(v) => handleChange('contaId', v === 'todas' ? null : parseInt(v))}
-                >
-                  <SelectTrigger className={triggerClass}>
-                    <SelectValue placeholder="Todas as contas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="todas">Todas as contas</SelectItem>
-                    {(contas as any[])?.map((c: any) => (
-                      <SelectItem key={c.id} value={c.id.toString()}>
-                        {c.nome}{c.banco ? ` - ${c.banco}` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelectIdFilter
+                  placeholder="Todos os projetos"
+                  options={projetoOptions}
+                  selected={params.projetoIds}
+                  onChange={(ids) => handleChange('projetoIds', ids)}
+                />
+              </div>
+
+              {/* Contas Correntes (opcional) */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Contas Correntes{' '}
+                  <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                </label>
+                <MultiSelectIdFilter
+                  placeholder="Todas as contas"
+                  options={contaOptions}
+                  selected={params.contaIds}
+                  onChange={(ids) => handleChange('contaIds', ids)}
+                />
               </div>
             </div>
           </div>
@@ -273,12 +283,13 @@ export function RelatorioDreInfo() {
             <DreInfoDataLoader
               key={refreshTrigger}
               estruturaId={params.estruturaId}
-              matrizId={params.matrizId}
+              matrizIds={params.matrizIds}
               tipoData={params.tipoData}
               dataInicio={params.dataInicio}
               dataFim={params.dataFim}
-              projetoId={params.projetoId}
-              contaId={params.contaId}
+              projetoIds={params.projetoIds}
+              contaIds={params.contaIds}
+              statusProjeto={params.statusProjeto}
               projetoNome={projetoNome}
               refreshTrigger={refreshTrigger}
               onComplete={() => {
