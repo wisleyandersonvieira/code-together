@@ -1229,18 +1229,18 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                       control={form.control}
                                       name={`projetos_faturamento.${index}.projeto_id`}
                                       render={({ field }) => (
-                                        <Select value={field.value?.toString()} onValueChange={(value) => field.onChange(parseInt(value))}>
-                                          <SelectTrigger className={financeDetailFieldClassName}>
-                                            <SelectValue placeholder="Selecionar" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {projetos?.map((projeto: any) => (
-                                              <SelectItem key={projeto.id} value={projeto.id.toString()}>
-                                                {projeto.name}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <Combobox
+                                          value={field.value?.toString()}
+                                          onValueChange={(value) => field.onChange(parseInt(value))}
+                                          options={projetosOrdenados.map((projeto: any) => ({
+                                            value: projeto.id.toString(),
+                                            label: projeto.name,
+                                          }))}
+                                          placeholder="Selecionar"
+                                          searchPlaceholder="Filtrar projeto..."
+                                          emptyText="Nenhum projeto encontrado."
+                                          className={financeDetailFieldClassName}
+                                        />
                                       )}
                                     />
                                   </TableCell>
