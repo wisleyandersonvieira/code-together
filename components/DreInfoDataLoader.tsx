@@ -29,12 +29,13 @@ import { DreInfoSubgrupoDetalhe } from '@/components/DreInfoSubgrupoDetalhe';
 
 interface DreInfoDataLoaderProps {
   estruturaId: number;
-  matrizId: number;
+  matrizIds: number[];
   tipoData: 'competencia' | 'pagamento';
   dataInicio: string;
   dataFim: string;
-  projetoId?: number | null;
-  contaId?: number | null;
+  projetoIds?: number[];
+  contaIds?: number[];
+  statusProjeto?: string;
   projetoNome?: string;
   onComplete: () => void;
   refreshTrigger?: number;
@@ -55,12 +56,13 @@ interface DreItemResult {
 
 export function DreInfoDataLoader({
   estruturaId,
-  matrizId,
+  matrizIds,
   tipoData,
   dataInicio,
   dataFim,
-  projetoId,
-  contaId,
+  projetoIds,
+  contaIds,
+  statusProjeto,
   projetoNome,
   onComplete,
   refreshTrigger,
@@ -93,34 +95,47 @@ export function DreInfoDataLoader({
   const [contasPagar, loadingContasPagar] = useLoadAction(
     loadDreInfoContasPagarAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId, contaId }
+    { matrizIds, tipoData, dataInicio, dataFim, estruturaId, projetoIds, contaIds, statusProjeto }
   );
 
   const [contasReceber, loadingContasReceber] = useLoadAction(
     loadDreInfoContasReceberAction,
     [],
-    { matrizId, tipoData, dataInicio, dataFim, estruturaId, projetoId, contaId }
+    { matrizIds, tipoData, dataInicio, dataFim, estruturaId, projetoIds, contaIds, statusProjeto }
   );
 
-  const [aportes, loadingAportes] = useLoadAction(loadAportesAction, [], {
-    matrizId,
+  const [aportesRaw, loadingAportes] = useLoadAction(loadAportesAction, [], {
+    matrizIds,
+    contaIds,
+    tipoData,
     dataInicio,
     dataFim,
   });
 
-  const [retiradas, loadingRetiradas] = useLoadAction(loadRetiradasAction, [], {
-    matrizId,
+  const [retiradasRaw, loadingRetiradas] = useLoadAction(loadRetiradasAction, [], {
+    matrizIds,
+    contaIds,
+    tipoData,
     dataInicio,
     dataFim,
   });
 
   // exportAll ignora a paginação da listagem: o DRE precisa de todos os registros
-  const [emprestimos, loadingEmprestimos] = useLoadAction(loadEmprestimosAction, [], {
-    matrizId,
+  const [emprestimosRaw, loadingEmprestimos] = useLoadAction(loadEmprestimosAction, [], {
+    matrizIds,
+    contaIds,
+    tipoData,
     dataInicio,
     dataFim,
     exportAll: true,
   });
+
+  // Com filtro de status de projeto ativo, exibimos apenas lançamentos com
+  // projeto vinculado — aportes, retiradas e empréstimos não têm vínculo.
+  const semVinculoProjeto = Boolean(statusProjeto);
+  const aportes = semVinculoProjeto ? [] : aportesRaw;
+  const retiradas = semVinculoProjeto ? [] : retiradasRaw;
+  const emprestimos = semVinculoProjeto ? [] : emprestimosRaw;
 
   // EMPRESTIMO = saída de caixa · PAGAMENTO = entrada de caixa
   const emprestimosSaida = (emprestimos as any[]).filter((e) => e.tipo === 'EMPRESTIMO');
@@ -304,7 +319,7 @@ export function DreInfoDataLoader({
     }
     try {
       const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
-      const matrizNome    = matrizes?.find((m: any) => m.id === matrizId)?.nome    || 'N/A';
+      const matrizNome    = (matrizes || []).filter((m: any) => (matrizIds || []).includes(Number(m.id))).map((m: any) => m.nome).join(', ') || 'Todas';
 
       exportDreInfoToPDF(
         dreData,
@@ -332,7 +347,7 @@ export function DreInfoDataLoader({
 
     try {
       const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
-      const matrizNome = matrizes?.find((m: any) => m.id === matrizId)?.nome || 'N/A';
+      const matrizNome = (matrizes || []).filter((m: any) => (matrizIds || []).includes(Number(m.id))).map((m: any) => m.nome).join(', ') || 'Todas';
 
       const wb = XLSX.utils.book_new();
 
@@ -667,12 +682,14 @@ export function DreInfoDataLoader({
                   {/* ── Expanded detail: SUBGRUPO ─────────────────────────── */}
                   {expanded && item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id && (
                     <DreInfoSubgrupoDetalhe
-                      matrizId={matrizId}
+                      matrizIds={matrizIds}
                       subgrupoId={item.subgrupo_contabil_id}
                       tipoData={tipoData}
                       dataInicio={dataInicio}
                       dataFim={dataFim}
-                      projetoId={projetoId}
+                      projetoIds={projetoIds}
+                      contaIds={contaIds}
+                      statusProjeto={statusProjeto}
                       funcao={item.subgrupo_funcao}
                       nivel={item.nivel}
                       onDataLoaded={handleSubgrupoDataLoaded}
