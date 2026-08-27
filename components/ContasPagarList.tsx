@@ -34,7 +34,8 @@ import {
   ChevronsRight,
   Filter,
   List,
-  Loader2
+  Loader2,
+  MoreHorizontal
 } from 'lucide-react';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
