@@ -738,7 +738,7 @@ export function ContasPagarList() {
                 </TableRow>
                 {exibirDados && (
                   <TableRow className="border-b border-slate-100 bg-muted/30 hover:bg-muted/30">
-                    <TableCell colSpan={10} className="px-6 py-3">
+                  <TableCell colSpan={7} className="px-6 py-3">
                       {detalhesLoading && !detalhes[conta.id] ? (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
