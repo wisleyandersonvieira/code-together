@@ -98,9 +98,10 @@ interface ContasReceberFormProps {
   conta?: any;
   onSuccess: () => void;
   onCancel: () => void;
+  readOnly?: boolean;
 }
 
-export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberFormProps) {
+export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false }: ContasReceberFormProps) {
   const { toast } = useToast();
   const { formatCurrency } = useCurrency();
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -705,7 +706,12 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
 
   return (
     <div className="space-y-4 pb-6">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        {readOnly ? (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            Somente visualização
+          </span>
+        ) : <span />}
         <Button
           type="button"
           variant="outline"

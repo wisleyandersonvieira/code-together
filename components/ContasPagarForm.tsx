@@ -285,9 +285,10 @@ interface ContasPagarFormProps {
   conta?: any;
   onSuccess: () => void;
   onCancel: () => void;
+  readOnly?: boolean;
 }
 
-export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormProps) {
+export function ContasPagarForm({ conta, onSuccess, onCancel, readOnly = false }: ContasPagarFormProps) {
   const { toast } = useToast();
   const { formatCurrency } = useCurrency();
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -927,7 +928,12 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
 
   return (
     <div className="space-y-4 pb-6">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        {readOnly ? (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            Somente visualização
+          </span>
+        ) : <span />}
         <Button
           type="button"
           variant="outline"
