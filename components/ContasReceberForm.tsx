@@ -718,6 +718,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
         </Button>
       </div>
 
+      <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, () => {
           toast({
@@ -1562,6 +1563,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
           </Tabs>
         </form>
       </Form>
+      </fieldset>
 
       {/* Cadastro rápido da entidade (cliente/empresa/grupo) */}
       <Dialog open={showEntityModal} onOpenChange={setShowEntityModal}>

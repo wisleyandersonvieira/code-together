@@ -940,6 +940,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
         </Button>
       </div>
 
+      <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
@@ -1827,6 +1828,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
           </Tabs>
         </form>
       </Form>
+      </fieldset>
 
       {/* Cadastro rápido de fornecedor */}
       <Dialog open={showFornecedorModal} onOpenChange={setShowFornecedorModal}>
