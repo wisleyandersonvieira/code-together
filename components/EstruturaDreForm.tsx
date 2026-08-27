@@ -76,11 +76,16 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
 
   useEffect(() => {
     if (existingItens && existingItens.length > 0) {
-      setItens(existingItens);
-      const maxOrder = Math.max(...existingItens.map((item: EstruturaDreItem) => item.ordem));
+      const normalized = existingItens.map((item: EstruturaDreItem) => ({
+        ...item,
+        ordem: Number(item.ordem) || 0,
+      }));
+      setItens(normalized);
+      const maxOrder = Math.max(...normalized.map((item: EstruturaDreItem) => item.ordem));
       setNextOrder(Math.floor(maxOrder) + 1);
     }
   }, [existingItens]);
+
 
   const generateOrder = (tipo: string, parentOrder?: number): number => {
     if (tipo === 'GRUPO') {
@@ -139,8 +144,9 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
     setItens([...itens, novoItem]);
   };
 
+
   const addSubgrupoToGroup = (groupOrderIndex: number) => {
-    const groupItem = itens.find(item => item.tipo === 'GRUPO' && item.ordem === groupOrderIndex);
+    const groupItem = itens.find(item => item.tipo === 'GRUPO' && Number(item.ordem) === Number(groupOrderIndex));
     if (!groupItem) return;
 
     if (!groupItem.grupo_contabil_id) {
@@ -153,34 +159,44 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
     }
 
     // Ordena os itens para encontrar o ponto de inserção correto (logo após o grupo e seus subgrupos)
-    const sorted = [...itens].sort((a, b) => a.ordem - b.ordem);
-    const groupIndex = sorted.findIndex(item => item.tipo === 'GRUPO' && item.ordem === groupItem.ordem);
+    const sorted = [...itens]
+      .map(item => ({ ...item, ordem: Number(item.ordem) || 0 }))
+      .sort((a, b) => a.ordem - b.ordem);
+    const groupIndex = sorted.findIndex(
+      item => item.tipo === 'GRUPO' && item.ordem === (Number(groupItem.ordem) || 0)
+    );
+    if (groupIndex === -1) return;
 
     // Avança até o último subgrupo consecutivo deste mesmo grupo
     let insertIndex = groupIndex + 1;
     while (
       insertIndex < sorted.length &&
       sorted[insertIndex].tipo === 'SUBGRUPO' &&
-      sorted[insertIndex].grupo_contabil_id === groupItem.grupo_contabil_id
+      Number(sorted[insertIndex].grupo_contabil_id) === Number(groupItem.grupo_contabil_id)
     ) {
       insertIndex++;
     }
 
-    // Calcula a ordem como ponto médio entre o item anterior e o próximo, garantindo posição logo abaixo do grupo
+    // Calcula a ordem como ponto médio entre o item anterior e o próximo
+    const prevOrdem = sorted[insertIndex - 1].ordem;
     let ordem: number;
     if (insertIndex < sorted.length) {
-      const prevOrdem = sorted[insertIndex - 1].ordem;
       const nextOrdem = sorted[insertIndex].ordem;
       ordem = (prevOrdem + nextOrdem) / 2;
+      if (!Number.isFinite(ordem) || ordem <= prevOrdem || ordem >= nextOrdem) {
+        ordem = prevOrdem + 0.01;
+      }
     } else {
-      ordem = sorted[insertIndex - 1].ordem + 0.1;
+      ordem = prevOrdem + 0.1;
     }
+
+    const ordemFinal = Number.isFinite(ordem) ? Math.round(ordem * 100) / 100 : prevOrdem + 0.01;
 
     const novoItem: EstruturaDreItem = {
       tipo: 'SUBGRUPO',
       nome: '',
       grupo_contabil_id: groupItem.grupo_contabil_id,
-      ordem: Math.round(ordem * 100) / 100,
+      ordem: ordemFinal,
       nivel: 2,
       parent_id: groupItem.id, // Será ajustado para o ID correto durante o salvamento
     };
@@ -193,6 +209,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
     const ordem = generateOrder('GRUPO');
     const novoItem: EstruturaDreItem = {
       tipo: 'APORTE',
+
       nome: 'APORTE',
       ordem,
       nivel: 1,
@@ -370,7 +387,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
           nome: item.nome.trim(),
           grupo_contabil_id: item.grupo_contabil_id ?? null,
           subgrupo_contabil_id: item.subgrupo_contabil_id ?? null,
-          ordem: item.ordem,
+          ordem: Number(item.ordem),
           nivel: item.nivel,
         })),
       };
