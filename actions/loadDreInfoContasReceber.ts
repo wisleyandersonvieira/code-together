@@ -1,5 +1,6 @@
 import { action } from '@uibakery/data';
-import { andIdIn, andIdInWhenPagamento, andProjetoIdIn, andProjetoStatus } from '@/lib/sql-filters';
+import { andIdIn, andIdInWhenPagamento, andProjetoIdIn, andProjetoStatus, fracoesStatusProjeto } from '@/lib/sql-filters';
+
 
 function loadDreInfoContasReceber() {
   return action('loadDreInfoContasReceber', 'SQL', {
