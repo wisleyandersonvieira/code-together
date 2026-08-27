@@ -401,6 +401,18 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   const watchedItens = form.watch('itens');
   const watchedProjetosRateio = form.watch('projetos_rateio');
 
+  // Opções de projeto: ativos + qualquer projeto já vinculado (mesmo concluído)
+  const projetoOptions = useMemo(() => {
+    const selecionados = new Set(
+      (watchedProjetosRateio || []).map((p: any) => String(p?.projeto_id ?? '')),
+    );
+    return projetosOrdenados
+      .filter((p: any) => p.status !== 'Concluído' || selecionados.has(String(p.id)))
+      .map((p: any) => ({ value: p.id.toString(), label: p.name }));
+  }, [projetosOrdenados, watchedProjetosRateio]);
+
+
+
   const handleOpenFornecedorModal = () => {
     // Guarda os ids atuais para identificar o fornecedor criado após o refresh
     fornecedorIdsAntesDoCadastroRef.current = (fornecedores || []).map((fornecedor: any) => Number(fornecedor.id));
