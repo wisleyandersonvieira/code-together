@@ -190,7 +190,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
       ordem = prevOrdem + 0.1;
     }
 
-    const ordemFinal = Number.isFinite(ordem) ? Math.round(ordem * 1000) / 1000 : prevOrdem + 0.01;
+    const ordemFinal = Number.isFinite(ordem) ? Math.round(ordem * 100) / 100 : prevOrdem + 0.01;
 
     const novoItem: EstruturaDreItem = {
       tipo: 'SUBGRUPO',
@@ -387,7 +387,7 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
           nome: item.nome.trim(),
           grupo_contabil_id: item.grupo_contabil_id ?? null,
           subgrupo_contabil_id: item.subgrupo_contabil_id ?? null,
-          ordem: item.ordem,
+          ordem: Number(item.ordem),
           nivel: item.nivel,
         })),
       };
