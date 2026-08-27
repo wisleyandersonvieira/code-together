@@ -395,64 +395,75 @@ export function DreInfoDataLoader({
         ['Período:', `${dataInicio} a ${dataFim}`],
         ['Critério:', tipoData === 'competencia' ? 'Data de Competência' : 'Data de Pagamento'],
         [''],
-        ['Ordem', 'Tipo', 'Nome', 'Valor'],
+        colunasSeparadas
+          ? ['Ordem', 'Tipo', 'Nome', 'Gerais', 'Projetos em Andamento', 'Projetos Concluídos', 'Total']
+          : ['Ordem', 'Tipo', 'Nome', 'Valor'],
       ]);
+
+      // In separated mode, detail rows are shifted 3 columns to the right (after the value columns)
+      const detailRow = (cells: any[]) =>
+        colunasSeparadas ? [cells[0], cells[1], cells[2], '', '', '', ...cells.slice(3)] : cells;
 
       // Build rows interleaving expanded detail
       const consolidadoRows: any[][] = [];
       dreData.forEach((item) => {
-        consolidadoRows.push([item.ordem, item.tipo, item.nome, item.valor]);
+        consolidadoRows.push(
+          colunasSeparadas
+            ? [item.ordem, item.tipo, item.nome, item.valorGeral, item.valorAndamento, item.valorConcluido, item.valor]
+            : [item.ordem, item.tipo, item.nome, item.valor],
+        );
 
         // If this subgrupo is expanded and we have detail data, add detail rows
         if (expandedRows.has(item.id) && item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
           const details = expandedDetailData.get(item.subgrupo_contabil_id);
           if (details && details.length > 0) {
-            const isDebito = item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO';
             // Sub-header
-            consolidadoRows.push(['', '', '  ↳ Data', '  Favorecido', '  Observação', '  Projetos', '  Valor']);
+            consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Favorecido', '  Observação', '  Projetos', '  Valor']));
             details.forEach((d: any) => {
-              consolidadoRows.push([
-                '',
-                '',
-                `    ${d.data_referencia || '-'}`,
-                d.favorecido || '-',
-                d.observacao || '',
-                d.projetos || '',
-                d.valor || 0,
-              ]);
+              consolidadoRows.push(
+                detailRow([
+                  '',
+                  '',
+                  `    ${d.data_referencia || '-'}`,
+                  d.favorecido || '-',
+                  d.observacao || '',
+                  d.projetos || '',
+                  d.valor || 0,
+                ]),
+              );
             });
           }
         }
 
         // If APORTE expanded, add aporte detail rows
         if (expandedRows.has(item.id) && item.tipo === 'APORTE' && aportes && aportes.length > 0) {
-          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
           (aportes as any[]).forEach((a) => {
-            consolidadoRows.push(['', '', `    ${a.data_aporte || '-'}`, a.socio_nome || '-', '', '', Number(a.valor) || 0]);
+            consolidadoRows.push(detailRow(['', '', `    ${a.data_aporte || '-'}`, a.socio_nome || '-', '', '', Number(a.valor) || 0]));
           });
         }
 
         // If RETIRADA expanded, add retirada detail rows
         if (expandedRows.has(item.id) && item.tipo === 'RETIRADA' && retiradas && retiradas.length > 0) {
-          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
           (retiradas as any[]).forEach((r) => {
-            consolidadoRows.push(['', '', `    ${r.data_retirada || '-'}`, r.socio_nome || '-', '', '', Number(r.valor) || 0]);
+            consolidadoRows.push(detailRow(['', '', `    ${r.data_retirada || '-'}`, r.socio_nome || '-', '', '', Number(r.valor) || 0]));
           });
         }
 
         // If EMPRESTIMO_ENTRADA expanded, add pagamento detail rows
         if (expandedRows.has(item.id) && item.tipo === 'EMPRESTIMO_ENTRADA' && emprestimosEntrada.length > 0) {
-          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
           emprestimosEntrada.forEach((e: any) => {
-            consolidadoRows.push(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]);
+            consolidadoRows.push(detailRow(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]));
           });
         }
 
         // If EMPRESTIMO_SAIDA expanded, add empréstimo detail rows
         if (expandedRows.has(item.id) && item.tipo === 'EMPRESTIMO_SAIDA' && emprestimosSaida.length > 0) {
-          consolidadoRows.push(['', '', '  ↳ Data', '  Sócio', '  Valor']);
+          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
           emprestimosSaida.forEach((e: any) => {
-            consolidadoRows.push(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]);
+            consolidadoRows.push(detailRow(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]));
           });
         }
       });
@@ -460,12 +471,14 @@ export function DreInfoDataLoader({
       XLSX.utils.sheet_add_aoa(ws1, consolidadoRows, { origin: 'A10' });
 
       // Adjust columns for possible expanded detail
-      ws1['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 22 }];
+      ws1['!cols'] = colunasSeparadas
+        ? [{ wch: 10 }, { wch: 12 }, { wch: 50 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 22 }]
+        : [{ wch: 10 }, { wch: 12 }, { wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 22 }];
 
       const range1 = XLSX.utils.decode_range(ws1['!ref'] || 'A1');
+      const valueColumns = colunasSeparadas ? [3, 4, 5, 6, 9] : [3, 6];
       for (let R = 9; R <= range1.e.r; ++R) {
-        // Format value columns: D (index 3) for main rows, G (index 6) for detail rows
-        for (const colIdx of [3, 6]) {
+        for (const colIdx of valueColumns) {
           const cell = XLSX.utils.encode_cell({ r: R, c: colIdx });
           if (ws1[cell] && typeof ws1[cell].v === 'number') ws1[cell].z = '#,##0.00';
         }
