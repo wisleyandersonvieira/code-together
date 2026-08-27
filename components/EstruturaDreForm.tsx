@@ -208,7 +208,10 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
     setItens(sorted);
   };
 
+  const addAporte = () => {
+    const ordem = generateOrder('GRUPO');
     const novoItem: EstruturaDreItem = {
+
       tipo: 'APORTE',
       nome: 'APORTE',
       ordem,
