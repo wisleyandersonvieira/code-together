@@ -448,9 +448,10 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
             <X className="mr-2 h-4 w-4" />
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={isCreatingEstrutura || isCreatingItem || isUpdatingItem}>
+          <Button onClick={handleSave} disabled={isSaving}>
             <Save className="mr-2 h-4 w-4" />
-            Salvar
+            {isSaving ? 'Salvando...' : 'Salvar'}
+
           </Button>
         </div>
       </div>
