@@ -208,8 +208,8 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
   const addAporte = () => {
     const ordem = generateOrder('GRUPO');
     const novoItem: EstruturaDreItem = {
-
       tipo: 'APORTE',
+
       nome: 'APORTE',
       ordem,
       nivel: 1,
