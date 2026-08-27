@@ -51,8 +51,12 @@ interface DreItemResult {
   subgrupo_contabil_id?: number;
   subgrupo_funcao?: string;
   valor: number;
+  valorGeral: number;
+  valorAndamento: number;
+  valorConcluido: number;
   parent_id?: number;
 }
+
 
 export function DreInfoDataLoader({
   estruturaId,
