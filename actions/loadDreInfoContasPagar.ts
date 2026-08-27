@@ -17,7 +17,7 @@ function loadDreInfoContasPagar() {
           WHEN '{{params.tipoData}}' = 'competencia' THEN cp.data_competencia
           ELSE tp.data_pagamento
         END as data_referencia,
-        sg.id as subgrupo_contabil_id,
+        sg.id as subgrupo_contabil_id,${fracoesStatusProjeto('cp.id', 'contas_pagar_projetos', 'conta_pagar_id')}
         sg.funcao
       FROM contas_pagar cp
       INNER JOIN titulos_pagar tp ON tp.conta_pagar_id = cp.id
