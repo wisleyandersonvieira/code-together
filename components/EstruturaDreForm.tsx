@@ -148,16 +148,41 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
       return;
     }
 
-    const ordem = generateOrder('SUBGRUPO', groupItem.ordem);
+    // Ordena os itens para encontrar o ponto de inserção correto (logo após o grupo e seus subgrupos)
+    const sorted = [...itens].sort((a, b) => a.ordem - b.ordem);
+    const groupIndex = sorted.findIndex(item => item.tipo === 'GRUPO' && item.ordem === groupItem.ordem);
+
+    // Avança até o último subgrupo consecutivo deste mesmo grupo
+    let insertIndex = groupIndex + 1;
+    while (
+      insertIndex < sorted.length &&
+      sorted[insertIndex].tipo === 'SUBGRUPO' &&
+      sorted[insertIndex].grupo_contabil_id === groupItem.grupo_contabil_id
+    ) {
+      insertIndex++;
+    }
+
+    // Calcula a ordem como ponto médio entre o item anterior e o próximo, garantindo posição logo abaixo do grupo
+    let ordem: number;
+    if (insertIndex < sorted.length) {
+      const prevOrdem = sorted[insertIndex - 1].ordem;
+      const nextOrdem = sorted[insertIndex].ordem;
+      ordem = (prevOrdem + nextOrdem) / 2;
+    } else {
+      ordem = sorted[insertIndex - 1].ordem + 0.1;
+    }
+
     const novoItem: EstruturaDreItem = {
       tipo: 'SUBGRUPO',
       nome: '',
       grupo_contabil_id: groupItem.grupo_contabil_id,
-      ordem,
+      ordem: Math.round(ordem * 100) / 100,
       nivel: 2,
-      parent_id: groupItem.id, // This will be null for new items but properly set during save
+      parent_id: groupItem.id, // Será ajustado para o ID correto durante o salvamento
     };
-    setItens([...itens, novoItem]);
+
+    sorted.splice(insertIndex, 0, novoItem);
+    setItens(sorted);
   };
 
   const addAporte = () => {
