@@ -34,7 +34,7 @@ import {
 import loadClienteEntitiesAction from '@/actions/loadClienteEntities';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import loadProdutosCreditoAction from '@/actions/loadProdutosCredito';
-import loadProjetosAtivosAction from '@/actions/loadProjetosAtivos';
+import loadProjetosSimplesAction from '@/actions/loadProjetosSimples';
 import { RateioAportesForm } from '@/components/RateioAportesForm';
 import loadContasAction from '@/actions/loadContas';
 import createContaReceberAction from '@/actions/createContaReceber';

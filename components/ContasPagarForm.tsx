@@ -36,7 +36,7 @@ import {
 import loadFornecedoresAction from '@/actions/loadFornecedores';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import loadProdutosDebitoAction from '@/actions/loadProdutosDebito';
-import loadProjetosAtivosAction from '@/actions/loadProjetosAtivos';
+import loadProjetosSimplesAction from '@/actions/loadProjetosSimples';
 import loadContasAction from '@/actions/loadContas';
 import createContaPagarAction from '@/actions/createContaPagar';
 import createContaPagarItemAction from '@/actions/createContaPagarItem';
@@ -340,7 +340,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
       }))
       .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [fornecedores]);
-  const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
+  const [projetos] = useLoadAction(loadProjetosSimplesAction, []);
   const projetosOrdenados = useMemo(() => {
     if (!projetos) return [];
     return [...projetos].sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'));
