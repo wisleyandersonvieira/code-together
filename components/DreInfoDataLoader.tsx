@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronRight, Download, FileSpreadsheet } from 'lucide-react';
+import { ChevronDown, ChevronRight, Columns3, Download, FileSpreadsheet } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
 import { useToast } from '@/hooks/use-toast';
 import { exportDreInfoToPDF } from '@/utils/dre-info-export';
@@ -77,6 +77,11 @@ export function DreInfoDataLoader({
   const [dreData, setDreData] = useState<DreItemResult[]>([]);
   const [hasCalculated, setHasCalculated] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [separarColunas, setSepararColunas] = useState(false);
+  // Só disponível sem filtro de status (todos os lançamentos)
+  const podeSepararColunas = !statusProjeto;
+  const colunasSeparadas = podeSepararColunas && separarColunas;
+  const colCount = colunasSeparadas ? 6 : 3;
   const [expandedDetailData, setExpandedDetailData] = useState<Map<number, any[]>>(new Map());
 
   // Callback for DreInfoSubgrupoDetalhe to report loaded data
@@ -633,6 +638,16 @@ export function DreInfoDataLoader({
             <FileSpreadsheet className="mr-2 h-4 w-4" />
             Exportar Excel
           </Button>
+          {podeSepararColunas && (
+            <Button
+              variant={separarColunas ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setSepararColunas((v) => !v)}
+            >
+              <Columns3 className="mr-2 h-4 w-4" />
+              Separar colunas
+            </Button>
+          )}
         </div>
       </div>
 
@@ -651,7 +666,14 @@ export function DreInfoDataLoader({
             <TableRow className="bg-slate-50">
               <TableHead>Ordem</TableHead>
               <TableHead>Nome</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
+              {colunasSeparadas && (
+                <>
+                  <TableHead className="text-right">Gerais</TableHead>
+                  <TableHead className="text-right">Projetos em andamento</TableHead>
+                  <TableHead className="text-right">Projetos concluídos</TableHead>
+                </>
+              )}
+              <TableHead className="text-right">Valor total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -701,6 +723,19 @@ export function DreInfoDataLoader({
                     </TableCell>
 
                     {/* Valor */}
+                    {colunasSeparadas && (
+                      <>
+                        <TableCell className={getValueStyle(item)}>
+                          {formatCurrency(item.valorGeral)}
+                        </TableCell>
+                        <TableCell className={getValueStyle(item)}>
+                          {formatCurrency(item.valorAndamento)}
+                        </TableCell>
+                        <TableCell className={getValueStyle(item)}>
+                          {formatCurrency(item.valorConcluido)}
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell className={getValueStyle(item)}>
                       {formatCurrency(item.valor)}
                     </TableCell>
@@ -717,6 +752,7 @@ export function DreInfoDataLoader({
                       projetoIds={projetoIds}
                       contaIds={contaIds}
                       statusProjeto={statusProjeto}
+                      colSpan={colCount}
                       funcao={item.subgrupo_funcao}
                       nivel={item.nivel}
                       onDataLoaded={handleSubgrupoDataLoaded}

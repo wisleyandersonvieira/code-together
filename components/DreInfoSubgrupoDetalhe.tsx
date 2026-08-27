@@ -109,7 +109,7 @@ export function DreInfoSubgrupoDetalhe({
   if (isLoading) {
     return (
       <TableRow className="bg-slate-50/60">
-        <TableCell colSpan={3} className="py-2 px-4">
+        <TableCell colSpan={colSpan} className="py-2 px-4">
           <div className="flex items-center gap-2 ml-8 text-sm text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             Carregando lançamentos...
@@ -122,7 +122,7 @@ export function DreInfoSubgrupoDetalhe({
   if (allItems.length === 0) {
     return (
       <TableRow className="bg-slate-50/60">
-        <TableCell colSpan={3} className="py-2 px-4">
+        <TableCell colSpan={colSpan} className="py-2 px-4">
           <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3 py-1">
             Nenhum lançamento encontrado para este subgrupo no período.
           </div>
@@ -137,7 +137,7 @@ export function DreInfoSubgrupoDetalhe({
     <>
       {/* Sub-header row */}
       <TableRow className="bg-blue-50/60 hover:bg-blue-50/60">
-        <TableCell colSpan={3} className="py-1 px-4">
+        <TableCell colSpan={colSpan} className="py-1 px-4">
           <div
             className="grid text-xs font-semibold text-slate-500 border-l-2 border-blue-300 pl-3"
             style={{ marginLeft: `${indentPx}px`, gridTemplateColumns: '110px 1fr 1fr 1fr 120px' }}
@@ -157,7 +157,7 @@ export function DreInfoSubgrupoDetalhe({
           key={`${item.id}_${index}`}
           className="bg-slate-50/40 hover:bg-blue-50/30 border-b border-slate-100"
         >
-          <TableCell colSpan={3} className="py-1 px-4">
+          <TableCell colSpan={colSpan} className="py-1 px-4">
             <div
               className="grid text-xs items-center border-l-2 border-blue-100 pl-3"
               style={{ marginLeft: `${indentPx}px`, gridTemplateColumns: '110px 1fr 1fr 1fr 120px' }}
