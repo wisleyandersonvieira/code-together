@@ -548,9 +548,6 @@ export function ContasReceberList() {
                   <TableCell className="px-4 py-3.5 align-middle font-mono text-sm font-semibold text-slate-700">
                     {conta.numero_documento}
                   </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
-                    {conta.cliente_nome}
-                  </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle">
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-slate-700">
