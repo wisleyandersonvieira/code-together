@@ -76,11 +76,16 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
 
   useEffect(() => {
     if (existingItens && existingItens.length > 0) {
-      setItens(existingItens);
-      const maxOrder = Math.max(...existingItens.map((item: EstruturaDreItem) => item.ordem));
+      const normalized = existingItens.map((item: EstruturaDreItem) => ({
+        ...item,
+        ordem: Number(item.ordem) || 0,
+      }));
+      setItens(normalized);
+      const maxOrder = Math.max(...normalized.map((item: EstruturaDreItem) => item.ordem));
       setNextOrder(Math.floor(maxOrder) + 1);
     }
   }, [existingItens]);
+
 
   const generateOrder = (tipo: string, parentOrder?: number): number => {
     if (tipo === 'GRUPO') {
