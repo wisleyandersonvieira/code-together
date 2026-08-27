@@ -18,6 +18,7 @@ import {
   ArrowDown,
   ArrowUpDown,
   Edit,
+  Eye,
   Trash2,
   CreditCard,
   Undo2,
@@ -67,6 +68,7 @@ export function ContasPagarList() {
   };
   const [showForm, setShowForm] = useState(false);
   const [editingConta, setEditingConta] = useState<any>(null);
+  const [viewingConta, setViewingConta] = useState<any>(null);
   const [sortColumn, setSortColumn] = useState<SortColumn>('data_vencimento');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   
@@ -211,9 +213,17 @@ export function ContasPagarList() {
   const handleFormCancel = () => {
     setShowForm(false);
     setEditingConta(null);
+    setViewingConta(null);
+  };
+
+  const handleView = (conta: any) => {
+    setViewingConta(conta);
+    setEditingConta(conta);
+    setShowForm(true);
   };
 
   const handleEdit = (conta: any) => {
+    setViewingConta(null);
     // Check if has payments
     if (conta.titulos_pagos > 0) {
       toast({
@@ -438,6 +448,7 @@ export function ContasPagarList() {
     return (
       <ContasPagarForm
         conta={editingConta}
+        readOnly={!!viewingConta}
         onSuccess={handleFormSuccess}
         onCancel={handleFormCancel}
       />
@@ -700,6 +711,7 @@ export function ContasPagarList() {
                   </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle">
                     <div className="flex flex-wrap items-center gap-2">
+                      <FinanceActionButton icon={Eye} onClick={() => handleView(conta)} title="Visualizar" tone="neutral" />
                       <FinanceActionButton icon={Edit} onClick={() => handleEdit(conta)} title="Editar" tone="brand" />
                       {Number(conta.titulos_pagos) === 0 && (
                         <FinanceActionButton icon={Trash2} onClick={() => handleDelete(conta)} title="Excluir" tone="danger" />

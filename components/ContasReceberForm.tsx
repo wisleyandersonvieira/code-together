@@ -34,7 +34,7 @@ import {
 import loadClienteEntitiesAction from '@/actions/loadClienteEntities';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import loadProdutosCreditoAction from '@/actions/loadProdutosCredito';
-import loadProjetosAtivosAction from '@/actions/loadProjetosAtivos';
+import loadProjetosSimplesAction from '@/actions/loadProjetosSimples';
 import { RateioAportesForm } from '@/components/RateioAportesForm';
 import loadContasAction from '@/actions/loadContas';
 import createContaReceberAction from '@/actions/createContaReceber';
@@ -98,9 +98,10 @@ interface ContasReceberFormProps {
   conta?: any;
   onSuccess: () => void;
   onCancel: () => void;
+  readOnly?: boolean;
 }
 
-export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberFormProps) {
+export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false }: ContasReceberFormProps) {
   const { toast } = useToast();
   const { formatCurrency } = useCurrency();
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -126,11 +127,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const [clienteEntities, , , refreshClienteEntities] = useLoadAction(loadClienteEntitiesAction, []);
   const [tiposDocumento] = useLoadAction(loadTiposDocumentoAction, [], { searchDescricao: null });
   const [produtos] = useLoadAction(loadProdutosCreditoAction, []);
-  const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
-  const projetosOrdenados = useMemo(() => {
-    if (!projetos) return [];
-    return [...projetos].sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [projetos]);
+  const [projetos] = useLoadAction(loadProjetosSimplesAction, []);
   const [contas] = useLoadAction(loadContasAction, []);
 
   // Load existing items and projects when editing
@@ -234,6 +231,17 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const watchedItens = form.watch('itens') || [];
   const watchedProjetosRateio = form.watch('projetos_rateio') || [];
   const watchedProjetosFaturamento = form.watch('projetos_faturamento') || [];
+
+  // Opções de projeto: ativos + qualquer projeto já vinculado (mesmo concluído)
+  const projetoOptions = useMemo(() => {
+    const selecionados = new Set(
+      [...watchedProjetosRateio, ...watchedProjetosFaturamento].map((p: any) => String(p?.projeto_id ?? '')),
+    );
+    return (projetos || [])
+      .filter((p: any) => p.status !== 'Concluído' || selecionados.has(String(p.id)))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'))
+      .map((p: any) => ({ value: p.id.toString(), label: p.name }));
+  }, [projetos, watchedProjetosRateio, watchedProjetosFaturamento]);
   const watchedEntityType = form.watch('entity_type');
 
   // Entidades do tipo selecionado (cliente/empresa/grupo), ordenadas alfabeticamente
@@ -698,7 +706,12 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
 
   return (
     <div className="space-y-4 pb-6">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        {readOnly ? (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            Somente visualização
+          </span>
+        ) : <span />}
         <Button
           type="button"
           variant="outline"
@@ -711,6 +724,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
         </Button>
       </div>
 
+      <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, () => {
           toast({
@@ -1141,10 +1155,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                         <Combobox
                                           value={field.value?.toString()}
                                           onValueChange={(value) => field.onChange(parseInt(value))}
-                                          options={projetosOrdenados.map((projeto: any) => ({
-                                            value: projeto.id.toString(),
-                                            label: projeto.name,
-                                          }))}
+                                          options={projetoOptions}
                                           placeholder="Selecionar"
                                           searchPlaceholder="Filtrar projeto..."
                                           emptyText="Nenhum projeto encontrado."
@@ -1232,10 +1243,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                         <Combobox
                                           value={field.value?.toString()}
                                           onValueChange={(value) => field.onChange(parseInt(value))}
-                                          options={projetosOrdenados.map((projeto: any) => ({
-                                            value: projeto.id.toString(),
-                                            label: projeto.name,
-                                          }))}
+                                          options={projetoOptions}
                                           placeholder="Selecionar"
                                           searchPlaceholder="Filtrar projeto..."
                                           emptyText="Nenhum projeto encontrado."
@@ -1561,6 +1569,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
           </Tabs>
         </form>
       </Form>
+      </fieldset>
 
       {/* Cadastro rápido da entidade (cliente/empresa/grupo) */}
       <Dialog open={showEntityModal} onOpenChange={setShowEntityModal}>

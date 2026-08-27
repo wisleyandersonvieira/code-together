@@ -36,7 +36,7 @@ import {
 import loadFornecedoresAction from '@/actions/loadFornecedores';
 import loadTiposDocumentoAction from '@/actions/loadTiposDocumento';
 import loadProdutosDebitoAction from '@/actions/loadProdutosDebito';
-import loadProjetosAtivosAction from '@/actions/loadProjetosAtivos';
+import loadProjetosSimplesAction from '@/actions/loadProjetosSimples';
 import loadContasAction from '@/actions/loadContas';
 import createContaPagarAction from '@/actions/createContaPagar';
 import createContaPagarItemAction from '@/actions/createContaPagarItem';
@@ -285,9 +285,10 @@ interface ContasPagarFormProps {
   conta?: any;
   onSuccess: () => void;
   onCancel: () => void;
+  readOnly?: boolean;
 }
 
-export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormProps) {
+export function ContasPagarForm({ conta, onSuccess, onCancel, readOnly = false }: ContasPagarFormProps) {
   const { toast } = useToast();
   const { formatCurrency } = useCurrency();
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -340,7 +341,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
       }))
       .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
   }, [fornecedores]);
-  const [projetos] = useLoadAction(loadProjetosAtivosAction, []);
+  const [projetos] = useLoadAction(loadProjetosSimplesAction, []);
   const projetosOrdenados = useMemo(() => {
     if (!projetos) return [];
     return [...projetos].sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'));
@@ -400,6 +401,18 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
   // Watch form values (must be before useEffect hooks that use them)
   const watchedItens = form.watch('itens');
   const watchedProjetosRateio = form.watch('projetos_rateio');
+
+  // Opções de projeto: ativos + qualquer projeto já vinculado (mesmo concluído)
+  const projetoOptions = useMemo(() => {
+    const selecionados = new Set(
+      (watchedProjetosRateio || []).map((p: any) => String(p?.projeto_id ?? '')),
+    );
+    return projetosOrdenados
+      .filter((p: any) => p.status !== 'Concluído' || selecionados.has(String(p.id)))
+      .map((p: any) => ({ value: p.id.toString(), label: p.name }));
+  }, [projetosOrdenados, watchedProjetosRateio]);
+
+
 
   const handleOpenFornecedorModal = () => {
     // Guarda os ids atuais para identificar o fornecedor criado após o refresh
@@ -915,7 +928,12 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
 
   return (
     <div className="space-y-4 pb-6">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        {readOnly ? (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            Somente visualização
+          </span>
+        ) : <span />}
         <Button
           type="button"
           variant="outline"
@@ -928,6 +946,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
         </Button>
       </div>
 
+      <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(onSubmit)}
@@ -1288,10 +1307,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
                                         <Combobox
                                           value={field.value?.toString()}
                                           onValueChange={(value) => field.onChange(parseInt(value))}
-                                          options={projetosOrdenados.map((projeto: any) => ({
-                                            value: projeto.id.toString(),
-                                            label: projeto.name,
-                                          }))}
+                                          options={projetoOptions}
                                           placeholder="Selecionar"
                                           searchPlaceholder="Filtrar projeto..."
                                           emptyText="Nenhum projeto encontrado."
@@ -1818,6 +1834,7 @@ export function ContasPagarForm({ conta, onSuccess, onCancel }: ContasPagarFormP
           </Tabs>
         </form>
       </Form>
+      </fieldset>
 
       {/* Cadastro rápido de fornecedor */}
       <Dialog open={showFornecedorModal} onOpenChange={setShowFornecedorModal}>
