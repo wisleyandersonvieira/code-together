@@ -2900,6 +2900,7 @@ export type Database = {
         Args: { p_payload: Json; p_user_id?: number }
         Returns: Json
       }
+      save_estrutura_dre: { Args: { p_payload: Json }; Returns: Json }
       save_jornada: {
         Args: { p_payload: Json; p_user_id?: number }
         Returns: Json
