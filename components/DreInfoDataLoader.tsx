@@ -179,50 +179,64 @@ export function DreInfoDataLoader({
       emprestimos &&
       !hasCalculated
     ) {
+      // Soma de uma lista de lançamentos para um subgrupo, opcionalmente
+      // ponderada pela fração de rateio por status de projeto.
+      const somar = (rows: any[], subgrupoId: any, frac?: 'frac_geral' | 'frac_andamento' | 'frac_concluido') =>
+        (rows || [])
+          .filter((r: any) => Number(r.subgrupo_contabil_id) === Number(subgrupoId))
+          .reduce(
+            (sum: number, r: any) =>
+              sum + (Number(r.valor_total) || 0) * (frac ? Number(r[frac]) || 0 : 1),
+            0
+          );
+
+      const valoresSubgrupo = (sub: any) => {
+        if (!sub.subgrupo_contabil_id) {
+          return { valor: 0, valorGeral: 0, valorAndamento: 0, valorConcluido: 0 };
+        }
+        const sinal = sub.subgrupo_funcao === 'Débito' || sub.subgrupo_funcao === 'DEBITO' ? -1 : 1;
+        const calc = (frac?: 'frac_geral' | 'frac_andamento' | 'frac_concluido') =>
+          sinal *
+          (somar(contasPagar as any[], sub.subgrupo_contabil_id, frac) +
+            somar(contasReceber as any[], sub.subgrupo_contabil_id, frac));
+        return {
+          valor: calc(),
+          valorGeral: calc('frac_geral'),
+          valorAndamento: calc('frac_andamento'),
+          valorConcluido: calc('frac_concluido'),
+        };
+      };
+
       const processedItems: DreItemResult[] = estruturaItens.map((item: any) => {
         let valor = 0;
+        let valorGeral = 0;
+        let valorAndamento = 0;
+        let valorConcluido = 0;
 
         if (item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
-          const cpSum = contasPagar
-            .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
-            .reduce((sum: number, cp: any) => sum + (Number(cp.valor_total) || 0), 0);
-
-          const crSum = contasReceber
-            .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
-            .reduce((sum: number, cr: any) => sum + (Number(cr.valor_total) || 0), 0);
-
-          valor = cpSum + crSum;
-
-          if (item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO') {
-            valor = -valor;
-          }
+          ({ valor, valorGeral, valorAndamento, valorConcluido } = valoresSubgrupo(item));
         } else if (item.tipo === 'APORTE') {
           valor = aportes.reduce((sum: number, a: any) => sum + (Number(a.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'RETIRADA') {
           valor = -retiradas.reduce((sum: number, r: any) => sum + (Number(r.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'EMPRESTIMO_ENTRADA') {
           valor = emprestimosEntrada.reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'EMPRESTIMO_SAIDA') {
           valor = -emprestimosSaida.reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'GRUPO') {
-          valor = estruturaItens
+          estruturaItens
             .filter((sub: any) => sub.tipo === 'SUBGRUPO' && sub.parent_id === item.id)
-            .reduce((sum: number, sub: any) => {
-              let subVal = 0;
-              if (sub.subgrupo_contabil_id) {
-                const cpS = contasPagar
-                  .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(sub.subgrupo_contabil_id))
-                  .reduce((s: number, cp: any) => s + (Number(cp.valor_total) || 0), 0);
-                const crS = contasReceber
-                  .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(sub.subgrupo_contabil_id))
-                  .reduce((s: number, cr: any) => s + (Number(cr.valor_total) || 0), 0);
-                subVal = cpS + crS;
-                if (sub.subgrupo_funcao === 'Débito' || sub.subgrupo_funcao === 'DEBITO') {
-                  subVal = -subVal;
-                }
-              }
-              return sum + subVal;
-            }, 0);
+            .forEach((sub: any) => {
+              const v = valoresSubgrupo(sub);
+              valor += v.valor;
+              valorGeral += v.valorGeral;
+              valorAndamento += v.valorAndamento;
+              valorConcluido += v.valorConcluido;
+            });
         }
 
         return {
@@ -236,6 +250,9 @@ export function DreInfoDataLoader({
           subgrupo_funcao: item.subgrupo_funcao,
           parent_id: item.parent_id,
           valor,
+          valorGeral,
+          valorAndamento,
+          valorConcluido,
         };
       });
 
@@ -253,13 +270,19 @@ export function DreInfoDataLoader({
                 above.tipo === 'EMPRESTIMO_ENTRADA' ||
                 above.tipo === 'EMPRESTIMO_SAIDA'
             );
-          const somaValue = itemsAbove.reduce((sum, above) => sum + above.valor, 0);
-          return { ...item, valor: somaValue };
+          return {
+            ...item,
+            valor: itemsAbove.reduce((sum, a) => sum + a.valor, 0),
+            valorGeral: itemsAbove.reduce((sum, a) => sum + a.valorGeral, 0),
+            valorAndamento: itemsAbove.reduce((sum, a) => sum + a.valorAndamento, 0),
+            valorConcluido: itemsAbove.reduce((sum, a) => sum + a.valorConcluido, 0),
+          };
         }
         return item;
       });
 
       setDreData(finalItems.sort((a, b) => a.ordem - b.ordem));
+
       setHasCalculated(true);
       onComplete();
     }
