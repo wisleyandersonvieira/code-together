@@ -500,7 +500,7 @@ export function ContasReceberList() {
 
       <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <CardContent className="p-0">
-          <Table className="min-w-[1040px]">
+          <Table className="min-w-[800px]">
             <TableHeader className="bg-slate-50/80">
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead 
