@@ -25,7 +25,6 @@ import {
   ArrowUpDown,
   Edit,
   Eye,
-  Trash2,
   CreditCard,
   Undo2,
   Filter,
