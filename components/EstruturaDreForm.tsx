@@ -144,9 +144,6 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
     setItens([...itens, novoItem]);
   };
 
-  const addSubgrupoToGroup = (groupOrderIndex: number) => {
-    const groupItem = itens.find(item => item.tipo === 'GRUPO' && item.ordem === groupOrderIndex);
-    if (!groupItem) return;
 
   const addSubgrupoToGroup = (groupOrderIndex: number) => {
     const groupItem = itens.find(item => item.tipo === 'GRUPO' && Number(item.ordem) === Number(groupOrderIndex));
