@@ -369,245 +369,269 @@ export function DreInfoDataLoader({
     }
   };
 
-  // ── Excel export (Sheet 1 = consolidado · Sheet 2 = detalhamento) ───────────
+  // ── Excel export (Sheet 1 = consolidado formatado · demais = dados) ─────────
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!dreData || dreData.length === 0) {
       toast({ title: 'Aviso', description: 'Não há dados para exportar.', variant: 'destructive' });
       return;
     }
 
     try {
+      const ExcelJS = (await import('exceljs')).default;
+
       const estruturaNome = estruturas?.find((e: any) => e.id === estruturaId)?.nome || 'N/A';
-      const matrizNome = (matrizes || []).filter((m: any) => (matrizIds || []).includes(Number(m.id))).map((m: any) => m.nome).join(', ') || 'Todas';
+      const matrizNome =
+        (matrizes || [])
+          .filter((m: any) => (matrizIds || []).includes(Number(m.id)))
+          .map((m: any) => m.nome)
+          .join(', ') || 'Todas';
 
-      const wb = XLSX.utils.book_new();
+      const MONEY = '_-"R$"\\ * #,##0.00_-;[Red]-"R$"\\ * #,##0.00_-;_-"R$"\\ * "-"??_-';
+      const GREEN = 'FFD7E4BC';
+      const GREY = 'FFF2F2F2';
 
-      // ── Sheet 1: Consolidado ──────────────────────────────────────────────
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Provison';
 
-      const ws1 = XLSX.utils.json_to_sheet([]);
-      XLSX.utils.sheet_add_aoa(ws1, [
-        ['DRE Info – Demonstrativo Analítico'],
-        [''],
-        ['Estrutura:', estruturaNome],
-        ['Matriz:', matrizNome],
-        projetoNome ? ['Projeto:', projetoNome] : ['Projeto:', 'Todos'],
-        ['Período:', `${dataInicio} a ${dataFim}`],
-        ['Critério:', tipoData === 'competencia' ? 'Data de Competência' : 'Data de Pagamento'],
-        [''],
+      // ── Sheet 1: DRE formatado ────────────────────────────────────────────
+      const ws = wb.addWorksheet('DRE');
+      ws.properties.defaultRowHeight = 16;
+
+      const valueHeaders = colunasSeparadas
+        ? ['Gerais', 'Projetos em Andamento', 'Projetos Concluídos', 'Total']
+        : ['Valor'];
+      const totalCols = 1 + valueHeaders.length;
+      const lastColLetter = String.fromCharCode(64 + totalCols);
+
+      ws.columns = [
+        { width: 46 },
+        ...valueHeaders.map(() => ({ width: 22 })),
+      ];
+
+      const addTitle = (text: string, size: number, bold = true) => {
+        const row = ws.addRow([text]);
+        ws.mergeCells(`A${row.number}:${lastColLetter}${row.number}`);
+        row.getCell(1).font = { name: 'Arial', size, bold, color: { argb: 'FF111F3B' } };
+        row.getCell(1).alignment = { horizontal: 'center' };
+        return row;
+      };
+
+      addTitle('DRE Info – Demonstrativo Analítico', 14);
+      addTitle(estruturaNome, 11);
+      addTitle(
+        `${matrizNome} · ${projetoNome || 'Todos os projetos'} · ${dataInicio} a ${dataFim} · ${
+          tipoData === 'competencia' ? 'Competência' : 'Pagamento/Recebimento'
+        }`,
+        9,
+        false,
+      );
+      ws.addRow([]);
+
+      // Header
+      const header = ws.addRow(['Descrição', ...valueHeaders]);
+      header.eachCell((cell, col) => {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF111F3B' } };
+        cell.alignment = { horizontal: col === 1 ? 'left' : 'right', vertical: 'middle', wrapText: true };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FF9AA5B4' } } };
+      });
+      header.height = 22;
+
+      const valuesOf = (item: any) =>
         colunasSeparadas
-          ? ['Ordem', 'Tipo', 'Nome', 'Gerais', 'Projetos em Andamento', 'Projetos Concluídos', 'Total']
-          : ['Ordem', 'Tipo', 'Nome', 'Valor'],
-      ]);
+          ? [item.valorGeral, item.valorAndamento, item.valorConcluido, item.valor]
+          : [item.valor];
 
-      // In separated mode, detail rows are shifted 3 columns to the right (after the value columns)
-      const detailRow = (cells: any[]) =>
-        colunasSeparadas ? [cells[0], cells[1], cells[2], '', '', '', ...cells.slice(3)] : cells;
+      const styleValues = (row: any, opts: { bold?: boolean }) => {
+        for (let c = 2; c <= totalCols; c++) {
+          const cell = row.getCell(c);
+          cell.numFmt = MONEY;
+          cell.font = { name: 'Arial', size: 10, bold: !!opts.bold };
+          cell.alignment = { horizontal: 'right' };
+        }
+      };
 
-      // Build rows interleaving expanded detail
-      const consolidadoRows: any[][] = [];
-      dreData.forEach((item) => {
-        consolidadoRows.push(
-          colunasSeparadas
-            ? [item.ordem, item.tipo, item.nome, item.valorGeral, item.valorAndamento, item.valorConcluido, item.valor]
-            : [item.ordem, item.tipo, item.nome, item.valor],
-        );
+      dreData.forEach((item, index) => {
+        const isGrupo = item.tipo === 'GRUPO';
+        const isSoma = item.tipo === 'SOMA';
+        const isTexto = item.tipo === 'TEXTO';
 
-        // If this subgrupo is expanded and we have detail data, add detail rows
-        if (expandedRows.has(item.id) && item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
-          const details = expandedDetailData.get(item.subgrupo_contabil_id);
-          if (details && details.length > 0) {
-            // Sub-header
-            consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Favorecido', '  Observação', '  Projetos', '  Valor']));
+        if (isTexto) {
+          const row = ws.addRow([item.nome]);
+          row.getCell(1).font = { name: 'Arial', size: 10, bold: true, italic: true };
+          return;
+        }
+
+        const row = ws.addRow([item.nome, ...valuesOf(item)]);
+        row.getCell(1).font = {
+          name: 'Arial',
+          size: 10,
+          bold: isGrupo || isSoma,
+          color: { argb: 'FF111F3B' },
+        };
+        row.getCell(1).alignment = { horizontal: 'left', indent: isGrupo || isSoma ? 0 : 1 };
+        styleValues(row, { bold: isGrupo || isSoma });
+
+        if (isSoma) {
+          row.eachCell((cell) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN } };
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FF7F9A4F' } },
+              bottom: { style: 'double', color: { argb: 'FF7F9A4F' } },
+            };
+          });
+        } else if (isGrupo) {
+          row.eachCell((cell) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREY } };
+            cell.border = { bottom: { style: 'thin', color: { argb: 'FFB7BFCC' } } };
+          });
+        }
+
+        // Detail rows (only when the row is expanded on screen)
+        const pushDetalhe = (cells: (string | number)[]) => {
+          const d = ws.addRow([cells[0], ...Array(totalCols - 2).fill(''), cells[1]]);
+          d.getCell(1).font = { name: 'Arial', size: 9, color: { argb: 'FF6B7280' } };
+          d.getCell(1).alignment = { horizontal: 'left', indent: 3 };
+          const v = d.getCell(totalCols);
+          v.numFmt = MONEY;
+          v.font = { name: 'Arial', size: 9, color: { argb: 'FF6B7280' } };
+          v.alignment = { horizontal: 'right' };
+        };
+
+        if (expandedRows.has(item.id)) {
+          if (item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
+            const details = expandedDetailData.get(item.subgrupo_contabil_id) || [];
             details.forEach((d: any) => {
-              consolidadoRows.push(
-                detailRow([
-                  '',
-                  '',
-                  `    ${d.data_referencia || '-'}`,
-                  d.favorecido || '-',
-                  d.observacao || '',
-                  d.projetos || '',
-                  d.valor || 0,
-                ]),
-              );
+              const partes = [d.data_referencia || '-', d.favorecido || '-', d.projetos, d.observacao]
+                .filter(Boolean)
+                .join(' · ');
+              pushDetalhe([partes, Number(d.valor) || 0]);
             });
+          } else if (item.tipo === 'APORTE') {
+            (aportes as any[])?.forEach((a) =>
+              pushDetalhe([`${a.data_aporte || '-'} · ${a.socio_nome || '-'}`, Number(a.valor) || 0]),
+            );
+          } else if (item.tipo === 'RETIRADA') {
+            (retiradas as any[])?.forEach((r) =>
+              pushDetalhe([`${r.data_retirada || '-'} · ${r.socio_nome || '-'}`, -(Number(r.valor) || 0)]),
+            );
+          } else if (item.tipo === 'EMPRESTIMO_ENTRADA') {
+            emprestimosEntrada.forEach((e: any) =>
+              pushDetalhe([`${e.data_emprestimo || '-'} · ${e.socio_nome || '-'}`, Number(e.valor) || 0]),
+            );
+          } else if (item.tipo === 'EMPRESTIMO_SAIDA') {
+            emprestimosSaida.forEach((e: any) =>
+              pushDetalhe([`${e.data_emprestimo || '-'} · ${e.socio_nome || '-'}`, -(Number(e.valor) || 0)]),
+            );
           }
         }
 
-        // If APORTE expanded, add aporte detail rows
-        if (expandedRows.has(item.id) && item.tipo === 'APORTE' && aportes && aportes.length > 0) {
-          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
-          (aportes as any[]).forEach((a) => {
-            consolidadoRows.push(detailRow(['', '', `    ${a.data_aporte || '-'}`, a.socio_nome || '-', '', '', Number(a.valor) || 0]));
-          });
-        }
-
-        // If RETIRADA expanded, add retirada detail rows
-        if (expandedRows.has(item.id) && item.tipo === 'RETIRADA' && retiradas && retiradas.length > 0) {
-          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
-          (retiradas as any[]).forEach((r) => {
-            consolidadoRows.push(detailRow(['', '', `    ${r.data_retirada || '-'}`, r.socio_nome || '-', '', '', Number(r.valor) || 0]));
-          });
-        }
-
-        // If EMPRESTIMO_ENTRADA expanded, add pagamento detail rows
-        if (expandedRows.has(item.id) && item.tipo === 'EMPRESTIMO_ENTRADA' && emprestimosEntrada.length > 0) {
-          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
-          emprestimosEntrada.forEach((e: any) => {
-            consolidadoRows.push(detailRow(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]));
-          });
-        }
-
-        // If EMPRESTIMO_SAIDA expanded, add empréstimo detail rows
-        if (expandedRows.has(item.id) && item.tipo === 'EMPRESTIMO_SAIDA' && emprestimosSaida.length > 0) {
-          consolidadoRows.push(detailRow(['', '', '  ↳ Data', '  Sócio', '  Valor']));
-          emprestimosSaida.forEach((e: any) => {
-            consolidadoRows.push(detailRow(['', '', `    ${e.data_emprestimo || '-'}`, e.socio_nome || '-', '', '', Number(e.valor) || 0]));
-          });
+        // Spacer after the end of a block (before the next GRUPO/SOMA)
+        const next = dreData[index + 1];
+        if (next && (next.tipo === 'GRUPO' || next.tipo === 'SOMA') && !isGrupo) {
+          ws.addRow([]);
         }
       });
 
-      XLSX.utils.sheet_add_aoa(ws1, consolidadoRows, { origin: 'A10' });
+      ws.views = [{ state: 'frozen', ySplit: 5 }];
 
-      // Adjust columns for possible expanded detail
-      ws1['!cols'] = colunasSeparadas
-        ? [{ wch: 10 }, { wch: 12 }, { wch: 50 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 22 }]
-        : [{ wch: 10 }, { wch: 12 }, { wch: 50 }, { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 22 }];
-
-      const range1 = XLSX.utils.decode_range(ws1['!ref'] || 'A1');
-      const valueColumns = colunasSeparadas ? [3, 4, 5, 6, 9] : [3, 6];
-      for (let R = 9; R <= range1.e.r; ++R) {
-        for (const colIdx of valueColumns) {
-          const cell = XLSX.utils.encode_cell({ r: R, c: colIdx });
-          if (ws1[cell] && typeof ws1[cell].v === 'number') ws1[cell].z = '#,##0.00';
-        }
-      }
-
-      XLSX.utils.book_append_sheet(wb, ws1, 'Consolidado');
-
-      // ── Sheet 2: Detalhamento (raw transactions from loaded data) ─────────
-
-      const ws2 = XLSX.utils.json_to_sheet([]);
-      XLSX.utils.sheet_add_aoa(ws2, [
-        ['DRE Info – Detalhamento de Transações'],
-        [''],
-        ['Estrutura:', estruturaNome],
-        ['Matriz:', matrizNome],
-        projetoNome ? ['Projeto:', projetoNome] : ['Projeto:', 'Todos'],
-        ['Período:', `${dataInicio} a ${dataFim}`],
-        ['Critério:', tipoData === 'competencia' ? 'Data de Competência' : 'Data de Pagamento'],
-        [''],
-        ['Subgrupo DRE', 'Tipo Lançamento', 'Data Referência', 'Valor'],
-      ]);
-
-      // Build detail rows from raw contasPagar / contasReceber (already loaded)
-      // We enrich with the subgrupo name via estruturaItens
+      // ── Sheet 2: Detalhamento (raw transactions) ──────────────────────────
       const subgrupoNameMap = new Map<number, string>();
       (estruturaItens || []).forEach((item: any) => {
-        if (item.subgrupo_contabil_id) {
-          subgrupoNameMap.set(Number(item.subgrupo_contabil_id), item.nome);
-        }
+        if (item.subgrupo_contabil_id) subgrupoNameMap.set(Number(item.subgrupo_contabil_id), item.nome);
       });
 
-      const detalheRows: any[] = [];
+      const detalheRows: any[][] = [];
+      (contasPagar || []).forEach((cp: any) =>
+        detalheRows.push([
+          subgrupoNameMap.get(Number(cp.subgrupo_contabil_id)) || `Subgrupo ${cp.subgrupo_contabil_id}`,
+          'Pagar',
+          cp.data_referencia || '',
+          Number(cp.valor_total) || 0,
+        ]),
+      );
+      (contasReceber || []).forEach((cr: any) =>
+        detalheRows.push([
+          subgrupoNameMap.get(Number(cr.subgrupo_contabil_id)) || `Subgrupo ${cr.subgrupo_contabil_id}`,
+          'Receber',
+          cr.data_referencia || '',
+          Number(cr.valor_total) || 0,
+        ]),
+      );
+      detalheRows.sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[2]).localeCompare(String(b[2])));
 
-      (contasPagar || []).forEach((cp: any) => {
-        const subNome = subgrupoNameMap.get(Number(cp.subgrupo_contabil_id)) || `Subgrupo ${cp.subgrupo_contabil_id}`;
-        detalheRows.push({
-          'Subgrupo DRE': subNome,
-          'Tipo Lançamento': 'Pagar',
-          'Data Referência': cp.data_referencia || '',
-          Valor: Number(cp.valor_total) || 0,
+      const addSimpleSheet = (name: string, headers: string[], rows: any[][], widths: number[], moneyCol: number) => {
+        const sheet = wb.addWorksheet(name);
+        sheet.columns = widths.map((w) => ({ width: w }));
+        const h = sheet.addRow(headers);
+        h.eachCell((cell) => {
+          cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF111F3B' } };
         });
-      });
-
-      (contasReceber || []).forEach((cr: any) => {
-        const subNome = subgrupoNameMap.get(Number(cr.subgrupo_contabil_id)) || `Subgrupo ${cr.subgrupo_contabil_id}`;
-        detalheRows.push({
-          'Subgrupo DRE': subNome,
-          'Tipo Lançamento': 'Receber',
-          'Data Referência': cr.data_referencia || '',
-          Valor: Number(cr.valor_total) || 0,
+        rows.forEach((r) => {
+          const row = sheet.addRow(r);
+          row.eachCell((cell) => (cell.font = { name: 'Arial', size: 10 }));
+          const v = row.getCell(moneyCol);
+          v.numFmt = MONEY;
+          v.alignment = { horizontal: 'right' };
         });
-      });
+        sheet.views = [{ state: 'frozen', ySplit: 1 }];
+      };
 
-      detalheRows.sort((a, b) => {
-        if (a['Subgrupo DRE'] < b['Subgrupo DRE']) return -1;
-        if (a['Subgrupo DRE'] > b['Subgrupo DRE']) return 1;
-        return (a['Data Referência'] || '').localeCompare(b['Data Referência'] || '');
-      });
-
-      XLSX.utils.sheet_add_json(ws2, detalheRows, { origin: 'A10', skipHeader: true });
-
-      ws2['!cols'] = [{ wch: 45 }, { wch: 18 }, { wch: 18 }, { wch: 22 }];
-
-      const range2 = XLSX.utils.decode_range(ws2['!ref'] || 'A1');
-      for (let R = 9; R <= range2.e.r; ++R) {
-        const cell = XLSX.utils.encode_cell({ r: R, c: 3 });
-        if (ws2[cell]) ws2[cell].z = '#,##0.00';
-      }
-
-      XLSX.utils.book_append_sheet(wb, ws2, 'Detalhamento');
-
-      // ── Sheet 3: Aportes ──────────────────────────────────────────────────
+      addSimpleSheet(
+        'Detalhamento',
+        ['Subgrupo DRE', 'Tipo Lançamento', 'Data Referência', 'Valor'],
+        detalheRows,
+        [45, 18, 18, 22],
+        4,
+      );
 
       if (aportes && aportes.length > 0) {
-        const ws3 = XLSX.utils.json_to_sheet([]);
-        XLSX.utils.sheet_add_aoa(ws3, [['Data', 'Sócio', 'Valor']]);
-        XLSX.utils.sheet_add_json(
-          ws3,
-          (aportes as any[]).map((a) => ({
-            Data: a.data_aporte || '',
-            Sócio: a.socio_nome || '',
-            Valor: Number(a.valor) || 0,
-          })),
-          { origin: 'A2', skipHeader: true }
+        addSimpleSheet(
+          'Aportes',
+          ['Data', 'Sócio', 'Valor'],
+          (aportes as any[]).map((a) => [a.data_aporte || '', a.socio_nome || '', Number(a.valor) || 0]),
+          [14, 35, 20],
+          3,
         );
-        ws3['!cols'] = [{ wch: 14 }, { wch: 35 }, { wch: 18 }];
-        XLSX.utils.book_append_sheet(wb, ws3, 'Aportes');
       }
-
-      // ── Sheet 4: Retiradas ────────────────────────────────────────────────
 
       if (retiradas && retiradas.length > 0) {
-        const ws4 = XLSX.utils.json_to_sheet([]);
-        XLSX.utils.sheet_add_aoa(ws4, [['Data', 'Sócio', 'Valor']]);
-        XLSX.utils.sheet_add_json(
-          ws4,
-          (retiradas as any[]).map((r) => ({
-            Data: r.data_retirada || '',
-            Sócio: r.socio_nome || '',
-            Valor: Number(r.valor) || 0,
-          })),
-          { origin: 'A2', skipHeader: true }
+        addSimpleSheet(
+          'Retiradas',
+          ['Data', 'Sócio', 'Valor'],
+          (retiradas as any[]).map((r) => [r.data_retirada || '', r.socio_nome || '', Number(r.valor) || 0]),
+          [14, 35, 20],
+          3,
         );
-        ws4['!cols'] = [{ wch: 14 }, { wch: 35 }, { wch: 18 }];
-        XLSX.utils.book_append_sheet(wb, ws4, 'Retiradas');
       }
-
-      // ── Sheet 5: Empréstimos ──────────────────────────────────────────────
 
       if (emprestimos && emprestimos.length > 0) {
-        const ws5 = XLSX.utils.json_to_sheet([]);
-        XLSX.utils.sheet_add_aoa(ws5, [['Data', 'Tipo', 'Sócio', 'Valor']]);
-        XLSX.utils.sheet_add_json(
-          ws5,
-          (emprestimos as any[]).map((e) => ({
-            Data: e.data_emprestimo || '',
-            Tipo: e.tipo === 'PAGAMENTO' ? 'Pagamento' : 'Empréstimo',
-            Sócio: e.socio_nome || '',
-            // Empréstimo sai do caixa (negativo), pagamento entra (positivo)
-            Valor: (e.tipo === 'PAGAMENTO' ? 1 : -1) * (Number(e.valor) || 0),
-          })),
-          { origin: 'A2', skipHeader: true }
+        addSimpleSheet(
+          'Empréstimos',
+          ['Data', 'Tipo', 'Sócio', 'Valor'],
+          (emprestimos as any[]).map((e) => [
+            e.data_emprestimo || '',
+            e.tipo === 'PAGAMENTO' ? 'Pagamento' : 'Empréstimo',
+            e.socio_nome || '',
+            (e.tipo === 'PAGAMENTO' ? 1 : -1) * (Number(e.valor) || 0),
+          ]),
+          [14, 14, 35, 20],
+          4,
         );
-        ws5['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 35 }, { wch: 18 }];
-        XLSX.utils.book_append_sheet(wb, ws5, 'Empréstimos');
       }
 
-      const matrizNomeClean = matrizNome.replace(/[^a-zA-Z0-9]/g, '_');
-      XLSX.writeFile(wb, `DRE_Info_${matrizNomeClean}_${dataInicio}_${dataFim}.xlsx`);
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `DRE_Info_${matrizNome.replace(/[^a-zA-Z0-9]/g, '_')}_${dataInicio}_${dataFim}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
 
       toast({ title: 'Sucesso', description: 'Excel exportado com sucesso!' });
     } catch (error) {
