@@ -604,7 +604,7 @@ export function ContasReceberList() {
               ))}
               {sortedContasReceber.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="py-14 text-center">
+                  <TableCell colSpan={6} className="py-14 text-center">
                     <div className="flex flex-col items-center">
                       <Receipt className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-medium mb-2">Nenhuma conta a receber cadastrada</h3>
