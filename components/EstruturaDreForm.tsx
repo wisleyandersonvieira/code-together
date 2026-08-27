@@ -49,6 +49,8 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
   const [nomeEstrutura, setNomeEstrutura] = useState(estrutura?.nome || '');
   const [itens, setItens] = useState<EstruturaDreItem[]>([]);
   const [nextOrder, setNextOrder] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
+
 
 
   // Load data
