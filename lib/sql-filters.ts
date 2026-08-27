@@ -148,3 +148,62 @@ export function fracoesStatusProjeto(
         ${soma('Em andamento')} as frac_andamento,
         ${soma('Concluído')} as frac_concluido,`;
 }
+
+/* -------------------------------------------------------------------------
+ * Contas a receber: o vínculo com projeto pode vir de DUAS tabelas:
+ *  - contas_receber_projetos     → rateio por PERCENTUAL
+ *  - contas_receber_faturamento  → faturamento por projeto, em VALOR absoluto
+ * Os helpers abaixo consideram as duas fontes (a fração do faturamento é
+ * valor_faturamento / valor_total da conta).
+ * ---------------------------------------------------------------------- */
+
+const CRP = 'contas_receber_projetos';
+const CRF = 'contas_receber_faturamento';
+
+/** Existe algum vínculo de projeto (rateio ou faturamento) para a conta. */
+function crExisteVinculo(contaCol: string): string {
+  return (
+    `(EXISTS (SELECT 1 FROM ${CRP} vp WHERE vp.conta_receber_id = ${contaCol}) ` +
+    `OR EXISTS (SELECT 1 FROM ${CRF} vf WHERE vf.conta_receber_id = ${contaCol}))`
+  );
+}
+
+/** Fração (0..1) da conta vinculada a projetos com o status informado. */
+function crFracaoStatus(contaCol: string, valorTotalCol: string, statusSql: string): string {
+  return (
+    `(COALESCE((SELECT SUM(rp.percentual) / 100.0 FROM ${CRP} rp ` +
+    `JOIN projetos pp ON pp.id = rp.projeto_id ` +
+    `WHERE rp.conta_receber_id = ${contaCol} AND pp.status = ${statusSql}), 0) ` +
+    `+ COALESCE((SELECT SUM(rf.valor_faturamento) / NULLIF(${valorTotalCol}, 0) FROM ${CRF} rf ` +
+    `JOIN projetos pf ON pf.id = rf.projeto_id ` +
+    `WHERE rf.conta_receber_id = ${contaCol} AND pf.status = ${statusSql}), 0))`
+  );
+}
+
+/** Colunas frac_geral / frac_andamento / frac_concluido para contas a receber. */
+export function fracoesStatusProjetoReceber(contaCol: string, valorTotalCol: string): string {
+  return `
+        CASE WHEN NOT ${crExisteVinculo(contaCol)} THEN 1.0 ELSE 0 END as frac_geral,
+        ${crFracaoStatus(contaCol, valorTotalCol, `'Em andamento'`)} as frac_andamento,
+        ${crFracaoStatus(contaCol, valorTotalCol, `'Concluído'`)} as frac_concluido,`;
+}
+
+/** Filtro por lista de projetos (rateio ou faturamento). */
+export function andProjetoIdInReceber(contaCol: string, param = 'projetoIds'): string {
+  const sql =
+    `"AND (EXISTS (SELECT 1 FROM ${CRP} fp1 WHERE fp1.conta_receber_id = ${contaCol} ` +
+    `AND fp1.projeto_id = ANY(" + ${intArrayExpr(param)} + ")) OR EXISTS (SELECT 1 FROM ${CRF} fp2 ` +
+    `WHERE fp2.conta_receber_id = ${contaCol} AND fp2.projeto_id = ANY(" + ${intArrayExpr(param)} + ")))"`;
+  return `{{ params.${param} && params.${param}.length ? ${sql} : "" }}`;
+}
+
+/** Filtro por status de projeto exigindo vínculo (rateio ou faturamento). */
+export function andProjetoStatusReceber(contaCol: string, param = 'statusProjeto'): string {
+  const statusSql = (alias: string) =>
+    `(params.${param} === 'todos' ? "" : " AND ${alias}.status = '" + String(params.${param}).replace(/'/g, "''") + "'")`;
+  const sql =
+    `"AND (EXISTS (SELECT 1 FROM ${CRP} sp1 JOIN projetos s1 ON s1.id = sp1.projeto_id ` +
+    `WHERE sp1.conta_receber_id = ${contaCol}" + ${statusSql('s1')} + ") OR EXISTS (SELECT 1 FROM ${CRF} sp2 ` +
+    `JOIN projetos s2 ON s2.id = sp2.projeto_id WHERE sp2.conta_receber_id = ${contaCol}" + ${statusSql('s2')} + "))"`;
+  return `{{ params.${param} ? ${sql} : "" }}`;
+}
