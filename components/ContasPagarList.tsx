@@ -629,7 +629,6 @@ export function ContasPagarList() {
           <Table className="min-w-[1120px]">
             <TableHeader className="bg-slate-50/80">
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead>Matriz</TableHead>
                 <TableHead 
                   className="w-[120px] cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('numero_documento')}
@@ -639,7 +638,6 @@ export function ContasPagarList() {
                     {getSortIcon('numero_documento')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[80px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Tipo</TableHead>
                 <TableHead 
                   className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('fornecedor_nome')}
@@ -647,15 +645,6 @@ export function ContasPagarList() {
                   <div className="flex items-center">
                     Fornecedor
                     {getSortIcon('fornecedor_nome')}
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
-                  onClick={() => handleSort('data_vencimento')}
-                >
-                  <div className="flex items-center">
-                    Vencimento
-                    {getSortIcon('data_vencimento')}
                   </div>
                 </TableHead>
                 <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Pagamento</TableHead>
@@ -678,7 +667,7 @@ export function ContasPagarList() {
                     {getSortIcon('status')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[160px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
+                <TableHead className="w-[120px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
