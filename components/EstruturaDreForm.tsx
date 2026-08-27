@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Plus, Save, X, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '../src/integrations/supabase/client';
+
 
 import loadGruposContabeisAction from '@/actions/loadGruposContabeis';
 import loadAllSubgruposContabeisAction from '@/actions/loadAllSubgruposContabeis';
@@ -47,6 +49,8 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
   const [nomeEstrutura, setNomeEstrutura] = useState(estrutura?.nome || '');
   const [itens, setItens] = useState<EstruturaDreItem[]>([]);
   const [nextOrder, setNextOrder] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
+
 
 
   // Load data
@@ -354,133 +358,31 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
       return;
     }
 
-    let estruturaId = estrutura?.id;
-
+    setIsSaving(true);
     try {
-      // Create structure if new
-      if (!estruturaId) {
-        const result = await createEstrutura({ nome: nomeEstrutura });
-        estruturaId = result[0]?.id;
-        
-        if (!estruturaId) {
-          throw new Error('Erro ao criar estrutura DRE');
-        }
-      }
+      // Salva a estrutura inteira em UMA única chamada ao banco (antes era 1 requisição por linha)
+      const payload = {
+        id: estrutura?.id ?? null,
+        nome: nomeEstrutura.trim(),
+        itens: itens.map((item) => ({
+          id: item.id ?? null,
+          tipo: item.tipo,
+          nome: item.nome.trim(),
+          grupo_contabil_id: item.grupo_contabil_id ?? null,
+          subgrupo_contabil_id: item.subgrupo_contabil_id ?? null,
+          ordem: item.ordem,
+          nivel: item.nivel,
+        })),
+      };
 
-      // First pass: Save/Update groups and standalone items (APORTE, RETIRADA, SOMA)
-      const createdItems = new Map<number, number>(); // originalIndex -> newId
-      
-      for (let i = 0; i < itens.length; i++) {
-        const item = itens[i];
-        if (
-          item.tipo === 'GRUPO' ||
-          item.tipo === 'APORTE' ||
-          item.tipo === 'RETIRADA' ||
-          item.tipo === 'EMPRESTIMO_ENTRADA' ||
-          item.tipo === 'EMPRESTIMO_SAIDA' ||
-          item.tipo === 'SOMA'
-        ) {
-          try {
-            if (item.id) {
-              // Update existing item
-              await updateItemAction({
-                id: item.id,
-                tipo: item.tipo,
-                nome: item.nome.trim(),
-                grupoContabilId: item.grupo_contabil_id || null,
-                subgrupoContabilId: item.subgrupo_contabil_id || null,
-                ordem: item.ordem,
-                nivel: item.nivel,
-                parentId: null,
-              });
-              createdItems.set(i, item.id);
-            } else {
-              // Create new item
-              const result = await createItem({
-                estruturaId,
-                tipo: item.tipo,
-                nome: item.nome.trim(),
-                grupoContabilId: item.grupo_contabil_id || null,
-                subgrupoContabilId: item.subgrupo_contabil_id || null,
-                ordem: item.ordem,
-                nivel: item.nivel,
-                parentId: null,
-              });
-              
-              if (result && result.length > 0) {
-                createdItems.set(i, result[0].id);
-              }
-            }
-          } catch (error) {
-            console.error('Error saving item:', item, error);
-            throw new Error(`Erro ao salvar item: ${item.nome}`);
-          }
-        }
-      }
-
-      // Second pass: Save/Update subgroups with proper parent_id
-      for (let i = 0; i < itens.length; i++) {
-        const item = itens[i];
-        if (item.tipo === 'SUBGRUPO') {
-          // Find parent group
-          let parentId = null;
-          if (item.grupo_contabil_id) {
-            // Look for parent group with same grupo_contabil_id
-            for (let j = 0; j < itens.length; j++) {
-              const potentialParent = itens[j];
-              if (potentialParent.tipo === 'GRUPO' && 
-                  potentialParent.grupo_contabil_id === item.grupo_contabil_id &&
-                  createdItems.has(j)) {
-                parentId = createdItems.get(j);
-                break;
-              }
-            }
-          }
-          
-          try {
-            if (item.id) {
-              // Update existing subgroup
-              await updateItemAction({
-                id: item.id,
-                tipo: item.tipo,
-                nome: item.nome.trim(),
-                grupoContabilId: item.grupo_contabil_id || null,
-                subgrupoContabilId: item.subgrupo_contabil_id || null,
-                ordem: item.ordem,
-                nivel: item.nivel,
-                parentId,
-              });
-            } else {
-              // Create new subgroup
-              const result = await createItem({
-                estruturaId,
-                tipo: item.tipo,
-                nome: item.nome.trim(),
-                grupoContabilId: item.grupo_contabil_id || null,
-                subgrupoContabilId: item.subgrupo_contabil_id || null,
-                ordem: item.ordem,
-                nivel: item.nivel,
-                parentId,
-              });
-              
-              if (result && result.length > 0) {
-                createdItems.set(i, result[0].id);
-              }
-            }
-          } catch (error) {
-            console.error('Error saving subgroup:', item, error);
-            throw new Error(`Erro ao salvar subgrupo: ${item.nome}`);
-          }
-        }
-      }
-
-      // SOMA lines no longer need manual references - they auto-sum items above them
+      const { error } = await (supabase as any).rpc('save_estrutura_dre', { p_payload: payload });
+      if (error) throw new Error(error.message);
 
       toast({
         title: 'Sucesso',
         description: `Estrutura DRE ${estrutura ? 'atualizada' : 'criada'} com sucesso.`,
       });
-      
+
       onSuccess();
     } catch (error: any) {
       console.error('Save error:', error);
@@ -489,8 +391,11 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
         description: error.message || `Erro ao ${estrutura ? 'atualizar' : 'criar'} estrutura DRE.`,
         variant: 'destructive',
       });
+    } finally {
+      setIsSaving(false);
     }
   };
+
 
   const getUsedGrupoContabilIds = (currentIndex: number) => {
     return itens
@@ -543,9 +448,10 @@ export function EstruturaDreForm({ estrutura, onSuccess, onCancel }: EstruturaDr
             <X className="mr-2 h-4 w-4" />
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={isCreatingEstrutura || isCreatingItem || isUpdatingItem}>
+          <Button onClick={handleSave} disabled={isSaving}>
             <Save className="mr-2 h-4 w-4" />
-            Salvar
+            {isSaving ? 'Salvando...' : 'Salvar'}
+
           </Button>
         </div>
       </div>

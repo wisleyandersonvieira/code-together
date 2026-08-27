@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.save_estrutura_dre(jsonb) FROM anon;
