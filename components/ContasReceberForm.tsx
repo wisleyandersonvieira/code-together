@@ -230,6 +230,17 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
   const watchedItens = form.watch('itens') || [];
   const watchedProjetosRateio = form.watch('projetos_rateio') || [];
   const watchedProjetosFaturamento = form.watch('projetos_faturamento') || [];
+
+  // Opções de projeto: ativos + qualquer projeto já vinculado (mesmo concluído)
+  const projetoOptions = useMemo(() => {
+    const selecionados = new Set(
+      [...watchedProjetosRateio, ...watchedProjetosFaturamento].map((p: any) => String(p?.projeto_id ?? '')),
+    );
+    return (projetos || [])
+      .filter((p: any) => p.status !== 'Concluído' || selecionados.has(String(p.id)))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name, 'pt-BR'))
+      .map((p: any) => ({ value: p.id.toString(), label: p.name }));
+  }, [projetos, watchedProjetosRateio, watchedProjetosFaturamento]);
   const watchedEntityType = form.watch('entity_type');
 
   // Entidades do tipo selecionado (cliente/empresa/grupo), ordenadas alfabeticamente
