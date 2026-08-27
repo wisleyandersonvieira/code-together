@@ -1148,10 +1148,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                         <Combobox
                                           value={field.value?.toString()}
                                           onValueChange={(value) => field.onChange(parseInt(value))}
-                                          options={projetosOrdenados.map((projeto: any) => ({
-                                            value: projeto.id.toString(),
-                                            label: projeto.name,
-                                          }))}
+                                          options={projetoOptions}
                                           placeholder="Selecionar"
                                           searchPlaceholder="Filtrar projeto..."
                                           emptyText="Nenhum projeto encontrado."
@@ -1239,10 +1236,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel }: ContasReceberF
                                         <Combobox
                                           value={field.value?.toString()}
                                           onValueChange={(value) => field.onChange(parseInt(value))}
-                                          options={projetosOrdenados.map((projeto: any) => ({
-                                            value: projeto.id.toString(),
-                                            label: projeto.name,
-                                          }))}
+                                          options={projetoOptions}
                                           placeholder="Selecionar"
                                           searchPlaceholder="Filtrar projeto..."
                                           emptyText="Nenhum projeto encontrado."
