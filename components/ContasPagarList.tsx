@@ -673,9 +673,6 @@ export function ContasPagarList() {
               {sortedContasPagar.map((conta: any) => (
                 <Fragment key={conta.id}>
                 <TableRow className="border-b border-slate-100 hover:bg-slate-50/70">
-                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
-                    {conta.matriz_nome || '-'}
-                  </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle font-mono text-sm font-semibold text-slate-700">
                     {conta.numero_documento}
                   </TableCell>
