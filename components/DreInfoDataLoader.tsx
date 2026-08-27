@@ -728,7 +728,7 @@ export function DreInfoDataLoader({
                     <>
                       {(!aportes || aportes.length === 0) ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhum aporte encontrado no período.
                             </div>
@@ -737,7 +737,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-blue-50/60 hover:bg-blue-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-blue-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -753,7 +753,7 @@ export function DreInfoDataLoader({
                               key={`aporte_${idx}`}
                               className="bg-slate-50/40 hover:bg-blue-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-blue-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -783,7 +783,7 @@ export function DreInfoDataLoader({
                     <>
                       {(!retiradas || retiradas.length === 0) ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhuma retirada encontrada no período.
                             </div>
@@ -792,7 +792,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-red-50/60 hover:bg-red-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-red-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -808,7 +808,7 @@ export function DreInfoDataLoader({
                               key={`retirada_${idx}`}
                               className="bg-slate-50/40 hover:bg-red-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-red-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -837,7 +837,7 @@ export function DreInfoDataLoader({
                     <>
                       {emprestimosEntrada.length === 0 ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhum pagamento de empréstimo encontrado no período.
                             </div>
@@ -846,7 +846,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-blue-50/60 hover:bg-blue-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-blue-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -862,7 +862,7 @@ export function DreInfoDataLoader({
                               key={`emprestimo_entrada_${idx}`}
                               className="bg-slate-50/40 hover:bg-blue-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-blue-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -892,7 +892,7 @@ export function DreInfoDataLoader({
                     <>
                       {emprestimosSaida.length === 0 ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhum empréstimo encontrado no período.
                             </div>
@@ -901,7 +901,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-red-50/60 hover:bg-red-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-red-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -917,7 +917,7 @@ export function DreInfoDataLoader({
                               key={`emprestimo_saida_${idx}`}
                               className="bg-slate-50/40 hover:bg-red-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-red-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
