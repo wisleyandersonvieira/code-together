@@ -9,6 +9,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { 
   Plus,
   Receipt,
@@ -19,14 +25,14 @@ import {
   ArrowUpDown,
   Edit,
   Eye,
-  Trash2,
   CreditCard,
   Undo2,
   Filter,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  MoreHorizontal
 } from 'lucide-react';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -493,7 +499,7 @@ export function ContasReceberList() {
 
       <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <CardContent className="p-0">
-          <Table className="min-w-[1040px]">
+          <Table className="min-w-[800px]">
             <TableHeader className="bg-slate-50/80">
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
                 <TableHead 
@@ -512,17 +518,6 @@ export function ContasReceberList() {
                   <div className="flex items-center">
                     Cliente
                     {getSortIcon('cliente_nome')}
-                  </div>
-                </TableHead>
-                <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Matriz</TableHead>
-                <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Tipo</TableHead>
-                <TableHead 
-                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
-                  onClick={() => handleSort('data_vencimento')}
-                >
-                  <div className="flex items-center">
-                    Vencimento
-                    {getSortIcon('data_vencimento')}
                   </div>
                 </TableHead>
                 <TableHead 
@@ -544,7 +539,7 @@ export function ContasReceberList() {
                     {getSortIcon('status')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[160px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
+                <TableHead className="w-[120px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -553,17 +548,15 @@ export function ContasReceberList() {
                   <TableCell className="px-4 py-3.5 align-middle font-mono text-sm font-semibold text-slate-700">
                     {conta.numero_documento}
                   </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
-                    {conta.cliente_nome}
-                  </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
-                    {conta.matriz_nome || '-'}
-                  </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-700">
-                    {conta.tipo_documento_descricao}
-                  </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
-                    {formatDateForDisplay(conta.data_vencimento)}
+                  <TableCell className="px-4 py-3.5 align-middle">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-slate-700">
+                        {conta.cliente_nome}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {conta.matriz_nome || '-'}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
                     {formatCurrency(parseFloat(conta.valor_total))}
@@ -575,23 +568,39 @@ export function ContasReceberList() {
                     {getStatusBadge(conta.status, conta.titulos_recebidos, conta.total_titulos)}
                   </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <FinanceActionButton icon={Eye} onClick={() => handleView(conta)} title="Visualizar" tone="neutral" />
-                      <FinanceActionButton icon={Edit} onClick={() => handleEdit(conta)} title="Editar" tone="brand" />
-                      {Number(conta.titulos_recebidos) === 0 && (
-                        <FinanceActionButton icon={Trash2} onClick={() => handleDelete(conta)} title="Excluir" tone="danger" />
-                      )}
                       <FinanceActionButton icon={CreditCard} onClick={() => handleReceipt(conta)} title="Baixar/Receber" tone="success" />
-                      {conta.titulos_recebidos > 0 && (
-                        <FinanceActionButton icon={Undo2} onClick={() => handleReverse(conta)} title="Estornar Recebimento" tone="warning" />
-                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 rounded-lg border border-slate-200 bg-white p-0 text-slate-600 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800"
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem onClick={() => handleEdit(conta)} className="cursor-pointer">
+                            <Edit className="mr-2 h-4 w-4 text-sky-600" />
+                            Editar
+                          </DropdownMenuItem>
+                          {conta.titulos_recebidos > 0 && (
+                            <DropdownMenuItem onClick={() => handleReverse(conta)} className="cursor-pointer">
+                              <Undo2 className="mr-2 h-4 w-4 text-amber-600" />
+                              Estornar
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
               {sortedContasReceber.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="py-14 text-center">
+                  <TableCell colSpan={6} className="py-14 text-center">
                     <div className="flex flex-col items-center">
                       <Receipt className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-medium mb-2">Nenhuma conta a receber cadastrada</h3>

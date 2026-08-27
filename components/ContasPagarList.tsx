@@ -11,6 +11,12 @@ import { Combobox } from '@/components/ui/combobox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Plus,
   Receipt,
   X,
@@ -19,7 +25,6 @@ import {
   ArrowUpDown,
   Edit,
   Eye,
-  Trash2,
   CreditCard,
   Undo2,
   ChevronLeft,
@@ -28,7 +33,8 @@ import {
   ChevronsRight,
   Filter,
   List,
-  Loader2
+  Loader2,
+  MoreHorizontal
 } from 'lucide-react';
 import { DatePickerWithYearSelector } from '@/components/ui/date-picker-with-year-selector';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -619,10 +625,9 @@ export function ContasPagarList() {
 
       <Card className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
         <CardContent className="p-0">
-          <Table className="min-w-[1120px]">
+          <Table className="min-w-[900px]">
             <TableHeader className="bg-slate-50/80">
               <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                <TableHead>Matriz</TableHead>
                 <TableHead 
                   className="w-[120px] cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('numero_documento')}
@@ -632,7 +637,6 @@ export function ContasPagarList() {
                     {getSortIcon('numero_documento')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[80px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Tipo</TableHead>
                 <TableHead 
                   className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
                   onClick={() => handleSort('fornecedor_nome')}
@@ -640,15 +644,6 @@ export function ContasPagarList() {
                   <div className="flex items-center">
                     Fornecedor
                     {getSortIcon('fornecedor_nome')}
-                  </div>
-                </TableHead>
-                <TableHead 
-                  className="cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 hover:bg-slate-100/70"
-                  onClick={() => handleSort('data_vencimento')}
-                >
-                  <div className="flex items-center">
-                    Vencimento
-                    {getSortIcon('data_vencimento')}
                   </div>
                 </TableHead>
                 <TableHead className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Pagamento</TableHead>
@@ -671,27 +666,25 @@ export function ContasPagarList() {
                     {getSortIcon('status')}
                   </div>
                 </TableHead>
-                <TableHead className="w-[160px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
+                <TableHead className="w-[120px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sortedContasPagar.map((conta: any) => (
                 <Fragment key={conta.id}>
                 <TableRow className="border-b border-slate-100 hover:bg-slate-50/70">
-                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
-                    {conta.matriz_nome || '-'}
-                  </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle font-mono text-sm font-semibold text-slate-700">
                     {conta.numero_documento}
                   </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
-                    {conta.tipo_documento_descricao}
-                  </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm font-medium text-slate-700">
-                    {conta.fornecedor_nome}
-                  </TableCell>
-                  <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
-                    {formatDateWithTimezone(conta.data_vencimento)}
+                  <TableCell className="px-4 py-3.5 align-middle">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-slate-700">
+                        {conta.fornecedor_nome}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {conta.matriz_nome || '-'}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle text-sm text-slate-600">
                     {conta.data_primeiro_pagamento && conta.data_ultimo_pagamento
@@ -710,22 +703,38 @@ export function ContasPagarList() {
                     {getStatusBadge(conta.status, conta.titulos_pagos, conta.total_titulos)}
                   </TableCell>
                   <TableCell className="px-4 py-3.5 align-middle">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <FinanceActionButton icon={Eye} onClick={() => handleView(conta)} title="Visualizar" tone="neutral" />
-                      <FinanceActionButton icon={Edit} onClick={() => handleEdit(conta)} title="Editar" tone="brand" />
-                      {Number(conta.titulos_pagos) === 0 && (
-                        <FinanceActionButton icon={Trash2} onClick={() => handleDelete(conta)} title="Excluir" tone="danger" />
-                      )}
                       <FinanceActionButton icon={CreditCard} onClick={() => handlePayment(conta)} title="Baixar/Pagar" tone="success" />
-                      {Number(conta.titulos_pagos) > 0 && (
-                        <FinanceActionButton icon={Undo2} onClick={() => handleReverse(conta)} title="Estornar Pagamento" tone="warning" />
-                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 rounded-lg border border-slate-200 bg-white p-0 text-slate-600 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800"
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem onClick={() => handleEdit(conta)} className="cursor-pointer">
+                            <Edit className="mr-2 h-4 w-4 text-sky-600" />
+                            Editar
+                          </DropdownMenuItem>
+                          {Number(conta.titulos_pagos) > 0 && (
+                            <DropdownMenuItem onClick={() => handleReverse(conta)} className="cursor-pointer">
+                              <Undo2 className="mr-2 h-4 w-4 text-amber-600" />
+                              Estornar
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </TableCell>
                 </TableRow>
                 {exibirDados && (
                   <TableRow className="border-b border-slate-100 bg-muted/30 hover:bg-muted/30">
-                    <TableCell colSpan={10} className="px-6 py-3">
+                  <TableCell colSpan={7} className="px-6 py-3">
                       {detalhesLoading && !detalhes[conta.id] ? (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -772,7 +781,7 @@ export function ContasPagarList() {
               ))}
               {sortedContasPagar.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-14 text-center">
+                  <TableCell colSpan={7} className="py-14 text-center">
                     <div className="flex flex-col items-center">
                       <Receipt className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-medium mb-2">Nenhuma conta a pagar cadastrada</h3>
