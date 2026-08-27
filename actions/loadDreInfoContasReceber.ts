@@ -1,5 +1,6 @@
 import { action } from '@uibakery/data';
-import { andIdIn, andIdInWhenPagamento, andProjetoIdIn, andProjetoStatus } from '@/lib/sql-filters';
+import { andIdIn, andIdInWhenPagamento, andProjetoIdIn, andProjetoStatus, fracoesStatusProjeto } from '@/lib/sql-filters';
+
 
 function loadDreInfoContasReceber() {
   return action('loadDreInfoContasReceber', 'SQL', {
@@ -16,7 +17,7 @@ function loadDreInfoContasReceber() {
           WHEN '{{params.tipoData}}' = 'competencia' THEN cr.data_competencia
           ELSE tr.data_recebimento
         END as data_referencia,
-        sg.id as subgrupo_contabil_id,
+        sg.id as subgrupo_contabil_id,${fracoesStatusProjeto('cr.id', 'contas_receber_projetos', 'conta_receber_id')}
         sg.funcao
       FROM contas_receber cr
       INNER JOIN titulos_receber tr ON tr.conta_receber_id = cr.id

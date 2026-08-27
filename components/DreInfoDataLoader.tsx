@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronRight, Download, FileSpreadsheet } from 'lucide-react';
+import { ChevronDown, ChevronRight, Columns3, Download, FileSpreadsheet } from 'lucide-react';
 import { useCurrency } from '@/hooks/use-currency';
 import { useToast } from '@/hooks/use-toast';
 import { exportDreInfoToPDF } from '@/utils/dre-info-export';
@@ -51,8 +51,12 @@ interface DreItemResult {
   subgrupo_contabil_id?: number;
   subgrupo_funcao?: string;
   valor: number;
+  valorGeral: number;
+  valorAndamento: number;
+  valorConcluido: number;
   parent_id?: number;
 }
+
 
 export function DreInfoDataLoader({
   estruturaId,
@@ -73,6 +77,11 @@ export function DreInfoDataLoader({
   const [dreData, setDreData] = useState<DreItemResult[]>([]);
   const [hasCalculated, setHasCalculated] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [separarColunas, setSepararColunas] = useState(false);
+  // Só disponível sem filtro de status (todos os lançamentos)
+  const podeSepararColunas = !statusProjeto;
+  const colunasSeparadas = podeSepararColunas && separarColunas;
+  const colCount = colunasSeparadas ? 6 : 3;
   const [expandedDetailData, setExpandedDetailData] = useState<Map<number, any[]>>(new Map());
 
   // Callback for DreInfoSubgrupoDetalhe to report loaded data
@@ -175,50 +184,64 @@ export function DreInfoDataLoader({
       emprestimos &&
       !hasCalculated
     ) {
+      // Soma de uma lista de lançamentos para um subgrupo, opcionalmente
+      // ponderada pela fração de rateio por status de projeto.
+      const somar = (rows: any[], subgrupoId: any, frac?: 'frac_geral' | 'frac_andamento' | 'frac_concluido') =>
+        (rows || [])
+          .filter((r: any) => Number(r.subgrupo_contabil_id) === Number(subgrupoId))
+          .reduce(
+            (sum: number, r: any) =>
+              sum + (Number(r.valor_total) || 0) * (frac ? Number(r[frac]) || 0 : 1),
+            0
+          );
+
+      const valoresSubgrupo = (sub: any) => {
+        if (!sub.subgrupo_contabil_id) {
+          return { valor: 0, valorGeral: 0, valorAndamento: 0, valorConcluido: 0 };
+        }
+        const sinal = sub.subgrupo_funcao === 'Débito' || sub.subgrupo_funcao === 'DEBITO' ? -1 : 1;
+        const calc = (frac?: 'frac_geral' | 'frac_andamento' | 'frac_concluido') =>
+          sinal *
+          (somar(contasPagar as any[], sub.subgrupo_contabil_id, frac) +
+            somar(contasReceber as any[], sub.subgrupo_contabil_id, frac));
+        return {
+          valor: calc(),
+          valorGeral: calc('frac_geral'),
+          valorAndamento: calc('frac_andamento'),
+          valorConcluido: calc('frac_concluido'),
+        };
+      };
+
       const processedItems: DreItemResult[] = estruturaItens.map((item: any) => {
         let valor = 0;
+        let valorGeral = 0;
+        let valorAndamento = 0;
+        let valorConcluido = 0;
 
         if (item.tipo === 'SUBGRUPO' && item.subgrupo_contabil_id) {
-          const cpSum = contasPagar
-            .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
-            .reduce((sum: number, cp: any) => sum + (Number(cp.valor_total) || 0), 0);
-
-          const crSum = contasReceber
-            .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(item.subgrupo_contabil_id))
-            .reduce((sum: number, cr: any) => sum + (Number(cr.valor_total) || 0), 0);
-
-          valor = cpSum + crSum;
-
-          if (item.subgrupo_funcao === 'Débito' || item.subgrupo_funcao === 'DEBITO') {
-            valor = -valor;
-          }
+          ({ valor, valorGeral, valorAndamento, valorConcluido } = valoresSubgrupo(item));
         } else if (item.tipo === 'APORTE') {
           valor = aportes.reduce((sum: number, a: any) => sum + (Number(a.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'RETIRADA') {
           valor = -retiradas.reduce((sum: number, r: any) => sum + (Number(r.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'EMPRESTIMO_ENTRADA') {
           valor = emprestimosEntrada.reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'EMPRESTIMO_SAIDA') {
           valor = -emprestimosSaida.reduce((sum: number, e: any) => sum + (Number(e.valor) || 0), 0);
+          valorGeral = valor;
         } else if (item.tipo === 'GRUPO') {
-          valor = estruturaItens
+          estruturaItens
             .filter((sub: any) => sub.tipo === 'SUBGRUPO' && sub.parent_id === item.id)
-            .reduce((sum: number, sub: any) => {
-              let subVal = 0;
-              if (sub.subgrupo_contabil_id) {
-                const cpS = contasPagar
-                  .filter((cp: any) => Number(cp.subgrupo_contabil_id) === Number(sub.subgrupo_contabil_id))
-                  .reduce((s: number, cp: any) => s + (Number(cp.valor_total) || 0), 0);
-                const crS = contasReceber
-                  .filter((cr: any) => Number(cr.subgrupo_contabil_id) === Number(sub.subgrupo_contabil_id))
-                  .reduce((s: number, cr: any) => s + (Number(cr.valor_total) || 0), 0);
-                subVal = cpS + crS;
-                if (sub.subgrupo_funcao === 'Débito' || sub.subgrupo_funcao === 'DEBITO') {
-                  subVal = -subVal;
-                }
-              }
-              return sum + subVal;
-            }, 0);
+            .forEach((sub: any) => {
+              const v = valoresSubgrupo(sub);
+              valor += v.valor;
+              valorGeral += v.valorGeral;
+              valorAndamento += v.valorAndamento;
+              valorConcluido += v.valorConcluido;
+            });
         }
 
         return {
@@ -232,6 +255,9 @@ export function DreInfoDataLoader({
           subgrupo_funcao: item.subgrupo_funcao,
           parent_id: item.parent_id,
           valor,
+          valorGeral,
+          valorAndamento,
+          valorConcluido,
         };
       });
 
@@ -249,13 +275,19 @@ export function DreInfoDataLoader({
                 above.tipo === 'EMPRESTIMO_ENTRADA' ||
                 above.tipo === 'EMPRESTIMO_SAIDA'
             );
-          const somaValue = itemsAbove.reduce((sum, above) => sum + above.valor, 0);
-          return { ...item, valor: somaValue };
+          return {
+            ...item,
+            valor: itemsAbove.reduce((sum, a) => sum + a.valor, 0),
+            valorGeral: itemsAbove.reduce((sum, a) => sum + a.valorGeral, 0),
+            valorAndamento: itemsAbove.reduce((sum, a) => sum + a.valorAndamento, 0),
+            valorConcluido: itemsAbove.reduce((sum, a) => sum + a.valorConcluido, 0),
+          };
         }
         return item;
       });
 
       setDreData(finalItems.sort((a, b) => a.ordem - b.ordem));
+
       setHasCalculated(true);
       onComplete();
     }
@@ -606,6 +638,16 @@ export function DreInfoDataLoader({
             <FileSpreadsheet className="mr-2 h-4 w-4" />
             Exportar Excel
           </Button>
+          {podeSepararColunas && (
+            <Button
+              variant={separarColunas ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setSepararColunas((v) => !v)}
+            >
+              <Columns3 className="mr-2 h-4 w-4" />
+              Separar colunas
+            </Button>
+          )}
         </div>
       </div>
 
@@ -624,7 +666,14 @@ export function DreInfoDataLoader({
             <TableRow className="bg-slate-50">
               <TableHead>Ordem</TableHead>
               <TableHead>Nome</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
+              {colunasSeparadas && (
+                <>
+                  <TableHead className="text-right">Gerais</TableHead>
+                  <TableHead className="text-right">Projetos em andamento</TableHead>
+                  <TableHead className="text-right">Projetos concluídos</TableHead>
+                </>
+              )}
+              <TableHead className="text-right">Valor total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -674,6 +723,19 @@ export function DreInfoDataLoader({
                     </TableCell>
 
                     {/* Valor */}
+                    {colunasSeparadas && (
+                      <>
+                        <TableCell className={getValueStyle(item)}>
+                          {formatCurrency(item.valorGeral)}
+                        </TableCell>
+                        <TableCell className={getValueStyle(item)}>
+                          {formatCurrency(item.valorAndamento)}
+                        </TableCell>
+                        <TableCell className={getValueStyle(item)}>
+                          {formatCurrency(item.valorConcluido)}
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell className={getValueStyle(item)}>
                       {formatCurrency(item.valor)}
                     </TableCell>
@@ -690,6 +752,7 @@ export function DreInfoDataLoader({
                       projetoIds={projetoIds}
                       contaIds={contaIds}
                       statusProjeto={statusProjeto}
+                      colSpan={colCount}
                       funcao={item.subgrupo_funcao}
                       nivel={item.nivel}
                       onDataLoaded={handleSubgrupoDataLoaded}
@@ -701,7 +764,7 @@ export function DreInfoDataLoader({
                     <>
                       {(!aportes || aportes.length === 0) ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhum aporte encontrado no período.
                             </div>
@@ -710,7 +773,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-blue-50/60 hover:bg-blue-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-blue-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -726,7 +789,7 @@ export function DreInfoDataLoader({
                               key={`aporte_${idx}`}
                               className="bg-slate-50/40 hover:bg-blue-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-blue-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -756,7 +819,7 @@ export function DreInfoDataLoader({
                     <>
                       {(!retiradas || retiradas.length === 0) ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhuma retirada encontrada no período.
                             </div>
@@ -765,7 +828,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-red-50/60 hover:bg-red-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-red-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -781,7 +844,7 @@ export function DreInfoDataLoader({
                               key={`retirada_${idx}`}
                               className="bg-slate-50/40 hover:bg-red-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-red-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -810,7 +873,7 @@ export function DreInfoDataLoader({
                     <>
                       {emprestimosEntrada.length === 0 ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhum pagamento de empréstimo encontrado no período.
                             </div>
@@ -819,7 +882,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-blue-50/60 hover:bg-blue-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-blue-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -835,7 +898,7 @@ export function DreInfoDataLoader({
                               key={`emprestimo_entrada_${idx}`}
                               className="bg-slate-50/40 hover:bg-blue-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-blue-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -865,7 +928,7 @@ export function DreInfoDataLoader({
                     <>
                       {emprestimosSaida.length === 0 ? (
                         <TableRow className="bg-slate-50/60">
-                          <TableCell colSpan={3} className="py-2 px-4">
+                          <TableCell colSpan={colCount} className="py-2 px-4">
                             <div className="ml-8 text-sm text-muted-foreground italic border-l-2 border-slate-200 pl-3">
                               Nenhum empréstimo encontrado no período.
                             </div>
@@ -874,7 +937,7 @@ export function DreInfoDataLoader({
                       ) : (
                         <>
                           <TableRow className="bg-red-50/60 hover:bg-red-50/60">
-                            <TableCell colSpan={3} className="py-1 px-4">
+                            <TableCell colSpan={colCount} className="py-1 px-4">
                               <div
                                 className="grid text-xs font-semibold text-slate-500 border-l-2 border-red-300 pl-3"
                                 style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}
@@ -890,7 +953,7 @@ export function DreInfoDataLoader({
                               key={`emprestimo_saida_${idx}`}
                               className="bg-slate-50/40 hover:bg-red-50/30 border-b border-slate-100"
                             >
-                              <TableCell colSpan={3} className="py-1 px-4">
+                              <TableCell colSpan={colCount} className="py-1 px-4">
                                 <div
                                   className="grid text-xs items-center border-l-2 border-red-100 pl-3"
                                   style={{ marginLeft: `${item.nivel * 24}px`, gridTemplateColumns: '110px 1fr 120px' }}

@@ -127,3 +127,24 @@ export function andProjetoStatus(
     `WHERE rs.${fkCol} = ${contaCol}" + ${statusSql} + ")"`;
   return `{{ params.${param} ? ${sql} : "" }}`;
 }
+
+/**
+ * Colunas de fração por status de projeto, usadas pelo modo "Separar colunas"
+ * do DRE Info. Sempre presentes (SQL estático, sem params):
+ * - frac_geral: 1 quando a conta NÃO tem projeto vinculado, senão 0
+ * - frac_andamento / frac_concluido: soma do percentual rateado no status / 100
+ */
+export function fracoesStatusProjeto(
+  contaCol: string,
+  tabelaRateio: string,
+  fkCol: string,
+): string {
+  const soma = (status: string) =>
+    `COALESCE((SELECT SUM(fr.percentual) / 100.0 FROM ${tabelaRateio} fr ` +
+    `JOIN projetos fp ON fp.id = fr.projeto_id ` +
+    `WHERE fr.${fkCol} = ${contaCol} AND fp.status = '${status}'), 0)`;
+  return `
+        CASE WHEN NOT EXISTS (SELECT 1 FROM ${tabelaRateio} fg WHERE fg.${fkCol} = ${contaCol}) THEN 1.0 ELSE 0 END as frac_geral,
+        ${soma('Em andamento')} as frac_andamento,
+        ${soma('Concluído')} as frac_concluido,`;
+}
