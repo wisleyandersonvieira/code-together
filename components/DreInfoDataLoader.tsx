@@ -16,7 +16,6 @@ import { ChevronDown, ChevronRight, Columns3, Download, FileSpreadsheet } from '
 import { useCurrency } from '@/hooks/use-currency';
 import { useToast } from '@/hooks/use-toast';
 import { exportDreInfoToPDF } from '@/utils/dre-info-export';
-import * as XLSX from 'xlsx';
 import loadEstruturaDreItensAction from '@/actions/loadEstruturaDreItens';
 import loadDreInfoContasPagarAction from '@/actions/loadDreInfoContasPagar';
 import loadDreInfoContasReceberAction from '@/actions/loadDreInfoContasReceber';
