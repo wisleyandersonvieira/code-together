@@ -19,6 +19,7 @@ interface DreInfoSubgrupoDetalheProps {
   statusProjeto?: string;
   funcao?: string;
   nivel: number;
+  colSpan?: number;
   onDataLoaded?: (subgrupoId: number, items: DetalheItem[]) => void;
 }
 
@@ -52,6 +53,7 @@ export function DreInfoSubgrupoDetalhe({
   statusProjeto,
   funcao,
   nivel,
+  colSpan = 3,
   onDataLoaded,
 }: DreInfoSubgrupoDetalheProps) {
   const { formatCurrency } = useCurrency();
