@@ -1,5 +1,5 @@
 import { action } from '@uibakery/data';
-import { andIdIn, andIdInWhenPagamento, andProjetoIdIn, andProjetoStatus, fracoesStatusProjeto } from '@/lib/sql-filters';
+import { andIdIn, andIdInWhenPagamento, andProjetoIdInReceber, andProjetoStatusReceber, fracoesStatusProjetoReceber } from '@/lib/sql-filters';
 
 
 function loadDreInfoContasReceber() {
@@ -17,7 +17,7 @@ function loadDreInfoContasReceber() {
           WHEN '{{params.tipoData}}' = 'competencia' THEN cr.data_competencia
           ELSE tr.data_recebimento
         END as data_referencia,
-        sg.id as subgrupo_contabil_id,${fracoesStatusProjeto('cr.id', 'contas_receber_projetos', 'conta_receber_id')}
+        sg.id as subgrupo_contabil_id,${fracoesStatusProjetoReceber('cr.id', 'cr.valor_total')}
         sg.funcao
       FROM contas_receber cr
       INNER JOIN titulos_receber tr ON tr.conta_receber_id = cr.id
@@ -28,8 +28,8 @@ function loadDreInfoContasReceber() {
       WHERE
         1=1
         ${andIdIn('cr.matriz_id', 'matrizIds')}
-        ${andProjetoIdIn('cr.id', 'contas_receber_projetos', 'conta_receber_id')}
-        ${andProjetoStatus('cr.id', 'contas_receber_projetos', 'conta_receber_id')}
+        ${andProjetoIdInReceber('cr.id')}
+        ${andProjetoStatusReceber('cr.id')}
         ${andIdInWhenPagamento('tr.conta_id', 'contaIds')}
         AND (
           ('{{params.tipoData}}' = 'competencia' AND cr.data_competencia BETWEEN '{{params.dataInicio}}' AND '{{params.dataFim}}')
