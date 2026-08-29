@@ -84,6 +84,7 @@ type TabType =
   | 'subgrupos-contabeis'
   | 'projetos'
   | 'create-projeto'
+  | 'modelagens'
   | 'aportes-por-cliente'
   | 'contas-pagar'
   | 'contas-receber'
@@ -144,6 +145,7 @@ const routes: Record<TabType, RouteDefinition> = {
   projetos: { path: '/projetos', title: 'Projetos' },
   'create-projeto': { path: '/projetos/novo', title: 'Novo Projeto' },
   'aportes-por-cliente': { path: '/projetos/aportes-por-cliente', title: 'Aportes por Cliente' },
+  modelagens: { path: '/modelagens', title: 'Modelagens' },
   'contas-pagar': { path: '/financeiro/contas-a-pagar', title: 'Contas a Pagar' },
   'contas-receber': { path: '/financeiro/contas-a-receber', title: 'Contas a Receber' },
   transferencias: { path: '/financeiro/transferencias', title: 'Transferencias' },
@@ -313,6 +315,7 @@ const RelatorioFinanceiroSaidas = lazy(() => import('@/components/RelatorioFinan
 const RelatorioFinanceiroEntradas = lazy(() => import('@/components/RelatorioFinanceiroEntradas').then((module) => ({ default: module.RelatorioFinanceiroEntradas })));
 const RelatorioProjetosGeral = lazy(() => import('@/components/RelatorioProjetosGeral').then((module) => ({ default: module.RelatorioProjetosGeral })));
 const RelatorioRentabilidadeProjeto = lazy(() => import('@/components/RelatorioRentabilidadeProjeto').then((module) => ({ default: module.RelatorioRentabilidadeProjeto })));
+const ModelagensList = lazy(() => import('@/components/modelagem/ModelagensList').then((module) => ({ default: module.ModelagensList })));
 const SociosList = lazy(() => import('@/components/SociosList').then((module) => ({ default: module.SociosList })));
 const MatrizesList = lazy(() => import('@/components/MatrizesList').then((module) => ({ default: module.MatrizesList })));
 const Kanban = lazy(() => import('@/components/Kanban').then((module) => ({ default: module.Kanban })));
@@ -456,6 +459,7 @@ function MobileNavContent({
         </div>
 
         {navItem('Projetos', 'projetos', <Home className="h-4 w-4" />)}
+        {navItem('Modelagens', 'modelagens', <TrendingUp className="h-4 w-4" />)}
         {navItem('Painel', 'kanban', <BarChart3 className="h-4 w-4" />)}
 
         <div>
@@ -708,6 +712,8 @@ function App() {
         );
       case 'aportes-por-cliente':
         return <AportesPorCliente />;
+      case 'modelagens':
+        return <ModelagensList />;
       case 'contas-pagar':
         return <ContasPagarList />;
       case 'contas-receber':
