@@ -211,6 +211,7 @@ const projetoTabs: TabType[] = [
   'projetos',
   'create-projeto',
   'aportes-por-cliente',
+  'modelagens',
 ];
 
 const financeiroTabs: TabType[] = [
@@ -369,6 +370,7 @@ interface MobileNavContentProps {
   navigateTo: (tab: TabType) => void;
   isAdmin: boolean;
   isCadastroActive: boolean;
+  isProjetoActive: boolean;
   isFinanceiroActive: boolean;
   isRelatorioActive: boolean;
   isMatrizActive: boolean;
@@ -382,6 +384,7 @@ function MobileNavContent({
   navigateTo,
   isAdmin,
   isCadastroActive,
+  isProjetoActive,
   isFinanceiroActive,
   isRelatorioActive,
   isMatrizActive,
@@ -391,6 +394,8 @@ function MobileNavContent({
 }: MobileNavContentProps) {
   const activeSection = isCadastroActive
     ? 'cadastros'
+    : isProjetoActive
+    ? 'projetos'
     : isFinanceiroActive
       ? 'financeiro'
       : isRelatorioActive
@@ -458,8 +463,16 @@ function MobileNavContent({
           )}
         </div>
 
-        {navItem('Projetos', 'projetos', <Home className="h-4 w-4" />)}
-        {navItem('Modelagens', 'modelagens', <TrendingUp className="h-4 w-4" />)}
+        <div>
+          {sectionHeader('Projetos', 'projetos', <Home className="h-4 w-4" />)}
+          {openSection === 'projetos' && (
+            <div className="ml-4 space-y-0.5 mt-1">
+              {navItem('Projetos', 'projetos', <Home className="h-4 w-4" />)}
+              {navItem('Modelagens', 'modelagens', <TrendingUp className="h-4 w-4" />)}
+            </div>
+          )}
+        </div>
+
         {navItem('Painel', 'kanban', <BarChart3 className="h-4 w-4" />)}
 
         <div>
@@ -986,6 +999,7 @@ function App() {
                     navigateTo={navigateTo}
                     isAdmin={isAdmin}
                     isCadastroActive={isCadastroActive}
+                    isProjetoActive={isProjetoActive}
                     isFinanceiroActive={isFinanceiroActive}
                     isRelatorioActive={isRelatorioActive}
                     isMatrizActive={isMatrizActive}
@@ -1102,14 +1116,25 @@ function App() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button
-              variant="ghost"
-              className={getNavItemClasses(isProjetoActive)}
-              onClick={() => navigateTo('projetos')}
-            >
-              <Home className="mr-2 h-4 w-4" />
-              Projetos
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className={getNavItemClasses(isProjetoActive)}>
+                  <Home className="mr-2 h-4 w-4" />
+                  Projetos
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="rounded-xl border-slate-200 bg-white p-1.5 shadow-lg">
+                <DropdownMenuItem onClick={() => navigateTo('projetos')}>
+                  <Home className="mr-2 h-4 w-4" />
+                  Projetos
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigateTo('modelagens')}>
+                  <TrendingUp className="mr-2 h-4 w-4" />
+                  Modelagens
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button
               variant="ghost"
