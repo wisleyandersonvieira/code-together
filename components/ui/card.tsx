@@ -9,7 +9,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-3xl border border-slate-200/80 bg-white text-card-foreground shadow-sm",
+      "rounded-xl border border-border bg-card text-card-foreground",
       className,
     )}
     {...props}
@@ -29,19 +29,26 @@ const CardHeader = React.forwardRef<
 ))
 CardHeader.displayName = "CardHeader"
 
-const CardTitle = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLHeadingElement>
->(({ className, ...props }, ref) => (
-  <h3
-    ref={ref}
-    className={cn(
-      "text-2xl font-semibold leading-none tracking-tight text-slate-950",
-      className,
-    )}
-    {...props}
-  />
-))
+/**
+ * `page` keeps the historical look (large, high-contrast) used by form and
+ * report screens. `section` is the quieter label used when the card title must
+ * not compete with the data it introduces.
+ */
+const cardTitleSizes = {
+  page: "text-2xl font-semibold leading-none tracking-tight text-card-foreground",
+  section:
+    "text-sm font-semibold uppercase leading-none tracking-wide text-muted-foreground",
+} as const
+
+interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {
+  size?: keyof typeof cardTitleSizes
+}
+
+const CardTitle = React.forwardRef<HTMLParagraphElement, CardTitleProps>(
+  ({ className, size = "page", ...props }, ref) => (
+    <h3 ref={ref} className={cn(cardTitleSizes[size], className)} {...props} />
+  ),
+)
 CardTitle.displayName = "CardTitle"
 
 const CardDescription = React.forwardRef<
