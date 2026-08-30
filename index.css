@@ -68,6 +68,23 @@ body {
   --danger-muted: 0 72% 97%;
   --accent-brand: 222 47% 40%;
   --accent-brand-muted: 222 47% 96%;
+
+  /* Superficie escura de destaque (card de VGV do dashboard). E escura nos dois
+     temas de proposito — e o contraste dela com o resto que faz o destaque. */
+  --highlight: 222 47% 11%;
+  --highlight-foreground: 0 0% 100%;
+  --highlight-accent: 234 89% 74%;
+
+  /* Paleta categorica dos avatares de conta. O indice sai de um hash do nome,
+     entao a mesma conta mantem a cor mesmo que outras sejam renomeadas. */
+  --avatar-1: 243 75% 59%;
+  --avatar-2: 217 91% 60%;
+  --avatar-3: 189 94% 33%;
+  --avatar-4: 160 84% 30%;
+  --avatar-5: 38 92% 38%;
+  --avatar-6: 25 95% 45%;
+  --avatar-7: 347 77% 50%;
+  --avatar-8: 271 76% 53%;
 }
 
 .dark {
@@ -114,6 +131,21 @@ body {
   --danger-muted: 0 40% 14%;
   --accent-brand: 222 47% 65%;
   --accent-brand-muted: 222 35% 16%;
+
+  /* Um pouco mais claro que no tema claro: contra um fundo quase preto, o
+     slate-900 puro se dissolveria e o card deixaria de ser um card. */
+  --highlight: 222 33% 15%;
+  --highlight-foreground: 0 0% 100%;
+  --highlight-accent: 234 89% 74%;
+
+  --avatar-1: 243 85% 74%;
+  --avatar-2: 217 91% 70%;
+  --avatar-3: 189 85% 55%;
+  --avatar-4: 160 70% 52%;
+  --avatar-5: 38 92% 60%;
+  --avatar-6: 25 95% 65%;
+  --avatar-7: 347 85% 68%;
+  --avatar-8: 271 80% 72%;
 }
 
 @layer base {
