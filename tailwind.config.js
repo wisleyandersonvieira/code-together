@@ -40,6 +40,37 @@ export default {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          muted: 'hsl(var(--success-muted))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          muted: 'hsl(var(--warning-muted))',
+        },
+        danger: {
+          DEFAULT: 'hsl(var(--danger))',
+          muted: 'hsl(var(--danger-muted))',
+        },
+        brand: {
+          DEFAULT: 'hsl(var(--brand))',
+          muted: 'hsl(var(--brand-muted))',
+        },
+        highlight: {
+          DEFAULT: 'hsl(var(--highlight))',
+          foreground: 'hsl(var(--highlight-foreground))',
+          accent: 'hsl(var(--highlight-accent))',
+        },
+        avatar: {
+          1: 'hsl(var(--avatar-1))',
+          2: 'hsl(var(--avatar-2))',
+          3: 'hsl(var(--avatar-3))',
+          4: 'hsl(var(--avatar-4))',
+          5: 'hsl(var(--avatar-5))',
+          6: 'hsl(var(--avatar-6))',
+          7: 'hsl(var(--avatar-7))',
+          8: 'hsl(var(--avatar-8))',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

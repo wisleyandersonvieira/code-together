@@ -48,6 +48,36 @@ body {
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+
+    /* ── Tokens semânticos ───────────────────────────────────────────────
+       Cor com significado, não cor com nome. `success` é "deu certo", não
+       "verde": no tema escuro os dois valores mudam juntos e a tela continua
+       legível. Usar text-green-600 solto quebra exatamente isso. */
+    --success: 142 72% 29%;
+    --success-muted: 141 79% 95%;
+    --warning: 32 81% 34%;
+    --warning-muted: 48 96% 93%;
+    --danger: 347 77% 42%;
+    --danger-muted: 356 100% 97%;
+    --brand: 243 75% 59%;
+    --brand-muted: 244 100% 96%;
+
+    /* Superfície escura de destaque (card de VGV). É escura nos dois temas de
+       propósito — é o contraste dela com o resto que faz o destaque. */
+    --highlight: 222 47% 11%;
+    --highlight-foreground: 0 0% 100%;
+    --highlight-accent: 234 89% 74%;
+
+    /* Paleta categórica dos avatares de conta. Índice escolhido por hash do
+       nome, então a mesma conta mantém a cor mesmo que outras sejam renomeadas. */
+    --avatar-1: 243 75% 59%;
+    --avatar-2: 217 91% 60%;
+    --avatar-3: 189 94% 33%;
+    --avatar-4: 160 84% 30%;
+    --avatar-5: 38 92% 38%;
+    --avatar-6: 25 95% 45%;
+    --avatar-7: 347 77% 50%;
+    --avatar-8: 271 76% 53%;
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -91,6 +121,30 @@ body {
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --success: 141 61% 62%;
+    --success-muted: 142 40% 13%;
+    --warning: 43 92% 62%;
+    --warning-muted: 38 45% 14%;
+    --danger: 350 89% 70%;
+    --danger-muted: 350 40% 15%;
+    --brand: 243 90% 75%;
+    --brand-muted: 243 40% 18%;
+
+    /* Um pouco mais claro que no tema claro: contra um fundo quase preto, o
+       slate-900 puro se dissolveria e o card deixaria de ser um card. */
+    --highlight: 222 33% 15%;
+    --highlight-foreground: 0 0% 100%;
+    --highlight-accent: 234 89% 74%;
+
+    --avatar-1: 243 85% 74%;
+    --avatar-2: 217 91% 70%;
+    --avatar-3: 189 85% 55%;
+    --avatar-4: 160 70% 52%;
+    --avatar-5: 38 92% 60%;
+    --avatar-6: 25 95% 65%;
+    --avatar-7: 347 85% 68%;
+    --avatar-8: 271 80% 72%;
   }
 }
 

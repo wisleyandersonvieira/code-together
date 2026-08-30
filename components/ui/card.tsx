@@ -9,7 +9,7 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-3xl border border-slate-200/80 bg-white text-card-foreground shadow-sm",
+      "rounded-xl border border-border bg-card text-card-foreground",
       className,
     )}
     {...props}
@@ -29,14 +29,27 @@ const CardHeader = React.forwardRef<
 ))
 CardHeader.displayName = "CardHeader"
 
+/**
+ * `size` existe para o título de seção do Dashboard sem mexer no default: as
+ * outras ~57 telas que usam CardTitle continuam no `text-2xl` de sempre.
+ */
+const cardTitleSizes = {
+  default: "text-2xl font-semibold leading-none tracking-tight",
+  sm: "text-sm font-semibold leading-none tracking-tight",
+  section: "text-sm font-semibold uppercase tracking-wide leading-none text-muted-foreground",
+} as const
+
 const CardTitle = React.forwardRef<
   HTMLParagraphElement,
-  React.HTMLAttributes<HTMLHeadingElement>
->(({ className, ...props }, ref) => (
+  React.HTMLAttributes<HTMLHeadingElement> & {
+    size?: keyof typeof cardTitleSizes
+  }
+>(({ className, size = "default", ...props }, ref) => (
   <h3
     ref={ref}
     className={cn(
-      "text-2xl font-semibold leading-none tracking-tight text-slate-950",
+      cardTitleSizes[size],
+      size === "section" ? undefined : "text-card-foreground",
       className,
     )}
     {...props}

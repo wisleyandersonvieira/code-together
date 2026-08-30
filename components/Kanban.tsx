@@ -4,11 +4,10 @@ import React, { useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Kanban as KanbanIcon } from 'lucide-react';
 import { KanbanColumn } from '@/components/KanbanColumn';
+import { ColunaKanbanDialog, type ValoresColuna } from '@/components/ColunaKanbanDialog';
 import { KanbanCard } from '@/components/KanbanCard';
 import { ProjetoModal } from '@/components/ProjetoModal';
 import loadKanbanColumnsAction from '@/actions/loadKanbanColumns';
@@ -37,6 +36,8 @@ interface KanbanColumnData {
   name: string;
   position: number;
   color: string;
+  /** Nome lucide-react. NULL = ícone padrão. Ver lib/kanbanIcons.ts. */
+  icon: string | null;
   projeto_count: number;
 }
 
@@ -45,8 +46,6 @@ export function Kanban() {
   const currentUser = useCurrentUser();
   const userId = currentUser?.legacy_user_id ?? null;
 
-  const [newColumnName, setNewColumnName] = useState('');
-  const [newColumnColor, setNewColumnColor] = useState('#4F46E5');
   const [showNewColumnDialog, setShowNewColumnDialog] = useState(false);
   const [selectedProjeto, setSelectedProjeto] = useState<Projeto | null>(null);
   const [draggedItem, setDraggedItem] = useState<Projeto | null>(null);
@@ -71,31 +70,12 @@ export function Kanban() {
     })
   );
 
-  const handleCreateColumn = async () => {
-    if (!newColumnName.trim()) {
-      toast({
-        title: 'Erro',
-        description: 'Nome da coluna é obrigatório.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+  const handleCreateColumn = async (valores: ValoresColuna) => {
     try {
-      await createColumn({
-        name: newColumnName,
-        color: newColumnColor,
-      });
-
-      setNewColumnName('');
-      setNewColumnColor('#4F46E5');
+      await createColumn(valores);
       setShowNewColumnDialog(false);
       refreshColumns();
-
-      toast({
-        title: 'Sucesso',
-        description: 'Nova coluna criada com sucesso.',
-      });
+      toast({ title: 'Sucesso', description: 'Nova coluna criada com sucesso.' });
     } catch (error) {
       toast({
         title: 'Erro',
@@ -196,55 +176,30 @@ export function Kanban() {
     return <div className="text-center py-8">Carregando kanban...</div>;
   }
 
-  // Debug information
+  // Um único formulário de coluna para os dois estados de layout abaixo — antes
+  // eram dois blocos de JSX idênticos, que só divergiriam com o tempo.
+  const botaoNovaColuna = (
+    <Button onClick={() => setShowNewColumnDialog(true)}>
+      <Plus className="mr-2 h-4 w-4" />
+      Nova Coluna
+    </Button>
+  );
+  const dialogNovaColuna = (
+    <ColunaKanbanDialog
+      open={showNewColumnDialog}
+      onOpenChange={setShowNewColumnDialog}
+      modo="criar"
+      onSalvar={handleCreateColumn}
+    />
+  );
+
   if (!columns || columns.length === 0) {
     return (
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">Painel - Kanban dos Projetos</h2>
         <p>Nenhuma coluna encontrada. Crie uma coluna primeiro.</p>
-        <Dialog open={showNewColumnDialog} onOpenChange={setShowNewColumnDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Coluna
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Criar Nova Coluna</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Nome da Coluna</label>
-                <Input
-                  value={newColumnName}
-                  onChange={(e) => setNewColumnName(e.target.value)}
-                  placeholder="Digite o nome da coluna"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Cor</label>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    type="color"
-                    value={newColumnColor}
-                    onChange={(e) => setNewColumnColor(e.target.value)}
-                    className="w-16 h-10"
-                  />
-                  <span className="text-sm">{newColumnColor}</span>
-                </div>
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setShowNewColumnDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleCreateColumn}>
-                  Criar Coluna
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {botaoNovaColuna}
+        {dialogNovaColuna}
       </div>
     );
   }
@@ -262,49 +217,7 @@ export function Kanban() {
           </p>
         </div>
         
-        <Dialog open={showNewColumnDialog} onOpenChange={setShowNewColumnDialog}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Coluna
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Criar Nova Coluna</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Nome da Coluna</label>
-                <Input
-                  value={newColumnName}
-                  onChange={(e) => setNewColumnName(e.target.value)}
-                  placeholder="Digite o nome da coluna"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Cor</label>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    type="color"
-                    value={newColumnColor}
-                    onChange={(e) => setNewColumnColor(e.target.value)}
-                    className="w-16 h-10"
-                  />
-                  <span className="text-sm">{newColumnColor}</span>
-                </div>
-              </div>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setShowNewColumnDialog(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleCreateColumn}>
-                  Criar Coluna
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        {botaoNovaColuna}
       </div>
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -331,6 +244,8 @@ export function Kanban() {
           )}
         </DragOverlay>
       </DndContext>
+
+      {dialogNovaColuna}
 
       {selectedProjeto && (
         <ProjetoModal
