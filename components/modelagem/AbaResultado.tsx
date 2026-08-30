@@ -145,14 +145,14 @@ export function AbaResultado({ rascunho, resultado }: Props) {
       </FinanceDetailSectionCard>
 
       <FinanceDetailSectionCard
-        title="Resultado por unidade"
-        description="Custos que não pertencem a nenhuma unidade (contingência, property tax, juros e fee) são rateados pro-rata pelo custo direto. Por isso a soma dos lucros das unidades fecha com o lucro do projeto."
+        title="Resultado por tipologia"
+        description="Todo valor da tabela é TOTAL das N unidades da tipologia, com o custo unitário ao lado. Custos que não pertencem a nenhuma tipologia (contingência, property tax, juros e fee) são rateados pro-rata pelo custo direto — por isso a soma dos lucros fecha com o lucro do projeto."
       >
         <div className="overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full min-w-[860px]">
+          <table className="w-full min-w-[980px]">
             <thead className="bg-slate-50">
               <tr>
-                {['Unidade', 'Custo direto', 'Rateio', 'Compartilhados', 'Financeiro', 'Custo total', 'Receita líquida', 'Lucro', 'Margem'].map((h, i) => (
+                {['Tipologia', 'Qtd', 'Custo direto', 'Rateio', 'Compartilhados', 'Financeiro', 'Custo total', 'Custo unitário', 'Receita líquida', 'Lucro', 'Margem'].map((h, i) => (
                   <th key={h} className={cn('px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500', i === 0 ? 'text-left' : 'text-right')}>
                     {h}
                   </th>
@@ -162,19 +162,27 @@ export function AbaResultado({ rascunho, resultado }: Props) {
             <tbody>
               {resultado.resultadoUnidades.map((u, i) => (
                 <tr key={i} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-sm text-slate-800">{u.nome || `Unidade ${i + 1}`}</td>
+                  <td className="px-3 py-2 text-sm text-slate-800">{u.nome || `Tipologia ${i + 1}`}</td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-600">{u.quantidade}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(u.custoDireto)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-500">{percentual(u.fatorRateio)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(u.custosCompartilhados)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(u.custoFinanceiro)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-900">{d(u.custoTotal)}</td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-500">{d(u.custoTotalUnitario)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(u.receitaLiquida)}</td>
                   <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">{d(u.lucro)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{percentual(u.margem)}</td>
                 </tr>
               ))}
               <tr className="border-t-2 border-slate-300 bg-slate-100 font-semibold">
-                <td className="px-3 py-2 text-sm text-slate-900" colSpan={7}>Total</td>
+                <td className="px-3 py-2 text-sm text-slate-900">
+                  Total ({resultado.resultadoUnidades.length} tipologias)
+                </td>
+                <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-900">
+                  {ag.unidadesTotal}
+                </td>
+                <td className="px-3 py-2" colSpan={7} />
                 <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-900">
                   {d(resultado.resultadoUnidades.reduce((a, u) => a + u.lucro, 0))}
                 </td>

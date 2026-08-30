@@ -15,7 +15,7 @@ interface Props {
 
 const EXPLICACAO_VENDA: Record<ModoVenda, string> = {
   single_exit: 'Todas as unidades vendidas de uma vez, no mês de saída.',
-  per_unit: 'Cada unidade vende no seu próprio mês.',
+  per_unit: 'Cada TIPOLOGIA vende no seu próprio mês — todas as unidades dela, de uma vez.',
   manual: 'Sem receita automática — só o que for lançado à mão no fluxo.',
 };
 
@@ -82,7 +82,7 @@ export function AbaReceita({ rascunho, alterar, resultado }: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="single_exit">Saída única</SelectItem>
-                <SelectItem value="per_unit">Por unidade</SelectItem>
+                <SelectItem value="per_unit">Por tipologia</SelectItem>
                 <SelectItem value="manual">Manual</SelectItem>
               </SelectContent>
             </Select>
@@ -109,8 +109,10 @@ export function AbaReceita({ rascunho, alterar, resultado }: Props) {
             <table className="w-full">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Unidade</th>
-                  <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Preço</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Tipologia</th>
+                  <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Qtd</th>
+                  <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Preço (un)</th>
+                  <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">VGV da tipologia</th>
                   <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Mês de venda</th>
                   <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Data</th>
                 </tr>
@@ -119,11 +121,16 @@ export function AbaReceita({ rascunho, alterar, resultado }: Props) {
                 {rascunho.unidades.map((u, i) => {
                   const mes = mesDaUnidade(i);
                   const linha = typeof mes === 'number' ? resultado.meses[mes - 1] : undefined;
+                  const n = Math.max(1, Math.trunc(u.quantidade || 1));
                   return (
                     <tr key={i} className="border-t border-slate-100">
-                      <td className="px-4 py-2 text-sm text-slate-800">{u.nome || `Unidade ${i + 1}`}</td>
+                      <td className="px-4 py-2 text-sm text-slate-800">{u.nome || `Tipologia ${i + 1}`}</td>
+                      <td className="px-4 py-2 text-right text-sm tabular-nums text-slate-600">{n}</td>
                       <td className="px-4 py-2 text-right text-sm tabular-nums text-slate-700">
                         {dinheiro(u.precoVenda, rascunho.moeda)}
+                      </td>
+                      <td className="px-4 py-2 text-right text-sm tabular-nums text-slate-900">
+                        {dinheiro(u.precoVenda * n, rascunho.moeda)}
                       </td>
                       <td className="px-4 py-2 text-right">
                         <Input
@@ -142,6 +149,12 @@ export function AbaReceita({ rascunho, alterar, resultado }: Props) {
                 })}
               </tbody>
             </table>
+            <p className="border-t border-slate-100 bg-slate-50/70 px-4 py-2 text-xs leading-5 text-slate-500">
+              O mês vale para a tipologia inteira: as {' '}
+              {resultado.agregados.unidadesTotal} unidades entram na receita de uma vez, no mês da linha.
+              Venda escalonada dentro de uma tipologia não é suportada — separe em duas linhas na aba
+              Tipologias.
+            </p>
           </div>
         ) : null}
       </FinanceDetailSectionCard>

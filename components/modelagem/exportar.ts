@@ -78,14 +78,107 @@ export function exportarXlsx(input: ModelInput, resultado: ModelOutput) {
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(premissas), 'Premissas');
 
+  // Os valores unitários vêm marcados "(un)" e os totais ao lado, calculados pelo
+  // motor: somar coluna unitária de tipologias diferentes não significa nada, e o
+  // subtotal existe justamente para ninguém tentar.
+  const linhasUnidades = input.unidades.map((u, i) => {
+    const r = resultado.resultadoUnidades[i];
+    const n = Math.max(1, Math.trunc(u.quantidade || 1));
+    return [
+      u.nome,
+      u.cidade ?? '',
+      n,
+      u.areaSf ?? 0,
+      u.custoTerreno,
+      u.custoObra,
+      u.precoVenda,
+      u.propertyTaxAno,
+      (u.areaSf ?? 0) * n,
+      u.custoTerreno * n,
+      u.custoObra * n,
+      u.precoVenda * n,
+      r?.custoTotal ?? 0,
+      r?.custoTotalUnitario ?? 0,
+      r?.lucro ?? 0,
+      r?.margem ?? 0,
+    ];
+  });
+  const somaColuna = (c: number) => linhasUnidades.reduce((a, l) => a + (Number(l[c]) || 0), 0);
   const unidades = [
-    ['Nome', 'Cidade', 'Qtd', 'Area sf (un)', 'Terreno (un)', 'Obra (un)', 'Preco de venda (un)', 'Tax/ano (un)', 'Custo total', 'Lucro', 'Margem'],
-    ...input.unidades.map((u, i) => {
-      const r = resultado.resultadoUnidades[i];
-      return [u.nome, u.cidade ?? '', u.quantidade, u.areaSf ?? 0, u.custoTerreno, u.custoObra, u.precoVenda, u.propertyTaxAno, r?.custoTotal ?? 0, r?.lucro ?? 0, r?.margem ?? 0];
-    }),
+    [
+      'Tipologia', 'Cidade', 'Qtd', 'Area sf (un)', 'Terreno (un)', 'Obra (un)', 'Preco de venda (un)',
+      'Tax/ano (un)', 'Area total', 'Terreno total', 'Obra total', 'VGV total', 'Custo total',
+      'Custo unitario', 'Lucro', 'Margem',
+    ],
+    ...linhasUnidades,
+    [
+      `Totais (${input.unidades.length} tipologias)`, '', resultado.agregados.unidadesTotal,
+      '', '', '', '', '',
+      somaColuna(8), resultado.agregados.terrenosTotal, resultado.agregados.obraTotal,
+      resultado.agregados.vgv, somaColuna(12), '', somaColuna(14), '',
+    ],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(unidades), 'Unidades');
+
+  // Aba Aportes: o plano lado a lado com o que o motor efetivamente chamou.
+  const parcelaPorMes = new Map<number, number>();
+  for (const p of input.aportes?.parcelas ?? []) {
+    parcelaPorMes.set(p.mes, (parcelaPorMes.get(p.mes) ?? 0) + (p.valor || 0));
+  }
+  let acumuladoPlano = 0;
+  const aportes: (string | number)[][] = [
+    ['Modo', input.aportes?.modoAporte ?? 'demanda'],
+    ['Aporte base total', input.aportes?.aporteBaseTotal ?? 0],
+    ['Valor total alvo', input.aportes?.valorTotalAlvo ?? 0],
+    ['Planejado (soma das parcelas)', resultado.agregados.aportePlanejadoTotal],
+    ['Chamado no fluxo', ap.equityTotal],
+    [],
+    ['Mes', 'Data', 'Parcela do plano', 'Acumulado do plano', 'Chamado no fluxo', 'Acumulado no fluxo'],
+  ];
+  for (const m of resultado.meses) {
+    const parcela = parcelaPorMes.get(m.mes) ?? 0;
+    acumuladoPlano += parcela;
+    aportes.push([m.mes, m.data, parcela, acumuladoPlano, m.equityCall, m.equityAcumulado]);
+  }
+  // Parcelas além do prazo não aparecem no fluxo, mas existem no plano — some-las
+  // em silêncio esconderia justamente o que a conferência acusa.
+  for (const p of input.aportes?.parcelas ?? []) {
+    if (p.mes > resultado.cronograma.prazoTotal) {
+      aportes.push([p.mes, 'fora do prazo', p.valor, '', '', '']);
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aportes), 'Aportes');
+
+  // Aba Fases: janela de cada fase e a distribuição de unidades por tipologia.
+  const fases = input.fases ?? [];
+  const alocado = (unidadeIndex: number, faseIndex: number) =>
+    (input.alocacoes ?? [])
+      .filter((a) => a.unidadeIndex === unidadeIndex && a.faseIndex === faseIndex)
+      .reduce((a, x) => a + (x.quantidade || 0), 0);
+  const abaFases: (string | number)[][] = [
+    ['Usa fases', input.usaFases ? 'sim' : 'nao'],
+    ['Terreno por fase', input.terrenoPorFase ? 'sim' : 'nao'],
+    [],
+    ['Fase', 'Data inicio', 'Data fim', 'Mes inicio', 'Mes fim', 'Duracao (meses)', ...input.unidades.map((u) => u.nome || 'Tipologia')],
+    ...fases.map((f, j) => {
+      const d = resultado.cronograma.fases[j];
+      return [
+        f.nome,
+        f.dataInicio,
+        f.dataFim,
+        d?.mesInicio ?? '',
+        d?.mesFim ?? '',
+        d ? d.mesFim - d.mesInicio + 1 : '',
+        ...input.unidades.map((_u, i) => alocado(i, j)),
+      ];
+    }),
+    [
+      'Alocado', '', '', '', '', '',
+      ...input.unidades.map((_u, i) => fases.reduce((a, _f, j) => a + alocado(i, j), 0)),
+    ],
+    ['Quantidade da tipologia', '', '', '', '', '', ...input.unidades.map((u) => Math.max(1, Math.trunc(u.quantidade || 1)))],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(abaFases), 'Fases');
 
   const cabecalho = ['Linha', ...resultado.meses.map((m) => `M${m.mes} ${m.data}`), 'Total'];
   const fluxo = [

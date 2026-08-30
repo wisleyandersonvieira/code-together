@@ -30,8 +30,15 @@ export function AbaPremissas({ rascunho, alterar, resultado }: Props) {
   const mudarFase = (i: number, patch: Partial<Fase>) =>
     alterar({ fases: fases.map((f, k) => (k === i ? { ...f, ...patch } : f)) });
 
+  // Remover a fase leva junto a alocação dela e reindexa o resto: `faseIndex` é
+  // posicional, então um índice antigo passaria a apontar para outra fase.
   const removerFase = (i: number) =>
-    alterar({ fases: fases.filter((_, k) => k !== i).map((f, k) => ({ ...f, ordem: k })) });
+    alterar({
+      fases: fases.filter((_, k) => k !== i).map((f, k) => ({ ...f, ordem: k })),
+      alocacoes: (rascunho.alocacoes ?? [])
+        .filter((a) => a.faseIndex !== i)
+        .map((a) => (a.faseIndex > i ? { ...a, faseIndex: a.faseIndex - 1 } : a)),
+    });
 
   // Desligar as fases NÃO apaga linha nenhuma: elas continuam no banco e voltam a
   // valer quando o switch for religado. Input do usuário não some sozinho.
@@ -77,7 +84,10 @@ export function AbaPremissas({ rascunho, alterar, resultado }: Props) {
       });
       mes += duracao;
     }
-    alterar({ usaFases: true, fases: novas });
+    // Gerar fases zera a alocação: os índices antigos apontariam para fases que
+    // não existem mais. A conferência `alocacao_fases` acende vermelho até a
+    // distribuição ser refeita na aba Tipologias.
+    alterar({ usaFases: true, fases: novas, alocacoes: [] });
   };
 
   return (

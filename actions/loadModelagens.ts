@@ -7,6 +7,10 @@ import { action } from '@uibakery/data';
  * esses números só existem rodando o motor. Estimar na consulta produziria um
  * valor que não bate com o da tela de detalhe — que é exatamente o tipo de
  * divergência que o módulo inteiro foi feito para evitar.
+ *
+ * Pela mesma razão a consulta traz aportes, parcelas, fases e alocação: os três
+ * mudam o fluxo, e sem eles a lista mostraria um MOIC diferente do da tela de
+ * detalhe da MESMA modelagem.
  */
 function loadModelagens() {
   return action('loadModelagens', 'SQL', {
@@ -16,6 +20,10 @@ function loadModelagens() {
         m.*,
         (SELECT json_agg(u ORDER BY u.ordem, u.id) FROM modelagem_unidades u WHERE u.modelagem_id = m.id) AS unidades,
         (SELECT json_agg(c ORDER BY c.ordem, c.id) FROM modelagem_custos c WHERE c.modelagem_id = m.id) AS custos,
+        (SELECT row_to_json(a) FROM modelagem_aportes a WHERE a.modelagem_id = m.id) AS aportes,
+        (SELECT json_agg(pa ORDER BY pa.mes) FROM modelagem_aporte_parcelas pa WHERE pa.modelagem_id = m.id) AS aporte_parcelas,
+        (SELECT json_agg(fa ORDER BY fa.ordem, fa.id) FROM modelagem_fases fa WHERE fa.modelagem_id = m.id) AS fases,
+        (SELECT json_agg(uf) FROM modelagem_unidade_fases uf WHERE uf.modelagem_id = m.id) AS unidade_fases,
         (SELECT row_to_json(f) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id) AS financiamento,
         (SELECT json_agg(s ORDER BY s.ordem, s.id) FROM modelagem_socios s WHERE s.modelagem_id = m.id) AS socios,
         (SELECT row_to_json(r) FROM modelagem_receita r WHERE r.modelagem_id = m.id) AS receita,

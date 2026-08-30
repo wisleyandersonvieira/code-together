@@ -34,6 +34,10 @@ function loadModelagemCompleta() {
           FROM modelagem_fases fa WHERE fa.modelagem_id = m.id
         ) AS fases,
         (
+          SELECT json_agg(uf)
+          FROM modelagem_unidade_fases uf WHERE uf.modelagem_id = m.id
+        ) AS unidade_fases,
+        (
           SELECT row_to_json(f) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id
         ) AS financiamento,
         (

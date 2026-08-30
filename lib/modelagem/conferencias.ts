@@ -302,6 +302,43 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
   // ─── Fases ─────────────────────────────────────────────────────────────────
   if (input.usaFases) {
     const fases = cronograma.fases;
+
+    // Alocação de unidades por fase. Mesma regra de quantidade do motor, para a
+    // conferência cobrar exatamente o que o cálculo usa.
+    const alocado = new Map<number, number>();
+    for (const a of input.alocacoes ?? []) {
+      if (!input.unidades[a.unidadeIndex] || !fases[a.faseIndex]) continue;
+      alocado.set(
+        a.unidadeIndex,
+        (alocado.get(a.unidadeIndex) ?? 0) + Math.max(0, Math.trunc(a.quantidade || 0)),
+      );
+    }
+    const abertas = input.unidades
+      .map((u, i) => ({
+        nome: u.nome || `Tipologia ${i + 1}`,
+        esperado: Math.max(1, Math.trunc(u.quantidade || 1)),
+        alocado: alocado.get(i) ?? 0,
+      }))
+      .filter((x) => x.alocado !== x.esperado);
+    const fechadas = input.unidades.length - abertas.length;
+    add(
+      'alocacao_fases',
+      'Distribuição das unidades por fase',
+      abertas.length > 0 ? 'vermelho' : 'verde',
+      `${fechadas} de ${input.unidades.length} tipologias alocadas`,
+      abertas.length === 0
+        ? 'Cada tipologia tem todas as suas unidades distribuídas entre as fases.'
+        : fases.length === 0
+          ? 'Não há fase nenhuma cadastrada, então não há onde alocar as unidades — e o que não está alocado não entra no fluxo.'
+          : `Não fecham: ${abertas
+              .map(
+                (x) =>
+                  `${x.nome} (${x.alocado} de ${x.esperado}, ${x.alocado > x.esperado ? '+' : ''}${x.alocado - x.esperado})`,
+              )
+              .join('; ')}. O que não está alocado não é lançado em mês nenhum.`,
+      'Ajuste a distribuição por fase na aba Tipologias até cada linha fechar.',
+    );
+
     if (fases.length === 0) {
       add(
         'fases_sem_linha',
@@ -394,11 +431,23 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
 }
 
 /**
- * Só estes dois casos impedem SALVAR. Todo o resto é sinalização — o cálculo
+ * Só estes TRÊS casos impedem SALVAR. Todo o resto é sinalização — o cálculo
  * continua rodando e devolvendo resultado mesmo com conferência vermelha.
+ *
+ * O critério é o mesmo nos três: são inputs em que gravar o estado inconsistente
+ * produziria uma modelagem que ninguém consegue interpretar depois.
+ *
+ *   soma_participacoes — rateio que não soma 100% distribui capital que não existe;
+ *   divisao_lucro      — idem para o lucro entre investidores e sponsor;
+ *   alocacao_fases     — unidade não alocada some do fluxo: a modelagem passaria a
+ *                        mostrar um custo de obra menor que o das próprias
+ *                        tipologias, sem nada na tela explicando a diferença.
+ *
+ * A terceira entrou por decisão explícita do usuário, que definiu a distribuição
+ * por fase como obrigatória quando o projeto é faseado. Sem esta lista, quem ler
+ * o arquivo depois vai achar que é bug — não é.
  */
 export function bloqueiaSalvamento(conferencias: Conferencia[]): Conferencia[] {
-  return conferencias.filter(
-    (c) => (c.chave === 'soma_participacoes' || c.chave === 'divisao_lucro') && c.semaforo === 'vermelho',
-  );
+  const BLOQUEANTES = ['soma_participacoes', 'divisao_lucro', 'alocacao_fases'];
+  return conferencias.filter((c) => BLOQUEANTES.includes(c.chave) && c.semaforo === 'vermelho');
 }

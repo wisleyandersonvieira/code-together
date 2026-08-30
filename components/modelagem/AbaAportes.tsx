@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { financeDetailFieldClassName, FinanceDetailSectionCard } from '@/components/finance/detail-ui';
 import { cn } from '@/lib/utils';
-import { somarMeses } from '@/lib/modelagem';
+import { curvaComoParcelas, PLANO_NEUTRO, somarMeses } from '@/lib/modelagem';
 import type {
   AporteParcela,
   LinhaFluxo,
@@ -31,13 +31,6 @@ interface Props {
   /** Apaga os overrides de uma linha do fluxo, no rascunho e no banco. */
   reverterLinha: (linha: LinhaFluxo) => void;
 }
-
-const PLANO_NEUTRO: PlanoAportes = {
-  modoAporte: 'demanda',
-  aporteBaseTotal: 0,
-  valorTotalAlvo: 0,
-  parcelas: [],
-};
 
 const EXPLICACAO_MODO: Record<ModoAporte, string> = {
   demanda:
@@ -153,19 +146,28 @@ export function AbaAportes({ rascunho, alterar, resultado, substituirParcelas, r
 
   /** Copia a curva que o motor produziu e passa a mandar nela. */
   const congelarCurva = async () => {
-    const novas = resultado.meses
-      .filter((m) => Math.abs(m.equityCall) > 0.005)
-      .map((m) => ({ mes: m.mes, valor: centavos(m.equityCall) }));
+    const novas = curvaComoParcelas(resultado);
     if (novas.length === 0) {
       window.alert('O motor não chamou capital em mês nenhum — não há curva para congelar.');
       return;
     }
-    if (
-      ordenadas.length > 0 &&
-      !window.confirm(`Isto substitui as ${ordenadas.length} parcelas atuais pela curva calculada. Continuar?`)
-    ) {
-      return;
-    }
+    // Aviso honesto: a linha de aporte volta idêntica, mas no modo de saque
+    // equity_first o SAQUE muda, porque passa a ser dimensionado contra o capital
+    // que já entrou em vez do aporte base declarado. É melhoria, não defeito — e
+    // ainda assim é mudança de resultado, então o usuário decide antes.
+    const avisoSaque =
+      rascunho.financiamento.modoSaque === 'equity_first'
+        ? '\n\nAtenção: com o saque em "equity first", a curva de financiamento muda. ' +
+          'O plano informa em que mês o capital entra, e a dívida passa a ser dimensionada por isso ' +
+          'em vez de pelo aporte base.'
+        : '';
+    const confirmacao =
+      ordenadas.length > 0
+        ? `Isto substitui as ${ordenadas.length} parcelas atuais pela curva calculada.${avisoSaque}\n\nContinuar?`
+        : avisoSaque
+          ? `Congelar a curva calculada como plano?${avisoSaque}`
+          : '';
+    if (confirmacao && !window.confirm(confirmacao)) return;
     await substituirParcelas(novas, {
       modoAporte: 'plano',
       valorTotalAlvo: centavos(novas.reduce((a, p) => a + p.valor, 0)),

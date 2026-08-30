@@ -99,15 +99,7 @@ export function calcular(input: ModelInput): ModelOutput {
     fases: fasesCronograma,
   };
 
-  // Janela de cálculo de cada fase: limitada a 1..prazoTotal e com o peso do
-  // custo que cabe a ela.
-  //
-  // O peso é PROVISÓRIO: enquanto a alocação de unidades por fase não existir
-  // (tabela modelagem_unidade_fases), a fase leva a fração proporcional à sua
-  // duração. Isso tem a propriedade que importa aqui: quando as fases ladrilham
-  // exatamente a janela de obra, sem buraco e sem sobreposição, a curva que sai
-  // daqui é a mesma da frente única. Quando a alocação existir, o peso passa a
-  // ser Σ (custoObra da tipologia × quantidade alocada na fase) ÷ obraTotal.
+  // Janela de cálculo de cada fase: limitada a 1..prazoTotal.
   //
   // Fase que estoura o prazo NÃO perde custo: a janela é comprimida até o último
   // mês e a conferência `fases_dentro_prazo` acende vermelho. Custo lançado pelo
@@ -118,15 +110,10 @@ export function calcular(input: ModelInput): ModelOutput {
     const fim = clamp(Math.trunc(Math.max(f.mesFim, f.mesInicio)), inicio, ultimoMes);
     return { inicio, fim, duracao: fim - inicio + 1 };
   });
-  const duracaoTotalFases = soma(janelas.map((j) => j.duracao));
-  const janelasFase = janelas.map((j) => ({
-    ...j,
-    peso: duracaoTotalFases > 0 ? j.duracao / duracaoTotalFases : 0,
-  }));
   // `usaFases` sem nenhuma fase cadastrada cairia num projeto sem obra nenhuma.
   // Nesse caso o motor segue pelo caminho de frente única e a conferência
   // `fases_sem_linha` acende âmbar.
-  const fasesAtivas = !!input.usaFases && janelasFase.length > 0 && prazoTotal >= 1;
+  const fasesAtivas = !!input.usaFases && janelas.length > 0 && prazoTotal >= 1;
   const terrenoPorFase = !!input.terrenoPorFase;
 
   // ─── Agregados das tipologias ──────────────────────────────────────────────
@@ -140,6 +127,28 @@ export function calcular(input: ModelInput): ModelOutput {
   const taxAnoTotal = soma(unidades.map((u) => (u.propertyTaxAno || 0) * qtd(u)));
   const unidadesTotal = soma(unidades.map(qtd));
   const propertyTaxTotal = (taxAnoTotal / 12) * prazoTotal;
+
+  // ─── Custo por fase ────────────────────────────────────────────────────────
+  // A obra e o terreno de cada fase saem da ALOCAÇÃO de tipologias por fase:
+  // Σ (valor unitário da tipologia × quantidade alocada naquela fase).
+  //
+  // O que não estiver alocado não é lançado em mês nenhum. Isso é deliberado: o
+  // motor não inventa distribuição, usa o que o usuário declarou. Alocação que
+  // não fecha com a quantidade da tipologia acende `alocacao_fases` em vermelho e
+  // BLOQUEIA o salvamento — mas o cálculo segue e devolve resultado, como todas
+  // as outras conferências.
+  const custoPorFase = janelas.map(() => ({ obra: 0, terreno: 0 }));
+  for (const a of input.alocacoes ?? []) {
+    const u = unidades[a.unidadeIndex];
+    const alvo = custoPorFase[a.faseIndex];
+    if (!u || !alvo) continue;
+    const q = Math.max(0, Math.trunc(a.quantidade || 0));
+    alvo.obra += (u.custoObra || 0) * q;
+    alvo.terreno += (u.custoTerreno || 0) * q;
+  }
+  const janelasFase = janelas.map((j, i) => ({ ...j, ...custoPorFase[i] }));
+
+  // ─── Aporte base ───────────────────────────────────────────────────────────
   // O aporte base deixou de ser atributo da unidade e passou a ser premissa do
   // projeto (tabela modelagem_aportes). A derivação é a mesma de antes, sobre a
   // mesma grandeza: a migration semeia aporte_base_total com a soma que este
@@ -242,9 +251,8 @@ export function calcular(input: ModelInput): ModelOutput {
     // DELA, não da janela de construção do projeto.
     if (!terrenoPorFase && prazoTotal >= 1) land[1] = terrenosTotal;
     for (const f of janelasFase) {
-      const obraFase = obraTotal * f.peso;
-      for (let m = f.inicio; m <= f.fim; m++) construction[m] += obraFase / f.duracao;
-      if (terrenoPorFase) land[f.inicio] += terrenosTotal * f.peso;
+      for (let m = f.inicio; m <= f.fim; m++) construction[m] += f.obra / f.duracao;
+      if (terrenoPorFase) land[f.inicio] += f.terreno;
     }
   }
 
