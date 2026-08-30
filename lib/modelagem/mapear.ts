@@ -6,6 +6,7 @@
  * concatenação de texto e o modelo inteiro sai errado sem lançar erro nenhum.
  */
 import type {
+  AlocacaoFase,
   AporteParcela,
   CustoAdicional,
   Fase,
@@ -129,6 +130,28 @@ export function mapearFases(linhas: unknown): Fase[] {
     .sort((a, b) => a.ordem - b.ordem);
 }
 
+/**
+ * Alocação de unidades por fase (`modelagem_unidade_fases`).
+ *
+ * O banco guarda por id e o motor trabalha por índice, igual à venda por unidade.
+ * Linha que aponta para uma unidade ou fase que não existe mais é descartada —
+ * o banco tem CASCADE nas duas pontas, então isso só acontece com dado em trânsito.
+ */
+export function mapearAlocacoes(
+  linhas: unknown,
+  indicePorUnidade: Map<number, number>,
+  indicePorFase: Map<number, number>,
+): AlocacaoFase[] {
+  return lista(linhas)
+    .map((a) => ({
+      id: num(a.id) || undefined,
+      unidadeIndex: indicePorUnidade.get(num(a.unidade_id)) ?? -1,
+      faseIndex: indicePorFase.get(num(a.fase_id)) ?? -1,
+      quantidade: Math.max(0, Math.trunc(num(a.quantidade))),
+    }))
+    .filter((a) => a.unidadeIndex >= 0 && a.faseIndex >= 0);
+}
+
 export function mapearCustos(linhas: unknown): CustoAdicional[] {
   return lista(linhas).map((c) => ({
     id: num(c.id) || undefined,
@@ -171,11 +194,16 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
   const fin = linha.financiamento ?? {};
   const rec = linha.receita ?? {};
   const unidades = mapearUnidades(linha.unidades);
+  const fases = mapearFases(linha.fases);
 
   // A venda por unidade é guardada por id da unidade; o motor trabalha por índice.
   const indicePorId = new Map<number, number>();
   unidades.forEach((u, i) => {
     if (u.id != null) indicePorId.set(u.id, i);
+  });
+  const indicePorFaseId = new Map<number, number>();
+  fases.forEach((f, i) => {
+    if (f.id != null) indicePorFaseId.set(f.id, i);
   });
   const vendasPorUnidade = lista(linha.vendas_unidade)
     .map((v) => ({
@@ -199,7 +227,8 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
     aportes: mapearAportes(linha.aportes, linha.aporte_parcelas),
     usaFases: bool(linha.usa_fases),
     terrenoPorFase: bool(linha.terreno_por_fase),
-    fases: mapearFases(linha.fases),
+    fases,
+    alocacoes: mapearAlocacoes(linha.unidade_fases, indicePorId, indicePorFaseId),
     financiamento: {
       taxaAnual: num(fin.taxa_anual),
       feeEstruturacaoPct: num(fin.fee_estruturacao_pct),

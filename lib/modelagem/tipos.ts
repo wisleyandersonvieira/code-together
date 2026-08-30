@@ -178,6 +178,22 @@ export interface Fase {
   dataFim: string;
 }
 
+/**
+ * Quantas unidades de uma tipologia caem numa fase.
+ *
+ * Índices, não ids — mesma convenção de `VendaUnidade`. O banco guarda por id
+ * (`modelagem_unidade_fases`) e a conversão acontece em `mapearModelInput`, com o
+ * mesmo Map<id, índice> que a venda por unidade já usa.
+ */
+export interface AlocacaoFase {
+  id?: number;
+  /** Índice da tipologia no array `unidades`. */
+  unidadeIndex: number;
+  /** Índice da fase no array `fases`. */
+  faseIndex: number;
+  quantidade: number;
+}
+
 export type ModoVenda = 'single_exit' | 'per_unit' | 'manual';
 
 export interface VendaUnidade {
@@ -230,6 +246,12 @@ export interface ModelInput {
   /** Só tem efeito com `usaFases`. false = terreno inteiro no mês 1. */
   terrenoPorFase?: boolean;
   fases?: Fase[];
+  /**
+   * Distribuição das unidades entre as fases. Só tem efeito com `usaFases`.
+   * O que não estiver alocado não entra no fluxo — e a conferência
+   * `alocacao_fases` acende vermelho e bloqueia o salvamento.
+   */
+  alocacoes?: AlocacaoFase[];
   financiamento: Financiamento;
   socios?: Socio[];
   receita: Receita;

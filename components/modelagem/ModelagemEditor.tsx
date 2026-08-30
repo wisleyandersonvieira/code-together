@@ -9,7 +9,14 @@ import { FinanceDetailHeader, financeDetailTabsTriggerClassName } from '@/compon
 import { useToast } from '@/hooks/use-toast';
 import { useCurrentUser } from '@/lib/userContext';
 import { cn } from '@/lib/utils';
-import { bloqueiaSalvamento, calcular, mapearModelInput } from '@/lib/modelagem';
+import {
+  bloqueiaSalvamento,
+  calcular,
+  comParcelaNoMes,
+  editaPlanoDeAportes,
+  mapearModelInput,
+  semParcelaNoMes,
+} from '@/lib/modelagem';
 import type {
   AporteParcela,
   Financiamento,
@@ -37,6 +44,8 @@ import deleteModelagemAporteParcelasTodasAction from '@/actions/deleteModelagemA
 import createModelagemFaseAction from '@/actions/createModelagemFase';
 import updateModelagemFaseAction from '@/actions/updateModelagemFase';
 import deleteModelagemFaseAction from '@/actions/deleteModelagemFase';
+import saveModelagemUnidadeFaseAction from '@/actions/saveModelagemUnidadeFase';
+import deleteModelagemUnidadeFaseAction from '@/actions/deleteModelagemUnidadeFase';
 import saveModelagemFinanciamentoAction from '@/actions/saveModelagemFinanciamento';
 import saveModelagemReceitaAction from '@/actions/saveModelagemReceita';
 import saveModelagemVendaUnidadeAction from '@/actions/saveModelagemVendaUnidade';
@@ -106,6 +115,8 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [criarFase] = useMutateAction(createModelagemFaseAction);
   const [atualizarFase] = useMutateAction(updateModelagemFaseAction);
   const [removerFase] = useMutateAction(deleteModelagemFaseAction);
+  const [salvarAlocacao] = useMutateAction(saveModelagemUnidadeFaseAction);
+  const [removerAlocacao] = useMutateAction(deleteModelagemUnidadeFaseAction);
   const [salvarFinanciamento] = useMutateAction(saveModelagemFinanciamentoAction);
   const [salvarReceita] = useMutateAction(saveModelagemReceitaAction);
   const [salvarVenda] = useMutateAction(saveModelagemVendaUnidadeAction);
@@ -184,21 +195,10 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     // A linha de aporte com o plano ligado NÃO vira override: ela edita a parcela
     // daquele mês. Override e plano são duas fontes para a mesma linha do fluxo;
     // manter as duas ativas seria criar sincronização onde tem de haver fonte única.
-    if (linha === 'equity_call' && rascunho.aportes?.modoAporte === 'plano') {
-      // `null` no fluxo é "célula vazia". Como parcela, isso é uma parcela de zero.
+    // A regra e a transformação são puras, em lib/modelagem/aportes.ts.
+    if (editaPlanoDeAportes(rascunho, linha)) {
       const novoValor = valor ?? 0;
-      setRascunho((atual) => {
-        if (!atual?.aportes) return atual;
-        const parcelas = atual.aportes.parcelas ?? [];
-        const existe = parcelas.some((p) => p.mes === mes);
-        const novas = existe
-          ? parcelas.map((p) => (p.mes === mes ? { ...p, valor: novoValor } : p))
-          : [...parcelas, { mes, valor: novoValor }];
-        return {
-          ...atual,
-          aportes: { ...atual.aportes, parcelas: novas.sort((a, b) => a.mes - b.mes) },
-        };
-      });
+      setRascunho((atual) => (atual ? comParcelaNoMes(atual, mes, valor) : atual));
       try {
         // Upsert por (modelagem_id, mes): a célula do fluxo já grava na hora, e
         // a parcela do mês passa a se comportar do mesmo jeito.
@@ -252,21 +252,11 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     // Mesmo desvio do aplicarOverride, do outro lado: com o plano ligado, o que
     // se reverte na linha de aporte é a parcela. Com confirmação, porque parcela
     // é input do usuário — não é um valor calculado que volta sozinho.
-    if (linha === 'equity_call' && rascunho.aportes?.modoAporte === 'plano') {
-      const parcela = (rascunho.aportes.parcelas ?? []).find((p) => p.mes === mes);
+    if (editaPlanoDeAportes(rascunho, linha)) {
+      const parcela = (rascunho.aportes?.parcelas ?? []).find((p) => p.mes === mes);
       if (!parcela) return;
       if (!window.confirm(`Remover a parcela do mês ${mes} do plano de aportes?`)) return;
-      setRascunho((atual) =>
-        atual?.aportes
-          ? {
-              ...atual,
-              aportes: {
-                ...atual.aportes,
-                parcelas: (atual.aportes.parcelas ?? []).filter((p) => p.mes !== mes),
-              },
-            }
-          : atual,
-      );
+      setRascunho((atual) => (atual ? semParcelaNoMes(atual, mes) : atual));
       if (parcela.id) await removerParcela({ id: parcela.id }).catch(() => undefined);
       return;
     }
@@ -328,24 +318,36 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // Diff por id: o que tem id foi atualizado, o que não tem é novo, e o que
       // sumiu da lista foi removido. Ids estáveis importam — apagar e reinserir
       // quebraria os vínculos de venda por unidade.
+      //
+      // Devolve os ids alinhados com `atuais`, incluindo os recém-criados: a
+      // alocação por fase é gravada por (unidade_id, fase_id), e sem os ids das
+      // linhas novas ela não teria como ser escrita no mesmo salvamento.
       const sincronizar = async (
         atuais: any[],
         anteriores: any[],
         criar: (x: any, i: number) => Promise<any>,
         atualizar: (x: any, i: number) => Promise<any>,
         remover: (id: number) => Promise<any>,
-      ) => {
+      ): Promise<(number | null)[]> => {
         const idsAtuais = new Set(atuais.map((x) => x.id).filter(Boolean));
         for (const antigo of anteriores) {
           if (antigo.id && !idsAtuais.has(antigo.id)) await remover(antigo.id);
         }
+        const ids: (number | null)[] = [];
         for (let i = 0; i < atuais.length; i++) {
-          if (atuais[i].id) await atualizar(atuais[i], i);
-          else await criar(atuais[i], i);
+          if (atuais[i].id) {
+            await atualizar(atuais[i], i);
+            ids.push(Number(atuais[i].id));
+          } else {
+            const criado = await criar(atuais[i], i);
+            const id = Array.isArray(criado) ? criado[0]?.id : undefined;
+            ids.push(id == null ? null : Number(id));
+          }
         }
+        return ids;
       };
 
-      await sincronizar(
+      const idsUnidades = await sincronizar(
         rascunho.unidades,
         original.unidades,
         (u, i) => criarUnidade({ modelagemId, ordem: i, ...u, observacoes: '' }),
@@ -390,13 +392,34 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         );
       }
 
-      await sincronizar(
+      const idsFases = await sincronizar(
         rascunho.fases ?? [],
         original.fases ?? [],
         (f, i) => criarFase({ modelagemId, ordem: i, ...f }),
         (f, i) => atualizarFase({ id: f.id, ordem: i, ...f }),
         (id) => removerFase({ id }),
       );
+
+      // Alocação por fase. Vai depois de tipologias e fases porque depende dos ids
+      // dos dois, e é gravada pelo PAR (unidade, fase), que é a chave natural — a
+      // linha de junção não tem identidade própria na tela.
+      const par = (a: { unidadeIndex: number; faseIndex: number }) =>
+        `${idsUnidades[a.unidadeIndex] ?? 'x'}:${idsFases[a.faseIndex] ?? 'x'}`;
+      const atuaisAlocacao = new Map(
+        (rascunho.alocacoes ?? []).filter((a) => a.quantidade > 0).map((a) => [par(a), a]),
+      );
+      for (const antiga of original.alocacoes ?? []) {
+        const unidadeId = idsUnidades[antiga.unidadeIndex];
+        const faseId = idsFases[antiga.faseIndex];
+        if (unidadeId == null || faseId == null) continue;
+        if (!atuaisAlocacao.has(par(antiga))) await removerAlocacao({ unidadeId, faseId });
+      }
+      for (const a of atuaisAlocacao.values()) {
+        const unidadeId = idsUnidades[a.unidadeIndex];
+        const faseId = idsFases[a.faseIndex];
+        if (unidadeId == null || faseId == null) continue;
+        await salvarAlocacao({ modelagemId, unidadeId, faseId, quantidade: a.quantidade });
+      }
 
       await salvarFinanciamento({ modelagemId, ...rascunho.financiamento });
       await salvarReceita({ modelagemId, ...rascunho.receita });

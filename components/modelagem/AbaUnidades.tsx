@@ -1,10 +1,11 @@
 'use client';
 
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Split, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FinanceDetailSectionCard } from '@/components/finance/detail-ui';
-import type { ModelInput, ModelOutput, Unidade } from '@/lib/modelagem';
+import { cn } from '@/lib/utils';
+import type { AlocacaoFase, ModelInput, ModelOutput, Unidade } from '@/lib/modelagem';
 import { dinheiro, percentual } from './formato';
 
 interface Props {
@@ -33,15 +34,68 @@ const qtd = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
 
 export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
   const unidades = rascunho.unidades;
+  const fases = rascunho.fases ?? [];
+  const alocacoes = rascunho.alocacoes ?? [];
 
   const mudar = (i: number, patch: Partial<Unidade>) =>
     alterar({ unidades: unidades.map((u, k) => (k === i ? { ...u, ...patch } : u)) });
 
-  const remover = (i: number) => alterar({ unidades: unidades.filter((_, k) => k !== i) });
+  // Remover a tipologia leva junto a alocação dela e reindexa o resto: os índices
+  // do input são posicionais, então deixar para trás um `unidadeIndex` antigo
+  // apontaria para a tipologia errada — silenciosamente.
+  const remover = (i: number) =>
+    alterar({
+      unidades: unidades.filter((_, k) => k !== i),
+      alocacoes: alocacoes
+        .filter((a) => a.unidadeIndex !== i)
+        .map((a) => (a.unidadeIndex > i ? { ...a, unidadeIndex: a.unidadeIndex - 1 } : a)),
+    });
 
   const total = (f: (u: Unidade) => number) => unidades.reduce((a, u) => a + (f(u) || 0), 0);
 
+  // ─── Distribuição por fase ─────────────────────────────────────────────────
+  const alocadoEm = (unidadeIndex: number, faseIndex: number) =>
+    alocacoes.find((a) => a.unidadeIndex === unidadeIndex && a.faseIndex === faseIndex)?.quantidade ?? 0;
+
+  const alocadoNaTipologia = (unidadeIndex: number) =>
+    alocacoes
+      .filter((a) => a.unidadeIndex === unidadeIndex)
+      .reduce((a, x) => a + (x.quantidade || 0), 0);
+
+  const gravarAlocacoes = (novas: AlocacaoFase[]) =>
+    // Célula zerada não vira linha no banco: alocação ausente e alocação de zero
+    // significam a mesma coisa, e guardar as duas só cria lixo.
+    alterar({ alocacoes: novas.filter((a) => a.quantidade > 0) });
+
+  const mudarAlocacao = (unidadeIndex: number, faseIndex: number, quantidade: number) => {
+    const q = Math.max(0, Math.trunc(quantidade) || 0);
+    const outras = alocacoes.filter(
+      (a) => !(a.unidadeIndex === unidadeIndex && a.faseIndex === faseIndex),
+    );
+    const anterior = alocacoes.find(
+      (a) => a.unidadeIndex === unidadeIndex && a.faseIndex === faseIndex,
+    );
+    gravarAlocacoes([...outras, { ...anterior, unidadeIndex, faseIndex, quantidade: q }]);
+  };
+
+  /** Divide a quantidade da tipologia entre as fases; o resto vai na primeira. */
+  const distribuirIgualmente = (unidadeIndex: number) => {
+    if (fases.length === 0) return;
+    const n = qtd(unidades[unidadeIndex]);
+    const base = Math.floor(n / fases.length);
+    const resto = n % fases.length;
+    const outras = alocacoes.filter((a) => a.unidadeIndex !== unidadeIndex);
+    const novas = fases.map((_, faseIndex) => ({
+      id: alocacoes.find((a) => a.unidadeIndex === unidadeIndex && a.faseIndex === faseIndex)?.id,
+      unidadeIndex,
+      faseIndex,
+      quantidade: base + (faseIndex < resto ? 1 : 0),
+    }));
+    gravarAlocacoes([...outras, ...novas]);
+  };
+
   return (
+    <div className="space-y-6">
     <FinanceDetailSectionCard
       title="Tipologias"
       description="Cada linha é uma tipologia com N unidades iguais. Os valores da linha são por unidade; os totais consideram a quantidade."
@@ -193,5 +247,99 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
         </table>
       </div>
     </FinanceDetailSectionCard>
+
+    {/* Matriz, não colunas extras na tabela acima: com 5 fases aquela tabela já
+        passa de 20 colunas e deixa de ser legível. */}
+    {rascunho.usaFases ? (
+      <FinanceDetailSectionCard
+        title="Distribuição por fase"
+        description="Quantas unidades de cada tipologia entram em cada fase. O que não estiver alocado não é lançado no fluxo — por isso a linha precisa fechar para salvar."
+      >
+        {fases.length === 0 ? (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Nenhuma fase cadastrada. Cadastre as fases na aba Premissas para distribuir as unidades.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className={`${cabecalho} text-left`}>Tipologia</th>
+                  {fases.map((f, j) => (
+                    <th key={f.id ?? j} className={`${cabecalho} text-right`}>
+                      {f.nome || `Fase ${j + 1}`}
+                    </th>
+                  ))}
+                  <th className={`${cabecalho} bg-slate-50 text-right`}>Alocado / Total</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody>
+                {unidades.map((u, i) => {
+                  const n = qtd(u);
+                  const somado = alocadoNaTipologia(i);
+                  const fecha = somado === n;
+                  return (
+                    <tr key={i} className="border-b border-slate-100 last:border-0">
+                      <td className="px-2 py-1.5 text-sm text-slate-800">
+                        {u.nome || `Tipologia ${i + 1}`}
+                      </td>
+                      {fases.map((f, j) => (
+                        <td key={f.id ?? j} className="px-1 py-1.5">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            className={celula}
+                            value={alocadoEm(i, j)}
+                            onChange={(e) => mudarAlocacao(i, j, Number(e.target.value))}
+                          />
+                        </td>
+                      ))}
+                      <td
+                        className={cn(
+                          'bg-slate-50/70 px-2 py-1.5 text-right text-sm font-semibold tabular-nums',
+                          fecha ? 'text-emerald-700' : 'text-red-600',
+                        )}
+                      >
+                        {somado} / {n}
+                      </td>
+                      <td className="px-1 py-1.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-400 hover:text-slate-700"
+                          title="Distribuir igualmente entre as fases"
+                          onClick={() => distribuirIgualmente(i)}
+                        >
+                          <Split className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold text-slate-900">
+                  <td className="px-2 py-2 text-sm">Total por fase</td>
+                  {fases.map((f, j) => (
+                    <td key={f.id ?? j} className="px-2 py-2 text-right text-sm tabular-nums">
+                      {unidades.reduce((a, _u, i) => a + alocadoEm(i, j), 0)}
+                    </td>
+                  ))}
+                  <td className="px-2 py-2 text-right text-sm tabular-nums">
+                    {unidades.reduce((a, _u, i) => a + alocadoNaTipologia(i), 0)} /{' '}
+                    {resultado.agregados.unidadesTotal}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </FinanceDetailSectionCard>
+    ) : null}
+    </div>
   );
 }
