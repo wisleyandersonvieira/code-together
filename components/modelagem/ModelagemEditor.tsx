@@ -10,7 +10,13 @@ import { useToast } from '@/hooks/use-toast';
 import { useCurrentUser } from '@/lib/userContext';
 import { cn } from '@/lib/utils';
 import { bloqueiaSalvamento, calcular, mapearModelInput } from '@/lib/modelagem';
-import type { Financiamento, LinhaFluxo, ModelInput } from '@/lib/modelagem';
+import type {
+  AporteParcela,
+  Financiamento,
+  LinhaFluxo,
+  ModelInput,
+  PlanoAportes,
+} from '@/lib/modelagem';
 
 import loadModelagemCompletaAction from '@/actions/loadModelagemCompleta';
 import updateModelagemPremissasAction from '@/actions/updateModelagemPremissas';
@@ -23,6 +29,14 @@ import deleteModelagemCustoAction from '@/actions/deleteModelagemCusto';
 import createModelagemSocioAction from '@/actions/createModelagemSocio';
 import updateModelagemSocioAction from '@/actions/updateModelagemSocio';
 import deleteModelagemSocioAction from '@/actions/deleteModelagemSocio';
+import saveModelagemAportesAction from '@/actions/saveModelagemAportes';
+import createModelagemAporteParcelaAction from '@/actions/createModelagemAporteParcela';
+import updateModelagemAporteParcelaAction from '@/actions/updateModelagemAporteParcela';
+import deleteModelagemAporteParcelaAction from '@/actions/deleteModelagemAporteParcela';
+import deleteModelagemAporteParcelasTodasAction from '@/actions/deleteModelagemAporteParcelasTodas';
+import createModelagemFaseAction from '@/actions/createModelagemFase';
+import updateModelagemFaseAction from '@/actions/updateModelagemFase';
+import deleteModelagemFaseAction from '@/actions/deleteModelagemFase';
 import saveModelagemFinanciamentoAction from '@/actions/saveModelagemFinanciamento';
 import saveModelagemReceitaAction from '@/actions/saveModelagemReceita';
 import saveModelagemVendaUnidadeAction from '@/actions/saveModelagemVendaUnidade';
@@ -33,6 +47,7 @@ import deleteModelagemOverridesTodosAction from '@/actions/deleteModelagemOverri
 
 import { AbaPremissas } from './AbaPremissas';
 import { AbaUnidades } from './AbaUnidades';
+import { AbaAportes } from './AbaAportes';
 import { AbaCustos } from './AbaCustos';
 import { AbaFinanciamento } from './AbaFinanciamento';
 import { AbaSocios } from './AbaSocios';
@@ -48,6 +63,7 @@ import { dinheiro, multiplo, percentual } from './formato';
 const ABAS = [
   { valor: 'premissas', rotulo: 'Premissas' },
   { valor: 'unidades', rotulo: 'Unidades' },
+  { valor: 'aportes', rotulo: 'Aportes' },
   { valor: 'custos', rotulo: 'Custos' },
   { valor: 'financiamento', rotulo: 'Financiamento' },
   { valor: 'socios', rotulo: 'Sócios' },
@@ -82,6 +98,14 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [criarSocio] = useMutateAction(createModelagemSocioAction);
   const [atualizarSocio] = useMutateAction(updateModelagemSocioAction);
   const [removerSocio] = useMutateAction(deleteModelagemSocioAction);
+  const [salvarAportes] = useMutateAction(saveModelagemAportesAction);
+  const [criarParcela] = useMutateAction(createModelagemAporteParcelaAction);
+  const [atualizarParcela] = useMutateAction(updateModelagemAporteParcelaAction);
+  const [removerParcela] = useMutateAction(deleteModelagemAporteParcelaAction);
+  const [removerParcelasTodas] = useMutateAction(deleteModelagemAporteParcelasTodasAction);
+  const [criarFase] = useMutateAction(createModelagemFaseAction);
+  const [atualizarFase] = useMutateAction(updateModelagemFaseAction);
+  const [removerFase] = useMutateAction(deleteModelagemFaseAction);
   const [salvarFinanciamento] = useMutateAction(saveModelagemFinanciamentoAction);
   const [salvarReceita] = useMutateAction(saveModelagemReceitaAction);
   const [salvarVenda] = useMutateAction(saveModelagemVendaUnidadeAction);
@@ -112,9 +136,99 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     [rascunho],
   );
 
+  // ─── Plano de aportes ─────────────────────────────────────────────────────
+  /**
+   * Substitui o plano inteiro de uma vez, gravando na hora.
+   *
+   * É operação em lote e destrutiva (gerador de parcelas, congelar curva), sempre
+   * precedida de confirmação na aba. Fazer isso pelo diff do salvamento daria o
+   * mesmo resultado, mas com uma janela em que o banco e a tela discordam sobre
+   * quantas parcelas existem — e é justamente aí que o UNIQUE (modelagem_id, mes)
+   * estoura.
+   */
+  const substituirParcelas = async (parcelas: AporteParcela[], patch?: Partial<PlanoAportes>) => {
+    if (!rascunho?.aportes) return;
+    const plano = { ...rascunho.aportes, ...patch };
+    try {
+      await removerParcelasTodas({ modelagemId });
+      const gravadas: AporteParcela[] = [];
+      for (const p of parcelas) {
+        const r = await criarParcela({
+          modelagemId,
+          mes: p.mes,
+          valor: p.valor,
+          observacao: p.observacao ?? '',
+        });
+        gravadas.push({ ...p, id: Array.isArray(r) ? r[0]?.id : undefined });
+      }
+      const novo = { ...plano, parcelas: gravadas };
+      setRascunho((atual) => (atual ? { ...atual, aportes: novo } : atual));
+      // O original acompanha: as parcelas já estão no banco, então o diff do
+      // salvamento não tem mais nada a fazer com elas.
+      setOriginal((atual) =>
+        atual ? { ...atual, aportes: JSON.parse(JSON.stringify(novo)) } : atual,
+      );
+    } catch (e: any) {
+      toast({
+        title: 'Não foi possível gravar o plano de aportes',
+        description: e?.message ?? String(e),
+        variant: 'destructive',
+      });
+    }
+  };
+
   // ─── Overrides: persistem na hora, não esperam o botão salvar ──────────────
   const aplicarOverride = async (mes: number, linha: LinhaFluxo, valor: number | null) => {
     if (!rascunho || cenarioId == null) return;
+
+    // A linha de aporte com o plano ligado NÃO vira override: ela edita a parcela
+    // daquele mês. Override e plano são duas fontes para a mesma linha do fluxo;
+    // manter as duas ativas seria criar sincronização onde tem de haver fonte única.
+    if (linha === 'equity_call' && rascunho.aportes?.modoAporte === 'plano') {
+      // `null` no fluxo é "célula vazia". Como parcela, isso é uma parcela de zero.
+      const novoValor = valor ?? 0;
+      setRascunho((atual) => {
+        if (!atual?.aportes) return atual;
+        const parcelas = atual.aportes.parcelas ?? [];
+        const existe = parcelas.some((p) => p.mes === mes);
+        const novas = existe
+          ? parcelas.map((p) => (p.mes === mes ? { ...p, valor: novoValor } : p))
+          : [...parcelas, { mes, valor: novoValor }];
+        return {
+          ...atual,
+          aportes: { ...atual.aportes, parcelas: novas.sort((a, b) => a.mes - b.mes) },
+        };
+      });
+      try {
+        // Upsert por (modelagem_id, mes): a célula do fluxo já grava na hora, e
+        // a parcela do mês passa a se comportar do mesmo jeito.
+        const r = await criarParcela({ modelagemId, mes, valor: novoValor, observacao: '' });
+        const id = Array.isArray(r) ? r[0]?.id : undefined;
+        if (id) {
+          setRascunho((atual) =>
+            atual?.aportes
+              ? {
+                  ...atual,
+                  aportes: {
+                    ...atual.aportes,
+                    parcelas: (atual.aportes.parcelas ?? []).map((p) =>
+                      p.mes === mes ? { ...p, id: p.id ?? Number(id) } : p,
+                    ),
+                  },
+                }
+              : atual,
+          );
+        }
+      } catch (e: any) {
+        toast({
+          title: 'Não foi possível gravar a parcela',
+          description: e?.message ?? String(e),
+          variant: 'destructive',
+        });
+      }
+      return;
+    }
+
     const outros = (rascunho.overrides ?? []).filter((o) => !(o.mes === mes && o.linha === linha));
     setRascunho({ ...rascunho, overrides: [...outros, { mes, linha, valor, limpar: valor === null }] });
     try {
@@ -134,6 +248,29 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
 
   const reverterCelula = async (mes: number, linha: LinhaFluxo) => {
     if (!rascunho || cenarioId == null) return;
+
+    // Mesmo desvio do aplicarOverride, do outro lado: com o plano ligado, o que
+    // se reverte na linha de aporte é a parcela. Com confirmação, porque parcela
+    // é input do usuário — não é um valor calculado que volta sozinho.
+    if (linha === 'equity_call' && rascunho.aportes?.modoAporte === 'plano') {
+      const parcela = (rascunho.aportes.parcelas ?? []).find((p) => p.mes === mes);
+      if (!parcela) return;
+      if (!window.confirm(`Remover a parcela do mês ${mes} do plano de aportes?`)) return;
+      setRascunho((atual) =>
+        atual?.aportes
+          ? {
+              ...atual,
+              aportes: {
+                ...atual.aportes,
+                parcelas: (atual.aportes.parcelas ?? []).filter((p) => p.mes !== mes),
+              },
+            }
+          : atual,
+      );
+      if (parcela.id) await removerParcela({ id: parcela.id }).catch(() => undefined);
+      return;
+    }
+
     setRascunho({
       ...rascunho,
       overrides: (rascunho.overrides ?? []).filter((o) => !(o.mes === mes && o.linha === linha)),
@@ -181,6 +318,8 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         mesesConstrucao: rascunho.mesesConstrucao,
         mesesPosObra: rascunho.mesesPosObra,
         horizonteMaximo: rascunho.horizonteMaximo,
+        usaFases: !!rascunho.usaFases,
+        terrenoPorFase: !!rascunho.terrenoPorFase,
         dataBase: null,
         revisao: '',
         status: null,
@@ -228,6 +367,35 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         (s, i) => criarSocio({ modelagemId, ordem: i, ...s, observacoes: '' }),
         (s, i) => atualizarSocio({ id: s.id, ordem: i, ...s, observacoes: '' }),
         (id) => removerSocio({ id }),
+      );
+
+      // Cabeçalho do plano de aportes. Vai antes das parcelas: se o INSERT do
+      // cabeçalho falhar, não faz sentido gravar parcela nenhuma.
+      const plano = rascunho.aportes;
+      if (plano) {
+        await salvarAportes({
+          modelagemId,
+          modoAporte: plano.modoAporte,
+          aporteBaseTotal: plano.aporteBaseTotal,
+          valorTotalAlvo: plano.valorTotalAlvo,
+        });
+        // As parcelas editadas pela linha do fluxo já foram gravadas na hora; as
+        // editadas na aba entram aqui, pelo mesmo diff por id das demais listas.
+        await sincronizar(
+          plano.parcelas ?? [],
+          original.aportes?.parcelas ?? [],
+          (p) => criarParcela({ modelagemId, mes: p.mes, valor: p.valor, observacao: p.observacao ?? '' }),
+          (p) => atualizarParcela({ id: p.id, mes: p.mes, valor: p.valor, observacao: p.observacao ?? '' }),
+          (id) => removerParcela({ id }),
+        );
+      }
+
+      await sincronizar(
+        rascunho.fases ?? [],
+        original.fases ?? [],
+        (f, i) => criarFase({ modelagemId, ordem: i, ...f }),
+        (f, i) => atualizarFase({ id: f.id, ordem: i, ...f }),
+        (id) => removerFase({ id }),
       );
 
       await salvarFinanciamento({ modelagemId, ...rascunho.financiamento });
@@ -323,6 +491,15 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
           </TabsContent>
           <TabsContent value="unidades">
             <AbaUnidades rascunho={rascunho} alterar={alterar} resultado={resultado} />
+          </TabsContent>
+          <TabsContent value="aportes">
+            <AbaAportes
+              rascunho={rascunho}
+              alterar={alterar}
+              resultado={resultado}
+              substituirParcelas={substituirParcelas}
+              reverterLinha={reverterLinha}
+            />
           </TabsContent>
           <TabsContent value="custos">
             <AbaCustos rascunho={rascunho} alterar={alterar} resultado={resultado} />
