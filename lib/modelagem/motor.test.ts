@@ -21,14 +21,23 @@ const casoBase = (): ModelInput => ({
   mesesPosObra: 5,
   horizonteMaximo: 60,
   unidades: [
-    { nome: 'A1', custoTerreno: 25_000, custoObra: 210_000, aporteBase: 100_250, precoVenda: 320_000, propertyTaxAno: 850 },
-    { nome: 'A2', custoTerreno: 25_000, custoObra: 210_000, aporteBase: 100_250, precoVenda: 320_000, propertyTaxAno: 850 },
-    { nome: 'B1', custoTerreno: 95_000, custoObra: 460_000, aporteBase: 266_139, precoVenda: 825_000, propertyTaxAno: 1_800 },
-    { nome: 'B2', custoTerreno: 95_000, custoObra: 460_000, aporteBase: 266_139, precoVenda: 825_000, propertyTaxAno: 1_800 },
+    { nome: 'A1', quantidade: 1, custoTerreno: 25_000, custoObra: 210_000, precoVenda: 320_000, propertyTaxAno: 850 },
+    { nome: 'A2', quantidade: 1, custoTerreno: 25_000, custoObra: 210_000, precoVenda: 320_000, propertyTaxAno: 850 },
+    { nome: 'B1', quantidade: 1, custoTerreno: 95_000, custoObra: 460_000, precoVenda: 825_000, propertyTaxAno: 1_800 },
+    { nome: 'B2', quantidade: 1, custoTerreno: 95_000, custoObra: 460_000, precoVenda: 825_000, propertyTaxAno: 1_800 },
   ],
   custosAdicionais: [
     { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction' },
   ],
+  // Antes da migration 1761000000 esta premissa era a SOMA de
+  // modelagem_unidades.aporte_base: 100.250 × 2 + 266.139 × 2 = 732.778. É
+  // exatamente o valor que a migration semeia em modelagem_aportes.aporte_base_total,
+  // e é o que mantém equityDisponivelObra em 492.778 (732.778 − 240.000 de terreno).
+  aportes: {
+    modoAporte: 'demanda',
+    aporteBaseTotal: 732_778,
+    valorTotalAlvo: 0,
+  },
   financiamento: {
     taxaAnual: 0.095,
     feeEstruturacaoPct: 0.015,
@@ -413,5 +422,108 @@ describe('datas', () => {
     expect(somarMeses('2024-01-31', 1)).toBe('2024-02-29');
     expect(somarMeses('2025-12-01', 1)).toBe('2026-01-01');
     expect(somarMeses('2025-03-31', -1)).toBe('2025-02-28');
+  });
+});
+
+describe('10 — quantidade por tipologia', () => {
+  // O MESMO projeto descrito de duas formas: 4 linhas de 1 unidade, ou 2
+  // tipologias de 2 unidades com os mesmos valores UNITÁRIOS. Se a quantidade
+  // estiver entrando em todo lugar que precisa, os dois modelos têm de ser
+  // indistinguíveis — é isso que este bloco cobra.
+  const duasTipologias = (): ModelInput => {
+    const base = casoBase();
+    base.unidades = [
+      { nome: 'A', quantidade: 2, custoTerreno: 25_000, custoObra: 210_000, precoVenda: 320_000, propertyTaxAno: 850 },
+      { nome: 'B', quantidade: 2, custoTerreno: 95_000, custoObra: 460_000, precoVenda: 825_000, propertyTaxAno: 1_800 },
+    ];
+    return base;
+  };
+
+  const quatro = calcular(casoBase());
+  const duas = calcular(duasTipologias());
+
+  /**
+   * Compara todos os campos de um bloco do output. Numérico finito por
+   * tolerância; o resto por igualdade estrita, porque tetoDivida pode ser
+   * Infinity e indicadores podem ser null — e ambos têm de bater assim mesmo.
+   */
+  const mesmosCampos = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+    expect(Object.keys(b)).toEqual(Object.keys(a));
+    for (const k of Object.keys(a)) {
+      const x = a[k];
+      if (typeof x === 'number' && Number.isFinite(x)) {
+        expect(Math.abs((b[k] as number) - x)).toBeLessThanOrEqual(1e-6);
+      } else {
+        expect(b[k]).toEqual(x);
+      }
+    }
+  };
+
+  it('agrega igual, contando 4 unidades em 2 linhas', () => {
+    mesmosCampos(quatro.agregados, duas.agregados);
+    expect(duas.agregados.unidadesTotal).toBe(4);
+    expect(duas.agregados.terrenosTotal).toBeCloseTo(240_000, 2);
+    expect(duas.agregados.obraTotal).toBeCloseTo(1_340_000, 2);
+    expect(duas.agregados.vgv).toBeCloseTo(2_290_000, 2);
+    expect(duas.agregados.taxAnoTotal).toBeCloseTo(5_300, 2);
+  });
+
+  it('apura igual', () => {
+    mesmosCampos(quatro.apuracao, duas.apuracao);
+  });
+
+  it('calcula os mesmos indicadores', () => {
+    mesmosCampos(quatro.indicadores, duas.indicadores);
+  });
+
+  it('produz o mesmo fluxo mensal, mês a mês', () => {
+    expect(JSON.stringify(duas.meses)).toBe(JSON.stringify(quatro.meses));
+  });
+
+  it('mantém Σ lucro das tipologias = lucro do projeto', () => {
+    expect(duas.resultadoUnidades).toHaveLength(2);
+    const somaTipologias = duas.resultadoUnidades.reduce((a, u) => a + u.lucro, 0);
+    expect(Math.abs(somaTipologias - duas.apuracao.lucroProjeto)).toBeLessThanOrEqual(DOLAR);
+  });
+
+  it('devolve o resultado da tipologia como total, com o unitário ao lado', () => {
+    const [a, b] = duas.resultadoUnidades;
+    // A tipologia A tem de agregar exatamente as linhas A1 e A2 do caso de 4.
+    const [a1, a2] = quatro.resultadoUnidades;
+    expect(a.quantidade).toBe(2);
+    expect(b.quantidade).toBe(2);
+    expect(Math.abs(a.custoTerreno - (a1.custoTerreno + a2.custoTerreno))).toBeLessThanOrEqual(1e-6);
+    expect(Math.abs(a.custoObra - (a1.custoObra + a2.custoObra))).toBeLessThanOrEqual(1e-6);
+    expect(Math.abs(a.custoTotal - (a1.custoTotal + a2.custoTotal))).toBeLessThanOrEqual(1e-6);
+    expect(Math.abs(a.lucro - (a1.lucro + a2.lucro))).toBeLessThanOrEqual(1e-6);
+    // O unitário volta a ser exatamente a linha solta do caso de 4.
+    expect(Math.abs(a.custoTotalUnitario - a1.custoTotal)).toBeLessThanOrEqual(1e-6);
+    expect(Math.abs(a.receitaLiquidaUnitaria - a1.receitaLiquida)).toBeLessThanOrEqual(1e-6);
+    // Margem é adimensional: idêntica na tipologia e na unidade solta.
+    expect(Math.abs(a.margem! - a1.margem!)).toBeLessThanOrEqual(1e-9);
+  });
+
+  it('no modo per_unit a tipologia inteira vende no mês declarado', () => {
+    const base = duasTipologias();
+    base.receita.modoVenda = 'per_unit';
+    base.receita.vendasPorUnidade = [
+      { unidadeIndex: 0, mesVenda: 20 },
+      { unidadeIndex: 1, mesVenda: 23 },
+    ];
+    const out = calcular(base);
+    const fatorLiquido = 1 - 0.06 - 0.02;
+    // 2 × 320.000 no mês 20 e 2 × 825.000 no mês 23, líquidos.
+    expect(Math.abs(out.meses[19].revenue - 640_000 * fatorLiquido)).toBeLessThanOrEqual(DOLAR);
+    expect(Math.abs(out.meses[22].revenue - 1_650_000 * fatorLiquido)).toBeLessThanOrEqual(DOLAR);
+  });
+
+  it('trata quantidade inválida como 1, sem lançar exceção', () => {
+    // Input inconsistente nunca estoura: 0, negativo e fracionário caem no piso.
+    const base = duasTipologias();
+    base.unidades = base.unidades.map((u) => ({ ...u, quantidade: 0 }));
+    const zerado = calcular(base);
+    expect(zerado.agregados.unidadesTotal).toBe(2);
+    expect(zerado.agregados.terrenosTotal).toBeCloseTo(120_000, 2);
+    expect(Number.isFinite(zerado.apuracao.lucroProjeto)).toBe(true);
   });
 });

@@ -41,17 +41,30 @@ export const ROTULO_LINHA: Record<LinhaFluxo, string> = {
   distribution: 'Distribuição',
 };
 
+/**
+ * Uma TIPOLOGIA: `quantidade` unidades iguais.
+ *
+ * Todo campo monetário e de área desta interface é POR UNIDADE — area, terreno,
+ * obra, preço de venda e property tax. O total da tipologia é sempre
+ * `valor × quantidade`, e essa multiplicação é feita no motor: nada de total é
+ * gravado no banco.
+ */
 export interface Unidade {
   id?: number;
   nome: string;
   cidade?: string;
+  /** Por unidade. */
   areaSf?: number;
+  /** Por unidade. */
   custoTerreno: number;
+  /** Por unidade. */
   custoObra: number;
-  /** Premissa que dimensiona a curva do modo equity_first. NÃO é o aporte real. */
-  aporteBase: number;
+  /** Por unidade. */
   precoVenda: number;
+  /** Por unidade. */
   propertyTaxAno: number;
+  /** Quantas unidades iguais a linha representa. Inteiro ≥ 1. */
+  quantidade: number;
 }
 
 export type DistribuicaoCusto =
@@ -107,6 +120,35 @@ export interface Socio {
   cotaDisponivel: boolean;
 }
 
+export type ModoAporte = 'demanda' | 'plano';
+
+/** Uma parcela do plano de aportes. `mes` é índice do cronograma, não data. */
+export interface AporteParcela {
+  id?: number;
+  mes: number;
+  valor: number;
+  observacao?: string | null;
+}
+
+/**
+ * Plano de aportes do projeto — uma premissa da modelagem, não da unidade.
+ *
+ * Substitui o antigo `Unidade.aporteBase`, que era um atributo por unidade
+ * somado pelo motor. Nesta versão o motor consome apenas `aporteBaseTotal`,
+ * exatamente como consumia aquela soma; o resto do plano é input guardado.
+ */
+export interface PlanoAportes {
+  modoAporte: ModoAporte;
+  /**
+   * Premissa que dimensiona a curva do modo equity_first. NÃO é o aporte real:
+   * o capital efetivamente chamado sai do fluxo (equity_call).
+   */
+  aporteBaseTotal: number;
+  /** Alvo declarado. Não é imposto — se as parcelas não somarem, acende âmbar. */
+  valorTotalAlvo: number;
+  parcelas?: AporteParcela[];
+}
+
 export type ModoVenda = 'single_exit' | 'per_unit' | 'manual';
 
 export interface VendaUnidade {
@@ -153,6 +195,7 @@ export interface ModelInput {
   horizonteMaximo?: number;
   unidades: Unidade[];
   custosAdicionais?: CustoAdicional[];
+  aportes?: PlanoAportes;
   financiamento: Financiamento;
   socios?: Socio[];
   receita: Receita;
@@ -240,8 +283,10 @@ export interface RateioSocio {
 
 export type RegraRateioUnidade = 'custo_direto' | 'preco_venda' | 'area';
 
+/** Resultado de uma tipologia. Salvo onde dito o contrário, tudo é TOTAL das N unidades. */
 export interface ResultadoUnidade {
   nome: string;
+  quantidade: number;
   custoTerreno: number;
   custoObra: number;
   custoDireto: number;
@@ -250,7 +295,11 @@ export interface ResultadoUnidade {
   custosCompartilhados: number;
   custoFinanceiro: number;
   custoTotal: number;
+  /** custoTotal ÷ quantidade. */
+  custoTotalUnitario: number;
   receitaLiquida: number;
+  /** receitaLiquida ÷ quantidade. */
+  receitaLiquidaUnitaria: number;
   lucro: number;
   margem: number | null;
 }
@@ -282,7 +331,8 @@ export interface Cronograma {
 export interface Agregados {
   terrenosTotal: number;
   obraTotal: number;
-  aporteBase: number;
+  /** Σ quantidade das tipologias: quantas unidades o projeto tem de fato. */
+  unidadesTotal: number;
   vgv: number;
   taxAnoTotal: number;
   propertyTaxTotal: number;

@@ -23,6 +23,9 @@ function loadModelagemCompleta() {
           FROM modelagem_custos c WHERE c.modelagem_id = m.id
         ) AS custos,
         (
+          SELECT row_to_json(a) FROM modelagem_aportes a WHERE a.modelagem_id = m.id
+        ) AS aportes,
+        (
           SELECT row_to_json(f) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id
         ) AS financiamento,
         (

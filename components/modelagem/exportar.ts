@@ -79,10 +79,10 @@ export function exportarXlsx(input: ModelInput, resultado: ModelOutput) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(premissas), 'Premissas');
 
   const unidades = [
-    ['Nome', 'Cidade', 'Area sf', 'Terreno', 'Obra', 'Aporte base', 'Preco de venda', 'Tax/ano', 'Custo total', 'Lucro', 'Margem'],
+    ['Nome', 'Cidade', 'Qtd', 'Area sf (un)', 'Terreno (un)', 'Obra (un)', 'Preco de venda (un)', 'Tax/ano (un)', 'Custo total', 'Lucro', 'Margem'],
     ...input.unidades.map((u, i) => {
       const r = resultado.resultadoUnidades[i];
-      return [u.nome, u.cidade ?? '', u.areaSf ?? 0, u.custoTerreno, u.custoObra, u.aporteBase, u.precoVenda, u.propertyTaxAno, r?.custoTotal ?? 0, r?.lucro ?? 0, r?.margem ?? 0];
+      return [u.nome, u.cidade ?? '', u.quantidade, u.areaSf ?? 0, u.custoTerreno, u.custoObra, u.precoVenda, u.propertyTaxAno, r?.custoTotal ?? 0, r?.lucro ?? 0, r?.margem ?? 0];
     }),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(unidades), 'Unidades');
