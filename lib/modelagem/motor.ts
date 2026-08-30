@@ -32,6 +32,7 @@ import type {
   Override,
   RateioSocio,
   ResultadoUnidade,
+  Unidade,
 } from './tipos';
 import { montarConferencias } from './conferencias';
 import { anualizar, razao, somarMeses, tirMensal, xirr } from './indicadores';
@@ -81,21 +82,30 @@ export function calcular(input: ModelInput): ModelOutput {
     dataSaida: somarMeses(input.dataInicio, Math.max(mesSaida, 1) - 1),
   };
 
-  // ─── Agregados das unidades ────────────────────────────────────────────────
-  const terrenosTotal = soma(unidades.map((u) => u.custoTerreno || 0));
-  const obraTotal = soma(unidades.map((u) => u.custoObra || 0));
-  const aporteBase = soma(unidades.map((u) => u.aporteBase || 0));
-  const vgv = soma(unidades.map((u) => u.precoVenda || 0));
-  const taxAnoTotal = soma(unidades.map((u) => u.propertyTaxAno || 0));
+  // ─── Agregados das tipologias ──────────────────────────────────────────────
+  // Cada linha de `unidades` é uma TIPOLOGIA e seus valores são POR UNIDADE, então
+  // todo agregado multiplica por quantidade. Com quantidade = 1 (o default da
+  // migration 1761000000) a multiplicação é a identidade e nada muda.
+  const qtd = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
+  const terrenosTotal = soma(unidades.map((u) => (u.custoTerreno || 0) * qtd(u)));
+  const obraTotal = soma(unidades.map((u) => (u.custoObra || 0) * qtd(u)));
+  const vgv = soma(unidades.map((u) => (u.precoVenda || 0) * qtd(u)));
+  const taxAnoTotal = soma(unidades.map((u) => (u.propertyTaxAno || 0) * qtd(u)));
+  const unidadesTotal = soma(unidades.map(qtd));
   const propertyTaxTotal = (taxAnoTotal / 12) * prazoTotal;
-  // max(0, …): se o aporte base não cobre nem o terreno, o valor tem de ficar em
-  // zero — senão a dívida do modo equity_first começa maior que a obra acumulada.
-  const equityDisponivelObra = Math.max(0, aporteBase - terrenosTotal);
+  // O aporte base deixou de ser atributo da unidade e passou a ser premissa do
+  // projeto (tabela modelagem_aportes). A derivação é a mesma de antes, sobre a
+  // mesma grandeza: a migration semeia aporte_base_total com a soma que este
+  // ponto calculava. max(0, …): se o aporte base não cobre nem o terreno, o valor
+  // tem de ficar em zero — senão a dívida do modo equity_first começa maior que a
+  // obra acumulada.
+  const aporteBaseTotal = input.aportes?.aporteBaseTotal ?? 0;
+  const equityDisponivelObra = Math.max(0, aporteBaseTotal - terrenosTotal);
 
   const agregados: Agregados = {
     terrenosTotal,
     obraTotal,
-    aporteBase,
+    unidadesTotal,
     vgv,
     taxAnoTotal,
     propertyTaxTotal,
@@ -158,7 +168,10 @@ export function calcular(input: ModelInput): ModelOutput {
       const u = unidades[venda.unidadeIndex];
       if (!u) continue;
       if (venda.mesVenda >= 1 && venda.mesVenda <= prazoTotal) {
-        revenue[venda.mesVenda] += (u.precoVenda || 0) * fatorLiquido;
+        // A tipologia inteira vende no mesmo mês: venda escalonada dentro de uma
+        // tipologia (parte das N unidades num mês, o resto em outro) NÃO é
+        // suportada nesta versão. Quem precisar disso separa em duas linhas.
+        revenue[venda.mesVenda] += (u.precoVenda || 0) * qtd(u) * fatorLiquido;
       }
     }
   }
@@ -448,12 +461,16 @@ export function calcular(input: ModelInput): ModelOutput {
   // que garante Σ lucro das unidades = lucro do projeto.
   const compartilhado = custoEmpreendimento - custoDiretoInput + custoFinanceiro;
   const resultadoUnidades: ResultadoUnidade[] = unidades.map((u) => {
-    const custoDireto = (u.custoTerreno || 0) + (u.custoObra || 0);
+    const n = qtd(u);
+    // Custo direto e receita da TIPOLOGIA inteira. Como custoDiretoInput também
+    // já está multiplicado, o fatorRateio continua sendo uma fração do total e a
+    // identidade Σ lucro das tipologias = lucro do projeto segue valendo.
+    const custoDireto = ((u.custoTerreno || 0) + (u.custoObra || 0)) * n;
     const fatorRateio =
       custoDiretoInput > 0 ? custoDireto / custoDiretoInput : unidades.length > 0 ? 1 / unidades.length : 0;
     const custosCompartilhados = fatorRateio * (custoPropertyTax + custoOutros);
     const custoFinanceiroUnidade = fatorRateio * custoFinanceiro;
-    const receitaLiquidaUnidade = (u.precoVenda || 0) * fatorLiquido;
+    const receitaLiquidaUnidade = (u.precoVenda || 0) * n * fatorLiquido;
     const extraRateado =
       fatorRateio * (custoEmpreendimento - custoDiretoInput - custoPropertyTax - custoOutros);
     const custoTotal =
@@ -461,14 +478,17 @@ export function calcular(input: ModelInput): ModelOutput {
     const lucro = receitaLiquidaUnidade - custoTotal;
     return {
       nome: u.nome,
-      custoTerreno: u.custoTerreno || 0,
-      custoObra: u.custoObra || 0,
+      quantidade: n,
+      custoTerreno: (u.custoTerreno || 0) * n,
+      custoObra: (u.custoObra || 0) * n,
       custoDireto,
       fatorRateio,
       custosCompartilhados: custosCompartilhados + extraRateado,
       custoFinanceiro: custoFinanceiroUnidade,
       custoTotal,
+      custoTotalUnitario: custoTotal / n,
       receitaLiquida: receitaLiquidaUnidade,
+      receitaLiquidaUnitaria: receitaLiquidaUnidade / n,
       lucro,
       margem: razao(lucro, receitaLiquidaUnidade),
     };

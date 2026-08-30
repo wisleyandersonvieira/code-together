@@ -10,12 +10,21 @@ const casoBase = (): ModelInput => ({
   mesesPosObra: 5,
   horizonteMaximo: 60,
   unidades: [
-    { nome: 'A1', custoTerreno: 25_000, custoObra: 210_000, aporteBase: 100_250, precoVenda: 320_000, propertyTaxAno: 850 },
-    { nome: 'A2', custoTerreno: 25_000, custoObra: 210_000, aporteBase: 100_250, precoVenda: 320_000, propertyTaxAno: 850 },
-    { nome: 'B1', custoTerreno: 95_000, custoObra: 460_000, aporteBase: 266_139, precoVenda: 825_000, propertyTaxAno: 1_800 },
-    { nome: 'B2', custoTerreno: 95_000, custoObra: 460_000, aporteBase: 266_139, precoVenda: 825_000, propertyTaxAno: 1_800 },
+    { nome: 'A1', quantidade: 1, custoTerreno: 25_000, custoObra: 210_000, precoVenda: 320_000, propertyTaxAno: 850 },
+    { nome: 'A2', quantidade: 1, custoTerreno: 25_000, custoObra: 210_000, precoVenda: 320_000, propertyTaxAno: 850 },
+    { nome: 'B1', quantidade: 1, custoTerreno: 95_000, custoObra: 460_000, precoVenda: 825_000, propertyTaxAno: 1_800 },
+    { nome: 'B2', quantidade: 1, custoTerreno: 95_000, custoObra: 460_000, precoVenda: 825_000, propertyTaxAno: 1_800 },
   ],
   custosAdicionais: [{ label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction' }],
+  // Antes da migration 1761000000 esta premissa era a SOMA de
+  // modelagem_unidades.aporte_base: 100.250 × 2 + 266.139 × 2 = 732.778. É
+  // exatamente o valor que a migration semeia em modelagem_aportes.aporte_base_total,
+  // e é o que mantém equityDisponivelObra em 492.778 (732.778 − 240.000 de terreno).
+  aportes: {
+    modoAporte: 'demanda',
+    aporteBaseTotal: 732_778,
+    valorTotalAlvo: 0,
+  },
   financiamento: {
     taxaAnual: 0.095, feeEstruturacaoPct: 0.015, feeTiming: 'first_draw',
     mesInicioSaque: 13, mesFimSaque: 23, modoSaque: 'equity_first',

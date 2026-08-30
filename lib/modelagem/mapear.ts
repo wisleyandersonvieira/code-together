@@ -5,7 +5,7 @@
  * cliente como STRING. Sem coerção explícita, `custo_terreno + custo_obra` vira
  * concatenação de texto e o modelo inteiro sai errado sem lançar erro nenhum.
  */
-import type { CustoAdicional, ModelInput, Override, Socio, Unidade } from './tipos';
+import type { CustoAdicional, ModelInput, Override, PlanoAportes, Socio, Unidade } from './tipos';
 import { LINHAS_FLUXO } from './tipos';
 
 /** Número tolerante: string do Postgres, null, undefined ou '' viram `padrao`. */
@@ -53,6 +53,12 @@ export interface LinhaModelagem {
 
 const lista = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 
+/**
+ * Tipologias. Os valores da linha são POR UNIDADE — quem multiplica é o motor.
+ *
+ * `aporte_base` não é mais lido: virou premissa do projeto em `modelagem_aportes`
+ * (migration 1761000000). A coluna continua no banco, deprecada.
+ */
 export function mapearUnidades(linhas: unknown): Unidade[] {
   return lista(linhas).map((u) => ({
     id: num(u.id) || undefined,
@@ -61,10 +67,27 @@ export function mapearUnidades(linhas: unknown): Unidade[] {
     areaSf: num(u.area_sf),
     custoTerreno: num(u.custo_terreno),
     custoObra: num(u.custo_obra),
-    aporteBase: num(u.aporte_base),
     precoVenda: num(u.preco_venda),
     propertyTaxAno: num(u.property_tax_ano),
+    // Sem linha ainda gravada, 1 é o que reproduz o comportamento anterior.
+    quantidade: Math.max(1, Math.trunc(num(u.quantidade, 1))),
   }));
+}
+
+/**
+ * Cabeçalho do plano de aportes (`modelagem_aportes`, uma linha por modelagem).
+ *
+ * Devolve `undefined` quando não há linha — nesse caso o motor usa 0, que é o
+ * mesmo que a antiga soma dos aportes base dava sem unidade nenhuma.
+ */
+export function mapearAportes(linha: unknown): PlanoAportes | undefined {
+  if (!linha || typeof linha !== 'object') return undefined;
+  const a = linha as Record<string, unknown>;
+  return {
+    modoAporte: (a.modo_aporte ?? 'demanda') as PlanoAportes['modoAporte'],
+    aporteBaseTotal: num(a.aporte_base_total),
+    valorTotalAlvo: num(a.valor_total_alvo),
+  };
 }
 
 export function mapearCustos(linhas: unknown): CustoAdicional[] {
@@ -134,6 +157,7 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
     horizonteMaximo: num(linha.horizonte_maximo, 60),
     unidades,
     custosAdicionais: mapearCustos(linha.custos),
+    aportes: mapearAportes(linha.aportes),
     financiamento: {
       taxaAnual: num(fin.taxa_anual),
       feeEstruturacaoPct: num(fin.fee_estruturacao_pct),
