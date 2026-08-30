@@ -5,7 +5,16 @@
  * cliente como STRING. Sem coerção explícita, `custo_terreno + custo_obra` vira
  * concatenação de texto e o modelo inteiro sai errado sem lançar erro nenhum.
  */
-import type { CustoAdicional, ModelInput, Override, PlanoAportes, Socio, Unidade } from './tipos';
+import type {
+  AporteParcela,
+  CustoAdicional,
+  Fase,
+  ModelInput,
+  Override,
+  PlanoAportes,
+  Socio,
+  Unidade,
+} from './tipos';
 import { LINHAS_FLUXO } from './tipos';
 
 /** Número tolerante: string do Postgres, null, undefined ou '' viram `padrao`. */
@@ -74,20 +83,50 @@ export function mapearUnidades(linhas: unknown): Unidade[] {
   }));
 }
 
+/** Parcelas do plano (`modelagem_aporte_parcelas`), sempre ordenadas por mês. */
+export function mapearParcelasAporte(linhas: unknown): AporteParcela[] {
+  return lista(linhas)
+    .map((p) => ({
+      id: num(p.id) || undefined,
+      mes: Math.max(1, Math.trunc(num(p.mes, 1))),
+      valor: num(p.valor),
+      observacao: p.observacao == null ? null : String(p.observacao),
+    }))
+    .sort((a, b) => a.mes - b.mes);
+}
+
 /**
- * Cabeçalho do plano de aportes (`modelagem_aportes`, uma linha por modelagem).
+ * Plano de aportes (`modelagem_aportes` + `modelagem_aporte_parcelas`).
  *
- * Devolve `undefined` quando não há linha — nesse caso o motor usa 0, que é o
- * mesmo que a antiga soma dos aportes base dava sem unidade nenhuma.
+ * Sem linha de cabeçalho o retorno é o PADRÃO NEUTRO — modo 'demanda', tudo
+ * zerado, parcelas vazias — em vez de `undefined`: o motor não pode falhar por
+ * input incompleto, e a aba Aportes precisa de um objeto para editar. Modelagem
+ * sem linha calcula igual a antes da migration 1761000000.
  */
-export function mapearAportes(linha: unknown): PlanoAportes | undefined {
-  if (!linha || typeof linha !== 'object') return undefined;
-  const a = linha as Record<string, unknown>;
+export function mapearAportes(linha: unknown, parcelas?: unknown): PlanoAportes {
+  const a = (linha && typeof linha === 'object' ? linha : {}) as Record<string, unknown>;
   return {
-    modoAporte: (a.modo_aporte ?? 'demanda') as PlanoAportes['modoAporte'],
+    modoAporte: (a.modo_aporte === 'plano' ? 'plano' : 'demanda') as PlanoAportes['modoAporte'],
     aporteBaseTotal: num(a.aporte_base_total),
     valorTotalAlvo: num(a.valor_total_alvo),
+    parcelas: mapearParcelasAporte(parcelas),
   };
+}
+
+/**
+ * Fases (`modelagem_fases`). As datas ficam como ISO: o índice do mês é derivado
+ * pelo motor a partir de `modelagens.data_inicio`, nunca gravado.
+ */
+export function mapearFases(linhas: unknown): Fase[] {
+  return lista(linhas)
+    .map((f, i) => ({
+      id: num(f.id) || undefined,
+      ordem: Math.trunc(num(f.ordem, i)),
+      nome: texto(f.nome),
+      dataInicio: dataIso(f.data_inicio),
+      dataFim: dataIso(f.data_fim),
+    }))
+    .sort((a, b) => a.ordem - b.ordem);
 }
 
 export function mapearCustos(linhas: unknown): CustoAdicional[] {
@@ -157,7 +196,10 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
     horizonteMaximo: num(linha.horizonte_maximo, 60),
     unidades,
     custosAdicionais: mapearCustos(linha.custos),
-    aportes: mapearAportes(linha.aportes),
+    aportes: mapearAportes(linha.aportes, linha.aporte_parcelas),
+    usaFases: bool(linha.usa_fases),
+    terrenoPorFase: bool(linha.terreno_por_fase),
+    fases: mapearFases(linha.fases),
     financiamento: {
       taxaAnual: num(fin.taxa_anual),
       feeEstruturacaoPct: num(fin.fee_estruturacao_pct),

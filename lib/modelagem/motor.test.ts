@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { calcular } from './motor';
 import { bloqueiaSalvamento } from './conferencias';
-import { tirMensal, somarMeses } from './indicadores';
+import { indiceMes, tirMensal, somarMeses } from './indicadores';
 import type { ModelInput, Override } from './tipos';
 
 const DOLAR = 1.0;
@@ -525,5 +525,250 @@ describe('10 — quantidade por tipologia', () => {
     expect(zerado.agregados.unidadesTotal).toBe(2);
     expect(zerado.agregados.terrenosTotal).toBeCloseTo(120_000, 2);
     expect(Number.isFinite(zerado.apuracao.lucroProjeto)).toBe(true);
+  });
+});
+
+describe('11 — plano de aportes', () => {
+  /** Três chamadas de 300.000 nos meses 1, 6 e 12. */
+  const comPlano = (modo: 'demanda' | 'plano'): ModelInput => {
+    const base = casoBase();
+    base.aportes = {
+      modoAporte: modo,
+      aporteBaseTotal: 732_778,
+      valorTotalAlvo: 900_000,
+      parcelas: [
+        { mes: 1, valor: 300_000 },
+        { mes: 6, valor: 300_000 },
+        { mes: 12, valor: 300_000 },
+      ],
+    };
+    return base;
+  };
+
+  it('no modo demanda as parcelas ficam guardadas e não mudam nada no fluxo', () => {
+    // Esta é a garantia de compatibilidade: congelar uma curva sem virar a chave
+    // não pode alterar resultado nenhum de modelagem já salva.
+    const semPlano = calcular(casoBase());
+    const guardado = calcular(comPlano('demanda'));
+    expect(JSON.stringify(guardado.meses)).toBe(JSON.stringify(semPlano.meses));
+    expect(guardado.apuracao.equityTotal).toBeCloseTo(semPlano.apuracao.equityTotal, 6);
+  });
+
+  it('expõe o total planejado mesmo no modo demanda', () => {
+    expect(calcular(comPlano('demanda')).agregados.aportePlanejadoTotal).toBeCloseTo(900_000, 2);
+  });
+
+  it('no modo demanda o equity disponível para obra é constante em todos os meses', () => {
+    const out = calcular(comPlano('demanda'));
+    for (const m of out.meses) {
+      expect(m.equityDisponivelAcumulado).toBeCloseTo(out.agregados.equityDisponivelObra, 6);
+    }
+    expect(out.agregados.equityDisponivelObra).toBeCloseTo(492_778, 2);
+  });
+
+  it('no modo plano o aporte do mês é a parcela, e zero onde não há parcela', () => {
+    const out = calcular(comPlano('plano'));
+    const esperado = new Map([
+      [1, 300_000],
+      [6, 300_000],
+      [12, 300_000],
+    ]);
+    for (const m of out.meses) {
+      expect(m.equityCall).toBeCloseTo(esperado.get(m.mes) ?? 0, 6);
+    }
+    expect(out.apuracao.equityTotal).toBeCloseTo(900_000, 2);
+  });
+
+  it('no modo plano o equity disponível vira curva, descontado o terreno', () => {
+    const out = calcular(comPlano('plano'));
+    const ate = (mes: number) => out.meses[mes - 1].equityDisponivelAcumulado;
+    // 240.000 de terreno consomem a primeira parcela quase toda.
+    expect(ate(1)).toBeCloseTo(60_000, 2);
+    expect(ate(5)).toBeCloseTo(60_000, 2);
+    expect(ate(6)).toBeCloseTo(360_000, 2);
+    expect(ate(12)).toBeCloseTo(660_000, 2);
+    expect(ate(23)).toBeCloseTo(660_000, 2);
+  });
+
+  it('o saque equity_first passa a comparar com o capital que já entrou', () => {
+    // Todo o capital no mês 1: o equity cobre terreno e obra inteira, e o
+    // financiamento nunca é acionado.
+    const cedo = comPlano('plano');
+    cedo.aportes!.parcelas = [{ mes: 1, valor: 2_000_000 }];
+    expect(calcular(cedo).apuracao.dividaSacada).toBeCloseTo(0, 2);
+
+    // O MESMO capital, só que no fim: durante a obra não há equity nenhum
+    // disponível, então a dívida entra.
+    const tarde = comPlano('plano');
+    tarde.aportes!.parcelas = [{ mes: 23, valor: 2_000_000 }];
+    expect(calcular(tarde).apuracao.dividaSacada).toBeGreaterThan(0);
+  });
+
+  it('override na linha de aporte continua vencendo o plano', () => {
+    const base = comPlano('plano');
+    base.overrides = [{ mes: 6, linha: 'equity_call', valor: 111 }];
+    const out = calcular(base);
+    expect(out.meses[5].equityCall).toBeCloseTo(111, 6);
+    expect(semaforo(out, 'aporte_override_no_plano')).toBe('ambar');
+  });
+
+  it('plano que não cobre a demanda deixa o caixa negativo, e a conferência acusa', () => {
+    const base = comPlano('plano');
+    base.aportes!.parcelas = [{ mes: 1, valor: 300_000 }];
+    const out = calcular(base);
+    expect(Math.min(...out.meses.map((m) => m.caixaAcumulado))).toBeLessThan(0);
+    expect(semaforo(out, 'caixa_minimo')).toBe('vermelho');
+  });
+
+  it('converge no modo plano', () => {
+    const out = calcular(comPlano('plano'));
+    expect(out.convergiu).toBe(true);
+    // O equity deixa de ser função do caixa: o ponto fixo tende a fechar em menos
+    // passadas, nunca em mais.
+    expect(out.iteracoes).toBeLessThanOrEqual(calcular(casoBase()).iteracoes);
+  });
+
+  it('acende âmbar quando as parcelas não somam o alvo declarado', () => {
+    const base = comPlano('plano');
+    expect(semaforo(calcular(base), 'aporte_plano_vs_alvo')).toBe('verde');
+    base.aportes!.valorTotalAlvo = 1_000_000;
+    expect(semaforo(calcular(base), 'aporte_plano_vs_alvo')).toBe('ambar');
+  });
+
+  it('acusa parcela fora do prazo sem descartá-la do total planejado', () => {
+    const base = comPlano('plano');
+    base.aportes!.parcelas = [...base.aportes!.parcelas!, { mes: 99, valor: 50_000 }];
+    const out = calcular(base);
+    expect(semaforo(out, 'aporte_parcela_fora_prazo')).toBe('ambar');
+    expect(out.agregados.aportePlanejadoTotal).toBeCloseTo(950_000, 2);
+    // Fora do prazo, a parcela não é lançada em mês nenhum.
+    expect(out.apuracao.equityTotal).toBeCloseTo(900_000, 2);
+  });
+
+  it('não estoura com parcela em mês inválido', () => {
+    const base = comPlano('plano');
+    base.aportes!.parcelas = [{ mes: 0, valor: 10 }, { mes: -3, valor: 10 }];
+    const out = calcular(base);
+    expect(out.apuracao.equityTotal).toBeCloseTo(0, 6);
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+  });
+});
+
+describe('12 — fases', () => {
+  // Janela de obra do caso base: mês 11 (2026-10) ao 18 (2027-05).
+  const FASE_A = { ordem: 0, nome: 'Fase 1', dataInicio: '2026-10-01', dataFim: '2027-01-01' };
+  const FASE_B = { ordem: 1, nome: 'Fase 2', dataInicio: '2027-02-01', dataFim: '2027-05-01' };
+
+  const comFases = (fases: ModelInput['fases'], usa = true): ModelInput => {
+    const base = casoBase();
+    base.usaFases = usa;
+    base.fases = fases;
+    return base;
+  };
+
+  it('deriva o índice do mês a partir das datas, contando mês calendário', () => {
+    expect(indiceMes('2025-12-01', '2025-12-01')).toBe(1);
+    expect(indiceMes('2025-12-01', '2025-12-31')).toBe(1);
+    expect(indiceMes('2025-12-01', '2026-01-01')).toBe(2);
+    expect(indiceMes('2025-12-15', '2026-01-02')).toBe(2);
+    expect(indiceMes('2025-12-01', '2026-10-01')).toBe(11);
+    // Antes do início devolve índice ≤ 0 em vez de mentir.
+    expect(indiceMes('2025-12-01', '2025-11-01')).toBe(0);
+  });
+
+  it('com usaFases desligado, fase cadastrada não muda absolutamente nada', () => {
+    // Este é o caminho de toda modelagem existente e tem de ficar idêntico.
+    const semFases = calcular(casoBase());
+    const desligado = calcular(comFases([FASE_A, FASE_B], false));
+    expect(JSON.stringify(desligado.meses)).toBe(JSON.stringify(semFases.meses));
+    expect(desligado.cronograma.fases).toHaveLength(2);
+  });
+
+  it('fases que ladrilham a janela de obra reproduzem a curva de frente única', () => {
+    const semFases = calcular(casoBase());
+    const faseado = calcular(comFases([FASE_A, FASE_B]));
+    expect(JSON.stringify(faseado.meses)).toBe(JSON.stringify(semFases.meses));
+    expect(semaforo(faseado, 'fases_sobrepostas')).toBe('verde');
+    expect(semaforo(faseado, 'fases_com_buraco')).toBe('verde');
+    expect(semaforo(faseado, 'fases_dentro_prazo')).toBe('verde');
+  });
+
+  it('usaFases sem nenhuma fase cai no caminho de frente única e acende âmbar', () => {
+    const semLinha = calcular(comFases([]));
+    expect(JSON.stringify(semLinha.meses)).toBe(JSON.stringify(calcular(casoBase()).meses));
+    expect(semaforo(semLinha, 'fases_sem_linha')).toBe('ambar');
+  });
+
+  it('distribui a obra dentro da janela de cada fase', () => {
+    // Fase 1 nos meses 11-12 e fase 2 nos meses 17-18: a obra deixa de ocupar os
+    // 8 meses de construção e se concentra em 4.
+    const out = calcular(
+      comFases([
+        { ordem: 0, nome: 'A', dataInicio: '2026-10-01', dataFim: '2026-11-01' },
+        { ordem: 1, nome: 'B', dataInicio: '2027-04-01', dataFim: '2027-05-01' },
+      ]),
+    );
+    const obra = out.meses.map((m) => m.construction);
+    const total = obra.reduce((a, b) => a + b, 0);
+    expect(total).toBeCloseTo(out.agregados.obraTotal, 2);
+    // Metade em cada fase (durações iguais), dividida pelos 2 meses da fase.
+    expect(obra[10]).toBeCloseTo(out.agregados.obraTotal / 4, 2);
+    expect(obra[11]).toBeCloseTo(out.agregados.obraTotal / 4, 2);
+    expect(obra[12]).toBeCloseTo(0, 6);
+    expect(obra[16]).toBeCloseTo(out.agregados.obraTotal / 4, 2);
+    expect(obra[17]).toBeCloseTo(out.agregados.obraTotal / 4, 2);
+  });
+
+  it('com terrenoPorFase o terreno entra no início de cada fase, sem sumir', () => {
+    const base = comFases([FASE_A, FASE_B]);
+    base.terrenoPorFase = true;
+    const out = calcular(base);
+    const land = out.meses.map((m) => m.land);
+    expect(land[0]).toBeCloseTo(0, 6);
+    expect(land[10]).toBeCloseTo(120_000, 2);
+    expect(land[14]).toBeCloseTo(120_000, 2);
+    expect(land.reduce((a, b) => a + b, 0)).toBeCloseTo(out.agregados.terrenosTotal, 2);
+  });
+
+  it('fase que estoura o prazo acende vermelho e não perde custo', () => {
+    const out = calcular(
+      comFases([FASE_A, { ordem: 1, nome: 'B', dataInicio: '2027-02-01', dataFim: '2028-05-01' }]),
+    );
+    expect(semaforo(out, 'fases_dentro_prazo')).toBe('vermelho');
+    const total = out.meses.reduce((a, m) => a + m.construction, 0);
+    expect(total).toBeCloseTo(out.agregados.obraTotal, 2);
+  });
+
+  it('acusa sobreposição, buraco e fase invertida', () => {
+    const sobrepostas = calcular(
+      comFases([
+        { ordem: 0, nome: 'A', dataInicio: '2026-10-01', dataFim: '2027-02-01' },
+        { ordem: 1, nome: 'B', dataInicio: '2027-01-01', dataFim: '2027-05-01' },
+      ]),
+    );
+    expect(semaforo(sobrepostas, 'fases_sobrepostas')).toBe('ambar');
+
+    const comBuraco = calcular(
+      comFases([
+        { ordem: 0, nome: 'A', dataInicio: '2026-10-01', dataFim: '2026-12-01' },
+        { ordem: 1, nome: 'B', dataInicio: '2027-03-01', dataFim: '2027-05-01' },
+      ]),
+    );
+    expect(semaforo(comBuraco, 'fases_com_buraco')).toBe('ambar');
+    expect(semaforo(comBuraco, 'fases_sobrepostas')).toBe('verde');
+
+    const invertida = calcular(
+      comFases([{ ordem: 0, nome: 'A', dataInicio: '2027-05-01', dataFim: '2026-10-01' }]),
+    );
+    expect(semaforo(invertida, 'fase_invertida')).toBe('vermelho');
+    // Nem por isso o cálculo para: o custo cai no mês de início.
+    expect(Number.isFinite(invertida.apuracao.lucroProjeto)).toBe(true);
+  });
+
+  it('não gera conferência de fase nenhuma com o switch desligado', () => {
+    const out = calcular(comFases([FASE_A, FASE_B], false));
+    for (const chave of ['fases_sem_linha', 'fase_invertida', 'fases_dentro_prazo', 'fases_sobrepostas', 'fases_com_buraco']) {
+      expect(semaforo(out, chave)).toBeUndefined();
+    }
   });
 });

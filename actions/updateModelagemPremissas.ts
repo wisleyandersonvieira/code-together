@@ -14,6 +14,8 @@ function updateModelagemPremissas() {
         meses_construcao = {{params.mesesConstrucao}}::int,
         meses_pos_obra = {{params.mesesPosObra}}::int,
         horizonte_maximo = {{params.horizonteMaximo}}::int,
+        usa_fases = COALESCE({{params.usaFases}}::boolean, FALSE),
+        terreno_por_fase = COALESCE({{params.terrenoPorFase}}::boolean, FALSE),
         data_base = {{params.dataBase}}::date,
         revisao = '{{params.revisao}}',
         status = COALESCE('{{params.status}}', status),

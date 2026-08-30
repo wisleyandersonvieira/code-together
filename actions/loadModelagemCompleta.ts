@@ -26,6 +26,14 @@ function loadModelagemCompleta() {
           SELECT row_to_json(a) FROM modelagem_aportes a WHERE a.modelagem_id = m.id
         ) AS aportes,
         (
+          SELECT json_agg(pa ORDER BY pa.mes)
+          FROM modelagem_aporte_parcelas pa WHERE pa.modelagem_id = m.id
+        ) AS aporte_parcelas,
+        (
+          SELECT json_agg(fa ORDER BY fa.ordem, fa.id)
+          FROM modelagem_fases fa WHERE fa.modelagem_id = m.id
+        ) AS fases,
+        (
           SELECT row_to_json(f) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id
         ) AS financiamento,
         (

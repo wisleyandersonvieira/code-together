@@ -134,8 +134,20 @@ export interface AporteParcela {
  * Plano de aportes do projeto — uma premissa da modelagem, não da unidade.
  *
  * Substitui o antigo `Unidade.aporteBase`, que era um atributo por unidade
- * somado pelo motor. Nesta versão o motor consome apenas `aporteBaseTotal`,
- * exatamente como consumia aquela soma; o resto do plano é input guardado.
+ * somado pelo motor.
+ *
+ * Os dois modos, no espírito de `ModoSaque` e `ModoVenda`:
+ *
+ *   'demanda' — o motor calcula o aporte de cada mês como resíduo do caixa, e
+ *     `aporteBaseTotal` é a premissa que dimensiona a curva do modo equity_first.
+ *     É o comportamento anterior a esta versão, e o default.
+ *   'plano' — as `parcelas` mandam: o aporte do mês é o valor da parcela daquele
+ *     mês e ZERO nos meses sem parcela. O caixa fica negativo quando o plano não
+ *     cobre a demanda, e é justamente isso que o usuário quer enxergar; a
+ *     conferência de caixa mínimo acusa.
+ *
+ * Em nenhum dos dois o plano vence um override em `equity_call`: override é a
+ * invariante do módulo e continua ganhando de tudo.
  */
 export interface PlanoAportes {
   modoAporte: ModoAporte;
@@ -147,6 +159,23 @@ export interface PlanoAportes {
   /** Alvo declarado. Não é imposto — se as parcelas não somarem, acende âmbar. */
   valorTotalAlvo: number;
   parcelas?: AporteParcela[];
+}
+
+/**
+ * Uma fase do empreendimento. Só tem efeito com `ModelInput.usaFases = true`.
+ *
+ * As datas são o input do usuário; o motor deriva o índice do mês a partir de
+ * `ModelInput.dataInicio` (ver `indiceMes`). Guardar índice aqui faria a fase se
+ * deslocar sozinha toda vez que o início do projeto mudasse.
+ */
+export interface Fase {
+  id?: number;
+  ordem: number;
+  nome: string;
+  /** ISO 'YYYY-MM-DD'. */
+  dataInicio: string;
+  /** ISO 'YYYY-MM-DD'. */
+  dataFim: string;
 }
 
 export type ModoVenda = 'single_exit' | 'per_unit' | 'manual';
@@ -196,6 +225,11 @@ export interface ModelInput {
   unidades: Unidade[];
   custosAdicionais?: CustoAdicional[];
   aportes?: PlanoAportes;
+  /** false (default) = frente única: o cronograma de obra é um só. */
+  usaFases?: boolean;
+  /** Só tem efeito com `usaFases`. false = terreno inteiro no mês 1. */
+  terrenoPorFase?: boolean;
+  fases?: Fase[];
   financiamento: Financiamento;
   socios?: Socio[];
   receita: Receita;
@@ -231,6 +265,12 @@ export interface MesFluxo {
   demandaBruta: number;
   /** Capacidade de saque restante no início do mês. */
   capacidadeSaque: number;
+  /**
+   * Equity que o plano de aportes já colocou no projeto até este mês, descontado
+   * o terreno — é o que o modo equity_first compara com a obra acumulada. No modo
+   * 'demanda' é constante em todos os meses (o valor único do aporte base).
+   */
+  equityDisponivelAcumulado: number;
 }
 
 export interface Apuracao {
@@ -316,6 +356,16 @@ export interface Conferencia {
   comoResolver: string;
 }
 
+/** Fase com os índices de mês já derivados. A interface não recalcula nada. */
+export interface FaseCronograma {
+  nome: string;
+  /** Índice 1-based, já limitado a 1..prazoTotal. */
+  mesInicio: number;
+  mesFim: number;
+  dataInicio: string;
+  dataFim: string;
+}
+
 export interface Cronograma {
   prazoTotal: number;
   mesInicioObra: number;
@@ -326,6 +376,8 @@ export interface Cronograma {
   dataInicioObra: string;
   dataFimObra: string;
   dataSaida: string;
+  /** Vazio quando `usaFases` é false. */
+  fases: FaseCronograma[];
 }
 
 export interface Agregados {
@@ -337,6 +389,8 @@ export interface Agregados {
   taxAnoTotal: number;
   propertyTaxTotal: number;
   equityDisponivelObra: number;
+  /** Σ das parcelas do plano de aportes. Comparar com `Apuracao.equityTotal`. */
+  aportePlanejadoTotal: number;
 }
 
 export interface ModelOutput {

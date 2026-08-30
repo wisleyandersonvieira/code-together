@@ -24,6 +24,7 @@ import type {
   Apuracao,
   Conferencia,
   Cronograma,
+  FaseCronograma,
   Indicadores,
   LinhaFluxo,
   MesFluxo,
@@ -35,7 +36,7 @@ import type {
   Unidade,
 } from './tipos';
 import { montarConferencias } from './conferencias';
-import { anualizar, razao, somarMeses, tirMensal, xirr } from './indicadores';
+import { anualizar, indiceMes, razao, somarMeses, tirMensal, xirr } from './indicadores';
 
 const MAX_ITERACOES = 50;
 const TOL_CONVERGENCIA = 0.01;
@@ -70,6 +71,21 @@ export function calcular(input: ModelInput): ModelOutput {
   const mesSaida = rec.mesSaida ?? prazoTotal;
   const horizonteMaximo = input.horizonteMaximo ?? 60;
 
+  // ─── Fases ─────────────────────────────────────────────────────────────────
+  // Índices DERIVADOS das datas, sem limite nenhum: é o que a interface mostra e
+  // o que as conferências examinam. Fase invertida sai com mesFim < mesInicio e
+  // fase que estoura o prazo sai com mesFim > prazoTotal — os dois casos ficam
+  // visíveis em vez de serem corrigidos em silêncio. O clamp para o cálculo vem
+  // depois, em `janelasFase`.
+  const fasesInput = input.fases ?? [];
+  const fasesCronograma: FaseCronograma[] = fasesInput.map((f) => ({
+    nome: f.nome,
+    mesInicio: indiceMes(input.dataInicio, f.dataInicio),
+    mesFim: indiceMes(input.dataInicio, f.dataFim),
+    dataInicio: f.dataInicio,
+    dataFim: f.dataFim,
+  }));
+
   const cronograma: Cronograma = {
     prazoTotal,
     mesInicioObra,
@@ -80,7 +96,38 @@ export function calcular(input: ModelInput): ModelOutput {
     dataInicioObra: somarMeses(input.dataInicio, mesInicioObra - 1),
     dataFimObra: somarMeses(input.dataInicio, Math.max(mesFimObra, 1) - 1),
     dataSaida: somarMeses(input.dataInicio, Math.max(mesSaida, 1) - 1),
+    fases: fasesCronograma,
   };
+
+  // Janela de cálculo de cada fase: limitada a 1..prazoTotal e com o peso do
+  // custo que cabe a ela.
+  //
+  // O peso é PROVISÓRIO: enquanto a alocação de unidades por fase não existir
+  // (tabela modelagem_unidade_fases), a fase leva a fração proporcional à sua
+  // duração. Isso tem a propriedade que importa aqui: quando as fases ladrilham
+  // exatamente a janela de obra, sem buraco e sem sobreposição, a curva que sai
+  // daqui é a mesma da frente única. Quando a alocação existir, o peso passa a
+  // ser Σ (custoObra da tipologia × quantidade alocada na fase) ÷ obraTotal.
+  //
+  // Fase que estoura o prazo NÃO perde custo: a janela é comprimida até o último
+  // mês e a conferência `fases_dentro_prazo` acende vermelho. Custo lançado pelo
+  // usuário nunca some em silêncio.
+  const ultimoMes = Math.max(prazoTotal, 1);
+  const janelas = fasesCronograma.map((f) => {
+    const inicio = clamp(Math.trunc(f.mesInicio), 1, ultimoMes);
+    const fim = clamp(Math.trunc(Math.max(f.mesFim, f.mesInicio)), inicio, ultimoMes);
+    return { inicio, fim, duracao: fim - inicio + 1 };
+  });
+  const duracaoTotalFases = soma(janelas.map((j) => j.duracao));
+  const janelasFase = janelas.map((j) => ({
+    ...j,
+    peso: duracaoTotalFases > 0 ? j.duracao / duracaoTotalFases : 0,
+  }));
+  // `usaFases` sem nenhuma fase cadastrada cairia num projeto sem obra nenhuma.
+  // Nesse caso o motor segue pelo caminho de frente única e a conferência
+  // `fases_sem_linha` acende âmbar.
+  const fasesAtivas = !!input.usaFases && janelasFase.length > 0 && prazoTotal >= 1;
+  const terrenoPorFase = !!input.terrenoPorFase;
 
   // ─── Agregados das tipologias ──────────────────────────────────────────────
   // Cada linha de `unidades` é uma TIPOLOGIA e seus valores são POR UNIDADE, então
@@ -102,6 +149,45 @@ export function calcular(input: ModelInput): ModelOutput {
   const aporteBaseTotal = input.aportes?.aporteBaseTotal ?? 0;
   const equityDisponivelObra = Math.max(0, aporteBaseTotal - terrenosTotal);
 
+  // ─── Plano de aportes ──────────────────────────────────────────────────────
+  // Duas parcelas no mesmo mês somam em vez de uma sobrescrever a outra. O banco
+  // tem UNIQUE (modelagem_id, mes) e a interface bloqueia o mês repetido, mas o
+  // motor é chamado também com input de teste e de sensibilidade: somar é a única
+  // leitura que não perde dinheiro do usuário.
+  const modoAporte = input.aportes?.modoAporte ?? 'demanda';
+  const parcelas = input.aportes?.parcelas ?? [];
+  const parcelaPorMes = new Map<number, number>();
+  for (const p of parcelas) {
+    const mes = Math.trunc(p.mes);
+    if (!Number.isFinite(mes) || mes < 1) continue;
+    parcelaPorMes.set(mes, (parcelaPorMes.get(mes) ?? 0) + (p.valor || 0));
+  }
+  // Σ de TODAS as parcelas, inclusive as que caem além do prazo: é o que o
+  // usuário planejou. As que não cabem no cronograma não são lançadas e a
+  // conferência `aporte_parcela_fora_prazo` acusa.
+  const aportePlanejadoTotal = soma(parcelas.map((p) => p.valor || 0));
+
+  const parcelasAcumuladas = new Array<number>(prazoTotal + 1).fill(0);
+  for (let m = 1; m <= prazoTotal; m++) {
+    parcelasAcumuladas[m] = parcelasAcumuladas[m - 1] + (parcelaPorMes.get(m) ?? 0);
+  }
+
+  /**
+   * Equity disponível para a obra ATÉ o mês `m`.
+   *
+   * No modo 'plano' é uma curva: o capital que efetivamente já entrou, descontado
+   * o terreno. No modo 'demanda' é o escalar de sempre, constante em todos os
+   * meses — por isso o comportamento anterior é reproduzido exatamente.
+   *
+   * max(0, …) nos dois: se o equity não cobre nem o terreno, o valor tem de ficar
+   * em zero, senão a dívida do modo equity_first começaria maior que a obra
+   * acumulada.
+   */
+  const equityDisponivelObraAte = (m: number) =>
+    modoAporte === 'plano'
+      ? Math.max(0, (parcelasAcumuladas[m] ?? 0) - terrenosTotal)
+      : equityDisponivelObra;
+
   const agregados: Agregados = {
     terrenosTotal,
     obraTotal,
@@ -110,6 +196,7 @@ export function calcular(input: ModelInput): ModelOutput {
     taxAnoTotal,
     propertyTaxTotal,
     equityDisponivelObra,
+    aportePlanejadoTotal,
   };
 
   // ─── Overrides ─────────────────────────────────────────────────────────────
@@ -140,10 +227,32 @@ export function calcular(input: ModelInput): ModelOutput {
   const mesesConstrucao = Math.trunc(input.mesesConstrucao);
   const fatorLiquido = 1 - (rec.comissaoPct || 0) - (rec.custoCartorioPct || 0);
 
+  // ─── Terreno e obra ────────────────────────────────────────────────────────
+  // Sem fases — o caminho de toda modelagem anterior a esta versão, e o que
+  // continua valendo por default: terreno inteiro no mês 1, obra linear na janela
+  // de construção.
+  if (!fasesAtivas) {
+    for (let m = 1; m <= prazoTotal; m++) {
+      land[m] = m === 1 ? terrenosTotal : 0;
+      construction[m] =
+        mesesConstrucao > 0 && m >= mesInicioObra && m <= mesFimObra ? obraTotal / mesesConstrucao : 0;
+    }
+  } else {
+    // Com fases, a obra de cada fase é distribuída linearmente dentro da janela
+    // DELA, não da janela de construção do projeto.
+    if (!terrenoPorFase && prazoTotal >= 1) land[1] = terrenosTotal;
+    for (const f of janelasFase) {
+      const obraFase = obraTotal * f.peso;
+      for (let m = f.inicio; m <= f.fim; m++) construction[m] += obraFase / f.duracao;
+      if (terrenoPorFase) land[f.inicio] += terrenosTotal * f.peso;
+    }
+  }
+
   for (let m = 1; m <= prazoTotal; m++) {
-    land[m] = m === 1 ? terrenosTotal : 0;
-    construction[m] =
-      mesesConstrucao > 0 && m >= mesInicioObra && m <= mesFimObra ? obraTotal / mesesConstrucao : 0;
+    // Property tax e outros custos ainda não conhecem fase: o tax continua rateado
+    // linearmente pelo prazo inteiro e os custos adicionais seguem a janela de
+    // construção do projeto. O próximo passo natural é o property tax por fase,
+    // começando no mês de início de cada uma — quem for mexer, mexe aqui.
     propertyTax[m] = taxAnoTotal / 12;
 
     let outros = 0;
@@ -231,7 +340,7 @@ export function calcular(input: ModelInput): ModelOutput {
         // Regra clássica: o capital próprio entra primeiro na obra. Só há saque
         // depois que a obra acumulada ultrapassa o equity disponível para obra.
         draw = dentroJanela
-          ? clamp(obraAcumulada - equityDisponivelObra, 0, Math.min(construction[m], capacidade))
+          ? clamp(obraAcumulada - equityDisponivelObraAte(m), 0, Math.min(construction[m], capacidade))
           : 0;
       } else if (fin.modoSaque === 'cash_demand') {
         // Dimensiona a dívida pela necessidade real de caixa do mês.
@@ -274,9 +383,15 @@ export function calcular(input: ModelInput): ModelOutput {
       // 5. APORTE DE EQUITY — a receita do mês cobre os custos do próprio mês.
       //    No mês da venda isso significa que não há chamada de capital para
       //    pagar juros e property tax daquele mês: o dinheiro da venda já entrou.
+      //    Precedência, nesta ordem: override manual, parcela do plano, resíduo.
+      //    No modo 'plano' o mês sem parcela recebe ZERO e o caixa fica negativo
+      //    se o plano não cobrir a demanda — é exatamente o que o usuário quer
+      //    enxergar, e a conferência de caixa mínimo acusa.
       let equityCall: number;
       if (temOverride(m, 'equity_call')) {
         equityCall = valorOverride(m, 'equity_call');
+      } else if (modoAporte === 'plano') {
+        equityCall = parcelaPorMes.get(m) ?? 0;
       } else {
         equityCall = Math.max(
           0,
@@ -323,6 +438,7 @@ export function calcular(input: ModelInput): ModelOutput {
         caixaAcumulado,
         demandaBruta: pagamentos + amortization - revenue[m],
         capacidadeSaque: capacidade,
+        equityDisponivelAcumulado: equityDisponivelObraAte(m),
       });
     }
     return meses;
