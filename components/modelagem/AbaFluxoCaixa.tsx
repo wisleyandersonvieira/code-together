@@ -74,6 +74,8 @@ export function AbaFluxoCaixa({
 
   const meses = resultado.meses;
   const manuais = resultado.celulasManuais;
+  /** Com o plano ligado, editar a linha de aporte grava parcela, não override. */
+  const planoLigado = rascunho.aportes?.modoAporte === 'plano';
 
   const confirmar = (mes: number, linha: LinhaFluxo) => {
     const valor = paraNumero(rascunhoTexto);
@@ -198,13 +200,20 @@ export function AbaFluxoCaixa({
                           setRascunhoTexto(String(Number(valor.toFixed(2))));
                           setEditando({ mes: m.mes, linha: def.linha! });
                         }}
-                        onDoubleClick={() => marcado && def.linha && reverterCelula(m.mes, def.linha)}
+                        onDoubleClick={() => {
+                          // Com o plano ligado a célula de aporte não tem override, mas
+                          // tem parcela — e o duplo clique precisa dar conta dela também.
+                          const reversivel = marcado || (planoLigado && def.linha === 'equity_call');
+                          if (reversivel && def.linha) reverterCelula(m.mes, def.linha);
+                        }}
                         title={
                           marcado
                             ? `Manual. Valor automático: ${dinheiroCurto(automatico)}. Duplo clique reverte.`
-                            : editavel
-                              ? 'Clique para lançar um valor manual'
-                              : 'Linha calculada — não recebe override'
+                            : !editavel
+                              ? 'Linha calculada — não recebe override'
+                              : planoLigado && def.linha === 'equity_call'
+                                ? 'Editando aqui você altera a parcela do plano de aportes deste mês. Duplo clique remove a parcela.'
+                                : 'Clique para lançar um valor manual'
                         }
                         className={cn(
                           'relative border-b border-slate-100 px-2 py-1.5 text-right tabular-nums',

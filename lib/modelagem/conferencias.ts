@@ -245,6 +245,176 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
     'Costuma indicar taxa muito alta com juros capitalizados. Reduza a taxa ou desligue a capitalização.',
   );
 
+  // ─── Plano de aportes ──────────────────────────────────────────────────────
+  // Só faz sentido no modo 'plano': no modo 'demanda' as parcelas ficam guardadas
+  // mas não são lançadas em mês nenhum, então divergência ali não significa nada.
+  const aportes = input.aportes;
+  if (aportes?.modoAporte === 'plano') {
+    const parcelas = aportes.parcelas ?? [];
+    const planejado = parcelas.reduce((a, p) => a + (p.valor || 0), 0);
+    const alvo = aportes.valorTotalAlvo || 0;
+    const difAlvo = planejado - alvo;
+    add(
+      'aporte_plano_vs_alvo',
+      'Parcelas do plano vs alvo declarado',
+      alvo === 0 || Math.abs(difAlvo) <= TOLERANCIA ? 'verde' : 'ambar',
+      dinheiro(difAlvo),
+      alvo === 0
+        ? 'Nenhum alvo declarado — as parcelas valem por si.'
+        : Math.abs(difAlvo) <= TOLERANCIA
+          ? `As parcelas somam o alvo de ${dinheiro(alvo)}.`
+          : `As parcelas somam ${dinheiro(planejado)} contra um alvo de ${dinheiro(alvo)}.`,
+      'O alvo nunca é imposto: quem manda no fluxo são as parcelas. Ajuste as parcelas ou corrija o alvo na aba Aportes.',
+    );
+
+    // Parcela além do prazo não é lançada em mês nenhum — o dinheiro não some do
+    // plano, mas não entra no fluxo. É diferente de override órfão só no nome.
+    const foraDoPrazo = parcelas.filter((p) => Math.trunc(p.mes) < 1 || Math.trunc(p.mes) > cronograma.prazoTotal);
+    const valorFora = foraDoPrazo.reduce((a, p) => a + (p.valor || 0), 0);
+    add(
+      'aporte_parcela_fora_prazo',
+      'Parcelas fora do prazo',
+      foraDoPrazo.length > 0 ? 'ambar' : 'verde',
+      `${foraDoPrazo.length}`,
+      foraDoPrazo.length > 0
+        ? `${foraDoPrazo.length} parcela(s) somando ${dinheiro(valorFora)} caem fora dos ${cronograma.prazoTotal} meses do cronograma e não entram no fluxo.`
+        : 'Todas as parcelas caem dentro do cronograma.',
+      'Mova as parcelas para meses dentro do prazo ou aumente o cronograma. O sistema não apaga parcela nenhuma sozinho.',
+    );
+
+    // Override em equity_call vence o plano — é a invariante do módulo. Onde há
+    // override, o mês do fluxo NÃO é a parcela, e isso precisa ficar visível.
+    const overridesAporte = (input.overrides ?? []).filter(
+      (o) => o.linha === 'equity_call' && o.mes >= 1 && o.mes <= cronograma.prazoTotal,
+    );
+    add(
+      'aporte_override_no_plano',
+      'Override de aporte com plano ligado',
+      overridesAporte.length > 0 ? 'ambar' : 'verde',
+      `${overridesAporte.length}`,
+      overridesAporte.length > 0
+        ? `${overridesAporte.length} mês(es) com override manual na linha de aporte. Nesses meses vale o override, não a parcela do plano.`
+        : 'Nenhum override manual disputando com o plano.',
+      'Reverta a célula no fluxo para o plano voltar a mandar, ou aceite o override — ele é a invariante do módulo e vence sempre.',
+    );
+  }
+
+  // ─── Fases ─────────────────────────────────────────────────────────────────
+  if (input.usaFases) {
+    const fases = cronograma.fases;
+
+    // Alocação de unidades por fase. Mesma regra de quantidade do motor, para a
+    // conferência cobrar exatamente o que o cálculo usa.
+    const alocado = new Map<number, number>();
+    for (const a of input.alocacoes ?? []) {
+      if (!input.unidades[a.unidadeIndex] || !fases[a.faseIndex]) continue;
+      alocado.set(
+        a.unidadeIndex,
+        (alocado.get(a.unidadeIndex) ?? 0) + Math.max(0, Math.trunc(a.quantidade || 0)),
+      );
+    }
+    const abertas = input.unidades
+      .map((u, i) => ({
+        nome: u.nome || `Tipologia ${i + 1}`,
+        esperado: Math.max(1, Math.trunc(u.quantidade || 1)),
+        alocado: alocado.get(i) ?? 0,
+      }))
+      .filter((x) => x.alocado !== x.esperado);
+    const fechadas = input.unidades.length - abertas.length;
+    add(
+      'alocacao_fases',
+      'Distribuição das unidades por fase',
+      abertas.length > 0 ? 'vermelho' : 'verde',
+      `${fechadas} de ${input.unidades.length} tipologias alocadas`,
+      abertas.length === 0
+        ? 'Cada tipologia tem todas as suas unidades distribuídas entre as fases.'
+        : fases.length === 0
+          ? 'Não há fase nenhuma cadastrada, então não há onde alocar as unidades — e o que não está alocado não entra no fluxo.'
+          : `Não fecham: ${abertas
+              .map(
+                (x) =>
+                  `${x.nome} (${x.alocado} de ${x.esperado}, ${x.alocado > x.esperado ? '+' : ''}${x.alocado - x.esperado})`,
+              )
+              .join('; ')}. O que não está alocado não é lançado em mês nenhum.`,
+      'Ajuste a distribuição por fase na aba Tipologias até cada linha fechar.',
+    );
+
+    if (fases.length === 0) {
+      add(
+        'fases_sem_linha',
+        'Fases cadastradas',
+        'ambar',
+        '0',
+        'O projeto está marcado como faseado mas não tem fase nenhuma cadastrada. O cálculo segue como frente única.',
+        'Cadastre as fases na aba Premissas ou desligue a divisão em fases.',
+      );
+    } else {
+      // Fase invertida tem intervalo degenerado; para sobreposição e buraco ela é
+      // lida como um único mês, que é o mesmo que o cálculo faz.
+      const invertidas = fases.filter((f) => f.mesFim < f.mesInicio);
+      add(
+        'fase_invertida',
+        'Fase com fim antes do início',
+        invertidas.length > 0 ? 'vermelho' : 'verde',
+        `${invertidas.length}`,
+        invertidas.length > 0
+          ? `Fase(s) ${invertidas.map((f) => f.nome).join(', ')} terminam antes de começar.`
+          : 'Todas as fases têm fim depois do início.',
+        'Corrija as datas da fase na aba Premissas.',
+      );
+
+      const estouram = fases.filter((f) => f.mesFim > cronograma.prazoTotal);
+      add(
+        'fases_dentro_prazo',
+        'Fases dentro do prazo do projeto',
+        estouram.length > 0 ? 'vermelho' : 'verde',
+        `${estouram.length}`,
+        estouram.length > 0
+          ? `Fase(s) ${estouram.map((f) => f.nome).join(', ')} terminam depois do mês ${cronograma.prazoTotal}. O custo delas é comprimido até o último mês em vez de sumir.`
+          : 'Todas as fases terminam dentro do cronograma.',
+        'Aumente o prazo nas premissas ou antecipe o fim da fase.',
+      );
+
+      const ordenadas = fases
+        .map((f) => ({ nome: f.nome, inicio: f.mesInicio, fim: Math.max(f.mesFim, f.mesInicio) }))
+        .sort((a, b) => a.inicio - b.inicio || a.fim - b.fim);
+      const sobrepostas: string[] = [];
+      for (let i = 1; i < ordenadas.length; i++) {
+        if (ordenadas[i].inicio <= ordenadas[i - 1].fim) {
+          sobrepostas.push(`${ordenadas[i - 1].nome} × ${ordenadas[i].nome}`);
+        }
+      }
+      add(
+        'fases_sobrepostas',
+        'Fases sobrepostas',
+        sobrepostas.length > 0 ? 'ambar' : 'verde',
+        `${sobrepostas.length}`,
+        sobrepostas.length > 0
+          ? `Há sobreposição entre ${sobrepostas.join('; ')}. Não é erro — só significa duas frentes de obra no mesmo mês.`
+          : 'Nenhuma fase se sobrepõe a outra.',
+        'Se a sobreposição não é intencional, ajuste as datas na aba Premissas.',
+      );
+
+      // Buraco: mês entre a primeira e a última fase que não pertence a fase nenhuma.
+      const primeiro = ordenadas[0].inicio;
+      const ultimo = Math.max(...ordenadas.map((f) => f.fim));
+      const buracos: number[] = [];
+      for (let m = primeiro; m <= ultimo; m++) {
+        if (!ordenadas.some((f) => m >= f.inicio && m <= f.fim)) buracos.push(m);
+      }
+      add(
+        'fases_com_buraco',
+        'Meses sem fase',
+        buracos.length > 0 ? 'ambar' : 'verde',
+        `${buracos.length}`,
+        buracos.length > 0
+          ? `Os meses ${buracos.join(', ')} ficam entre a primeira e a última fase sem pertencer a nenhuma — não recebem obra.`
+          : 'As fases cobrem todo o período entre a primeira e a última sem buraco.',
+        'Estenda uma fase vizinha ou crie a fase que falta na aba Premissas.',
+      );
+    }
+  }
+
   // ─── Obra sem meses de construção ──────────────────────────────────────────
   if (agregados.obraTotal > 0 && Math.trunc(input.mesesConstrucao) <= 0) {
     add(
@@ -261,11 +431,23 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
 }
 
 /**
- * Só estes dois casos impedem SALVAR. Todo o resto é sinalização — o cálculo
+ * Só estes TRÊS casos impedem SALVAR. Todo o resto é sinalização — o cálculo
  * continua rodando e devolvendo resultado mesmo com conferência vermelha.
+ *
+ * O critério é o mesmo nos três: são inputs em que gravar o estado inconsistente
+ * produziria uma modelagem que ninguém consegue interpretar depois.
+ *
+ *   soma_participacoes — rateio que não soma 100% distribui capital que não existe;
+ *   divisao_lucro      — idem para o lucro entre investidores e sponsor;
+ *   alocacao_fases     — unidade não alocada some do fluxo: a modelagem passaria a
+ *                        mostrar um custo de obra menor que o das próprias
+ *                        tipologias, sem nada na tela explicando a diferença.
+ *
+ * A terceira entrou por decisão explícita do usuário, que definiu a distribuição
+ * por fase como obrigatória quando o projeto é faseado. Sem esta lista, quem ler
+ * o arquivo depois vai achar que é bug — não é.
  */
 export function bloqueiaSalvamento(conferencias: Conferencia[]): Conferencia[] {
-  return conferencias.filter(
-    (c) => (c.chave === 'soma_participacoes' || c.chave === 'divisao_lucro') && c.semaforo === 'vermelho',
-  );
+  const BLOQUEANTES = ['soma_participacoes', 'divisao_lucro', 'alocacao_fases'];
+  return conferencias.filter((c) => BLOQUEANTES.includes(c.chave) && c.semaforo === 'vermelho');
 }

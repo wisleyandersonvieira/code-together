@@ -27,6 +27,25 @@ export function somarMeses(dataIso: string, meses: number): string {
   return `${anoFinal}-${p(mesFinal + 1)}-${p(diaFinal)}`;
 }
 
+/**
+ * Índice 1-based do mês de `data` em relação a `dataInicio`.
+ *
+ * Conta mês CALENDÁRIO, não dias: com início em 2026-01-10, tanto 2026-01-15
+ * quanto 2026-01-31 caem no mês 1, e 2026-02-01 já é o mês 2. É a mesma
+ * aritmética de `somarMeses` lida ao contrário, então `indiceMes(d, somarMeses(d, k))`
+ * devolve `k + 1` para qualquer k ≥ 0.
+ *
+ * Datas anteriores a `dataInicio` devolvem índice ≤ 0 — cabe a quem chama
+ * decidir o que fazer com isso (o motor limita à janela do cronograma e a
+ * conferência acusa; nada é descartado em silêncio).
+ */
+export function indiceMes(dataInicio: string, data: string): number {
+  const [anoI, mesI] = dataInicio.split('-').map(Number);
+  const [ano, mes] = data.split('-').map(Number);
+  if (!anoI || !mesI || !ano || !mes) return 1;
+  return (ano - anoI) * 12 + (mes - mesI) + 1;
+}
+
 /** Dias corridos entre duas datas ISO, em UTC. */
 export function diasEntre(inicioIso: string, fimIso: string): number {
   const ms = Date.parse(`${fimIso}T00:00:00Z`) - Date.parse(`${inicioIso}T00:00:00Z`);

@@ -1,5 +1,16 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
+import {
+  C,
+  criarContexto,
+  drawBadge,
+  drawHeader,
+  drawIndicatorCards,
+  drawInfoBlock,
+  drawRodape,
+  drawSectionTitle,
+  nomeSeguro,
+} from './pdf-theme';
 
 interface ExportData {
   data_vencimento: string;
@@ -99,33 +110,18 @@ export function exportToPDF(
   orcamentoData?: any[],
   aportesData?: any[]
 ) {
-  type RgbColor = [number, number, number];
-  const C = {
-    navy:      [17, 31, 59]    as RgbColor,
-    navySoft:  [229, 236, 246] as RgbColor,
-    graphite:  [59, 68, 82]    as RgbColor,
-    slate:     [107, 114, 128] as RgbColor,
-    border:    [217, 223, 232] as RgbColor,
-    light:     [245, 247, 250] as RgbColor,
-    white:     [255, 255, 255] as RgbColor,
-    green:     [22, 101, 52]   as RgbColor,
-    greenSoft: [236, 253, 245] as RgbColor,
-    rose:      [190, 24, 93]   as RgbColor,
-    roseSoft:  [255, 241, 242] as RgbColor,
-    blue:      [29, 78, 216]   as RgbColor,
-    blueSoft:  [239, 246, 255] as RgbColor,
-    gold:      [146, 103, 33]  as RgbColor,
-    goldSoft:  [255, 251, 235] as RgbColor,
-  };
-
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-  const pageWidth = doc.internal.pageSize.width;
-  
-  const pageHeight = doc.internal.pageSize.height;
-  const marginX = 14;
-  const contentWidth = pageWidth - marginX * 2;
-  const bottomReserve = 18;
-  const topStart = 14;
+
+  // Paleta e blocos vêm de `utils/pdf-theme` — este relatório é só mais um
+  // consumidor do design system, não o dono dele.
+  const ctx = criarContexto(doc);
+  const { sf, sd, st } = ctx;
+  const pageWidth = ctx.pageWidth;
+  const pageHeight = ctx.pageHeight;
+  const marginX = ctx.marginX;
+  const contentWidth = ctx.contentWidth;
+  const bottomReserve = ctx.bottomReserve;
+  const topStart = ctx.topStart;
   const emittedAt = new Date();
   const issuedAtLabel =
     emittedAt.toLocaleDateString('pt-BR') +
@@ -133,9 +129,14 @@ export function exportToPDF(
     emittedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   let y = topStart;
 
-  const sf = (color: RgbColor) => doc.setFillColor(color[0], color[1], color[2]);
-  const sd = (color: RgbColor) => doc.setDrawColor(color[0], color[1], color[2]);
-  const st = (color: RgbColor) => doc.setTextColor(color[0], color[1], color[2]);
+  /** Empresta o cursor ao contexto e o traz de volta: as tabelas abaixo são
+   *  desenhadas à mão e continuam mexendo no `y` local. */
+  const comCursor = <T,>(fn: () => T): T => {
+    ctx.y = y;
+    const r = fn();
+    y = ctx.y;
+    return r;
+  };
 
   const fmtDate = (d: string | null | undefined) => {
     if (!d) return '-';
@@ -151,62 +152,15 @@ export function exportToPDF(
   const saldoLiquido = totalReceitas - totalDespesas;
   const totalRegistros = despesasData.length + receitasData.length;
 
-  const drawLogo = (lx: number, ly: number, size: number, color: RgbColor) => {
-    const cx = lx + size / 2, cy = ly + size / 2;
-    const inner = size * 0.08, outer = size * 0.31, outerR = size * 0.065;
-    sd(color); sf(color); doc.setLineWidth(0.8);
-    const pts = [
-      { dx: 0, dy: -outer }, { dx: outer * 0.72, dy: -outer * 0.72 },
-      { dx: outer, dy: 0 }, { dx: outer * 0.72, dy: outer * 0.72 },
-      { dx: 0, dy: outer }, { dx: -outer * 0.72, dy: outer * 0.72 },
-      { dx: -outer, dy: 0 }, { dx: -outer * 0.72, dy: -outer * 0.72 },
-    ];
-    pts.forEach(p => { doc.line(cx, cy, cx + p.dx, cy + p.dy); doc.circle(cx + p.dx, cy + p.dy, outerR, 'FD'); });
-    doc.circle(cx, cy, inner, 'FD');
-  };
+  const drawHeaderBlock = () => comCursor(() => drawHeader(ctx, {
+    titulo: 'Relatório por Projeto — Extrato',
+    subtitulo: projetoInfo?.name || 'Todos os Projetos',
+    badge: 'Extrato Financeiro',
+    emitidoEm: issuedAtLabel,
+  }));
 
-  const drawSectionTitle = (eyebrow: string, title: string, show: 'both' | 'eyebrow' | 'title' = 'both') => {
-    ensureSpace(16);
-    if (show !== 'title' && eyebrow) {
-      st(C.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-      doc.text(eyebrow.toUpperCase(), marginX, y);
-      y += 4;
-    }
-    if (show !== 'eyebrow' && title) {
-      st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-      doc.text(title, marginX, y);
-      y += 4.5;
-    }
-    sd(C.border); doc.setLineWidth(0.35);
-    doc.line(marginX, y, pageWidth - marginX, y);
-    y += 6;
-  };
-
-  const drawHeader = () => {
-    const h = 34;
-    sf(C.navy); doc.roundedRect(marginX, y, contentWidth, h, 4, 4, 'F');
-    drawLogo(marginX + 5, y + 5, 18, C.white);
-    st(C.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-    doc.text('PROVISION', marginX + 28, y + 10);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-    doc.text('Relatório Financeiro', pageWidth - marginX - 4, y + 8, { align: 'right' });
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-    doc.text('Relatório por Projeto — Extrato', marginX + 28, y + 18);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
-    doc.text(projetoInfo?.name || 'Todos os Projetos', marginX + 28, y + 25);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-    doc.text(`Emitido em ${issuedAtLabel}`, marginX + 28, y + 30);
-    sf(C.white); doc.roundedRect(pageWidth - marginX - 42, y + 21, 38, 8, 3, 3, 'F');
-    st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text('Extrato Financeiro', pageWidth - marginX - 23, y + 26.2, { align: 'center' });
-    y += h + 4;
-    sd(C.border); doc.setLineWidth(0.4);
-    doc.line(marginX, y, pageWidth - marginX, y);
-    y += 8;
-  };
-
-  const drawInfoBlock = () => {
-    drawSectionTitle('Identificação', '', 'eyebrow');
+  const drawInfoBlockLocal = () => {
+    comCursor(() => drawSectionTitle(ctx, 'Identificação', '', 'eyebrow'));
     const labels: { label: string; value: string }[] = [];
     if (projetoInfo?.name) labels.push({ label: 'Projeto', value: projetoInfo.name });
     if (filtros?.situacaoPagamento) labels.push({ label: 'Situação', value: filtros.situacaoPagamento });
@@ -218,70 +172,21 @@ export function exportToPDF(
     }
     labels.push({ label: 'Emitido em', value: issuedAtLabel });
     if (labels.length % 2 !== 0) labels.push({ label: 'Registros', value: `${totalRegistros} registro(s)` });
-
-    const gap = 5;
-    const colWidth = (contentWidth - gap) / 2;
-    const rowHeights: number[] = [];
-    for (let i = 0; i < labels.length; i += 2) {
-      const pair = labels.slice(i, i + 2);
-      rowHeights.push(pair.reduce((rh, item) => Math.max(rh, 10 + doc.splitTextToSize(item.value, colWidth - 8).length * 4.2), 16));
-    }
-    ensureSpace(rowHeights.reduce((s, rh) => s + rh + 4, 0));
-    let localY = y;
-    labels.forEach((item, index) => {
-      const rowIndex = Math.floor(index / 2);
-      const colIndex = index % 2;
-      const x = marginX + colIndex * (colWidth + gap);
-      const boxH = rowHeights[rowIndex];
-      sf(C.light); sd(C.border); doc.roundedRect(x, localY, colWidth, boxH, 3, 3, 'FD');
-      st(C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-      doc.text(item.label.toUpperCase(), x + 4, localY + 5);
-      st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
-      doc.text(doc.splitTextToSize(item.value, colWidth - 8), x + 4, localY + 10.5);
-      if (colIndex === 1) localY += boxH + 4;
-    });
-    y = localY + 2;
+    comCursor(() => drawInfoBlock(ctx, labels));
   };
 
-  const drawIndicatorCards = () => {
-    drawSectionTitle('Resumo Financeiro', '', 'eyebrow');
-    type Tone = 'default' | 'positive' | 'highlight' | 'accent' | 'negative';
-    const cards: { label: string; value: string; tone: Tone }[] = [
-      { label: 'Total Receitas',    value: formatCurrency(totalReceitas),  tone: 'positive' },
-      { label: 'Total Despesas',    value: formatCurrency(totalDespesas),  tone: 'negative' },
-      { label: 'Saldo Líquido',     value: formatCurrency(saldoLiquido),   tone: saldoLiquido >= 0 ? 'highlight' : 'accent' },
-      { label: 'Total de Registros',value: `${totalRegistros} registro(s)`, tone: 'default' },
-    ];
-    const gap = 4, cols = 2;
-    const cardWidth = (contentWidth - gap) / cols;
-    const cardHeight = 20;
-    let localY = y;
-    cards.forEach((card, index) => {
-      if (index % cols === 0) ensureSpace(cardHeight + 4);
-      const cx = marginX + (index % cols) * (cardWidth + gap);
-      const palette = card.tone === 'positive'
-        ? { bg: C.greenSoft, text: C.green,    border: C.border }
-        : card.tone === 'negative'
-          ? { bg: C.roseSoft,  text: C.rose,     border: C.border }
-          : card.tone === 'highlight'
-            ? { bg: C.navySoft,  text: C.navy,     border: C.navy }
-            : card.tone === 'accent'
-              ? { bg: C.goldSoft,  text: C.gold,     border: C.border }
-              : { bg: C.white,     text: C.graphite, border: C.border };
-      sf(palette.bg); sd(palette.border); doc.roundedRect(cx, localY, cardWidth, cardHeight, 3, 3, 'FD');
-      if (card.tone === 'highlight') { sf(C.navy); doc.roundedRect(cx, localY, cardWidth, 3, 3, 3, 'F'); }
-      st(C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-      doc.text(card.label.toUpperCase(), cx + 4, localY + 7);
-      st(palette.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-      doc.text(doc.splitTextToSize(card.value, cardWidth - 8), cx + 4, localY + 14);
-      if (index % cols === cols - 1) localY += cardHeight + gap;
-    });
-    if (cards.length % cols !== 0) localY += cardHeight + gap;
-    y = localY + 2;
+  const drawIndicatorCardsLocal = () => {
+    comCursor(() => drawSectionTitle(ctx, 'Resumo Financeiro', '', 'eyebrow'));
+    comCursor(() => drawIndicatorCards(ctx, [
+      { label: 'Total Receitas',     value: formatCurrency(totalReceitas),   tone: 'positive' as const },
+      { label: 'Total Despesas',     value: formatCurrency(totalDespesas),   tone: 'negative' as const },
+      { label: 'Saldo Líquido',      value: formatCurrency(saldoLiquido),    tone: saldoLiquido >= 0 ? 'highlight' as const : 'accent' as const },
+      { label: 'Total de Registros', value: `${totalRegistros} registro(s)`, tone: 'default' as const },
+    ], 2));
   };
 
   const drawExtratoTable = () => {
-    drawSectionTitle('Detalhamento', '', 'eyebrow');
+    comCursor(() => drawSectionTitle(ctx, 'Detalhamento', '', 'eyebrow'));
     const extratoUnificado = [
       ...despesasData.map(item => ({ ...item, tipo: 'despesa' as const })),
       ...receitasData.map(item => ({ ...item, tipo: 'receita' as const })),
@@ -337,10 +242,8 @@ export function exportToPDF(
       doc.text(fmtDate(dataExib || item.data_vencimento), colX[0] + columns[0].width / 2, ty, { align: 'center' });
 
       // Tipo badge
-      sf(item.tipo === 'despesa' ? C.roseSoft : C.greenSoft);
-      doc.roundedRect(colX[1] + 1, y + 1.5, 16, 5, 2, 2, 'F');
-      st(item.tipo === 'despesa' ? C.rose : C.green); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
-      doc.text(item.tipo === 'despesa' ? 'DESP' : 'REC', colX[1] + 9, y + 5.2, { align: 'center' });
+      drawBadge(ctx, colX[1] + 1, y + 1.5, item.tipo === 'despesa' ? 'DESP' : 'REC',
+        item.tipo === 'despesa' ? 'negative' : 'positive', { largura: 16, tamanho: 7 });
 
       // Fornecedor/Cliente
       st(C.graphite); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
@@ -357,10 +260,8 @@ export function exportToPDF(
       // Situação badge
       const sitStr = String(item.situacao_pagamento || '');
       const isQuitada = /quit|recebido|pago/i.test(sitStr);
-      sf(isQuitada ? C.greenSoft : C.goldSoft);
-      doc.roundedRect(colX[5] + 1, y + 1.5, 18, 5, 2, 2, 'F');
-      st(isQuitada ? C.green : C.gold); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
-      doc.text(sitStr.substring(0, 9), colX[5] + 10, y + 5.2, { align: 'center' });
+      drawBadge(ctx, colX[5] + 1, y + 1.5, sitStr.substring(0, 9),
+        isQuitada ? 'positive' : 'accent', { largura: 18, tamanho: 6.5 });
 
       // Parcela
       st(C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
@@ -388,7 +289,7 @@ export function exportToPDF(
 
   const drawOrcamentoSection = () => {
     if (!orcamentoData || orcamentoData.length === 0) return;
-    drawSectionTitle('', 'Evolução do Orçamento', 'title');
+    comCursor(() => drawSectionTitle(ctx, '', 'Evolução do Orçamento', 'title'));
 
     const columns = [
       { label: 'Descrição',     width: 39, align: 'left'   as const },
@@ -463,7 +364,7 @@ export function exportToPDF(
 
   const drawAportesSection = () => {
     if (!aportesData || aportesData.length === 0) return;
-    drawSectionTitle('', 'Evolução dos Aportes', 'title');
+    comCursor(() => drawSectionTitle(ctx, '', 'Evolução dos Aportes', 'title'));
 
     // Columns: no "Tipo"
     const columns = [
@@ -571,34 +472,18 @@ export function exportToPDF(
     y += 18;
   };
 
-  drawHeader();
-  drawInfoBlock();
-  drawIndicatorCards();
+  drawHeaderBlock();
+  drawInfoBlockLocal();
+  drawIndicatorCardsLocal();
   drawExtratoTable();
   if (projetoInfo) {
     drawOrcamentoSection();
     drawAportesSection();
   }
 
-  // Footer on all pages
-  const pages = doc.getNumberOfPages();
-  for (let page = 1; page <= pages; page++) {
-    doc.setPage(page);
-    sd(C.border); doc.setLineWidth(0.35);
-    doc.line(marginX, pageHeight - 12.5, pageWidth - marginX, pageHeight - 12.5);
-    st(C.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text('PROVISION', marginX, pageHeight - 8);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-    doc.text('Sistema de Gestão Financeira e Projetos', marginX + 19, pageHeight - 8);
-    doc.text(`Emitido em ${issuedAtLabel}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
-    doc.text(`Página ${page} de ${pages}`, pageWidth - marginX, pageHeight - 8, { align: 'right' });
-  }
+  drawRodape(doc, issuedAtLabel, marginX);
 
-  const safeFilename = filename
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9._-]/g, '_');
-  doc.save(`${safeFilename}.pdf`);
+  doc.save(`${nomeSeguro(filename)}.pdf`);
 }
 
 // Interface específica para extrato do cliente

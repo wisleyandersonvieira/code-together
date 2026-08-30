@@ -5,7 +5,17 @@
  * cliente como STRING. Sem coerção explícita, `custo_terreno + custo_obra` vira
  * concatenação de texto e o modelo inteiro sai errado sem lançar erro nenhum.
  */
-import type { CustoAdicional, ModelInput, Override, Socio, Unidade } from './tipos';
+import type {
+  AlocacaoFase,
+  AporteParcela,
+  CustoAdicional,
+  Fase,
+  ModelInput,
+  Override,
+  PlanoAportes,
+  Socio,
+  Unidade,
+} from './tipos';
 import { LINHAS_FLUXO } from './tipos';
 
 /** Número tolerante: string do Postgres, null, undefined ou '' viram `padrao`. */
@@ -53,6 +63,12 @@ export interface LinhaModelagem {
 
 const lista = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 
+/**
+ * Tipologias. Os valores da linha são POR UNIDADE — quem multiplica é o motor.
+ *
+ * `aporte_base` não é mais lido: virou premissa do projeto em `modelagem_aportes`
+ * (migration 1761000000). A coluna continua no banco, deprecada.
+ */
 export function mapearUnidades(linhas: unknown): Unidade[] {
   return lista(linhas).map((u) => ({
     id: num(u.id) || undefined,
@@ -61,10 +77,79 @@ export function mapearUnidades(linhas: unknown): Unidade[] {
     areaSf: num(u.area_sf),
     custoTerreno: num(u.custo_terreno),
     custoObra: num(u.custo_obra),
-    aporteBase: num(u.aporte_base),
     precoVenda: num(u.preco_venda),
     propertyTaxAno: num(u.property_tax_ano),
+    // Sem linha ainda gravada, 1 é o que reproduz o comportamento anterior.
+    quantidade: Math.max(1, Math.trunc(num(u.quantidade, 1))),
   }));
+}
+
+/** Parcelas do plano (`modelagem_aporte_parcelas`), sempre ordenadas por mês. */
+export function mapearParcelasAporte(linhas: unknown): AporteParcela[] {
+  return lista(linhas)
+    .map((p) => ({
+      id: num(p.id) || undefined,
+      mes: Math.max(1, Math.trunc(num(p.mes, 1))),
+      valor: num(p.valor),
+      observacao: p.observacao == null ? null : String(p.observacao),
+    }))
+    .sort((a, b) => a.mes - b.mes);
+}
+
+/**
+ * Plano de aportes (`modelagem_aportes` + `modelagem_aporte_parcelas`).
+ *
+ * Sem linha de cabeçalho o retorno é o PADRÃO NEUTRO — modo 'demanda', tudo
+ * zerado, parcelas vazias — em vez de `undefined`: o motor não pode falhar por
+ * input incompleto, e a aba Aportes precisa de um objeto para editar. Modelagem
+ * sem linha calcula igual a antes da migration 1761000000.
+ */
+export function mapearAportes(linha: unknown, parcelas?: unknown): PlanoAportes {
+  const a = (linha && typeof linha === 'object' ? linha : {}) as Record<string, unknown>;
+  return {
+    modoAporte: (a.modo_aporte === 'plano' ? 'plano' : 'demanda') as PlanoAportes['modoAporte'],
+    aporteBaseTotal: num(a.aporte_base_total),
+    valorTotalAlvo: num(a.valor_total_alvo),
+    parcelas: mapearParcelasAporte(parcelas),
+  };
+}
+
+/**
+ * Fases (`modelagem_fases`). As datas ficam como ISO: o índice do mês é derivado
+ * pelo motor a partir de `modelagens.data_inicio`, nunca gravado.
+ */
+export function mapearFases(linhas: unknown): Fase[] {
+  return lista(linhas)
+    .map((f, i) => ({
+      id: num(f.id) || undefined,
+      ordem: Math.trunc(num(f.ordem, i)),
+      nome: texto(f.nome),
+      dataInicio: dataIso(f.data_inicio),
+      dataFim: dataIso(f.data_fim),
+    }))
+    .sort((a, b) => a.ordem - b.ordem);
+}
+
+/**
+ * Alocação de unidades por fase (`modelagem_unidade_fases`).
+ *
+ * O banco guarda por id e o motor trabalha por índice, igual à venda por unidade.
+ * Linha que aponta para uma unidade ou fase que não existe mais é descartada —
+ * o banco tem CASCADE nas duas pontas, então isso só acontece com dado em trânsito.
+ */
+export function mapearAlocacoes(
+  linhas: unknown,
+  indicePorUnidade: Map<number, number>,
+  indicePorFase: Map<number, number>,
+): AlocacaoFase[] {
+  return lista(linhas)
+    .map((a) => ({
+      id: num(a.id) || undefined,
+      unidadeIndex: indicePorUnidade.get(num(a.unidade_id)) ?? -1,
+      faseIndex: indicePorFase.get(num(a.fase_id)) ?? -1,
+      quantidade: Math.max(0, Math.trunc(num(a.quantidade))),
+    }))
+    .filter((a) => a.unidadeIndex >= 0 && a.faseIndex >= 0);
 }
 
 export function mapearCustos(linhas: unknown): CustoAdicional[] {
@@ -109,11 +194,16 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
   const fin = linha.financiamento ?? {};
   const rec = linha.receita ?? {};
   const unidades = mapearUnidades(linha.unidades);
+  const fases = mapearFases(linha.fases);
 
   // A venda por unidade é guardada por id da unidade; o motor trabalha por índice.
   const indicePorId = new Map<number, number>();
   unidades.forEach((u, i) => {
     if (u.id != null) indicePorId.set(u.id, i);
+  });
+  const indicePorFaseId = new Map<number, number>();
+  fases.forEach((f, i) => {
+    if (f.id != null) indicePorFaseId.set(f.id, i);
   });
   const vendasPorUnidade = lista(linha.vendas_unidade)
     .map((v) => ({
@@ -134,6 +224,11 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
     horizonteMaximo: num(linha.horizonte_maximo, 60),
     unidades,
     custosAdicionais: mapearCustos(linha.custos),
+    aportes: mapearAportes(linha.aportes, linha.aporte_parcelas),
+    usaFases: bool(linha.usa_fases),
+    terrenoPorFase: bool(linha.terreno_por_fase),
+    fases,
+    alocacoes: mapearAlocacoes(linha.unidade_fases, indicePorId, indicePorFaseId),
     financiamento: {
       taxaAnual: num(fin.taxa_anual),
       feeEstruturacaoPct: num(fin.fee_estruturacao_pct),

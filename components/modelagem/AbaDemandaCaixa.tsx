@@ -23,6 +23,17 @@ const COR_EQUITY = '#f59e0b';
 export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }: Props) {
   const [previa, setPrevia] = useState<ModelOutput | null>(null);
   const moeda = rascunho.moeda;
+  // Com o plano ligado, o aporte do mês deixa de ser resíduo do caixa e passa a
+  // ser a parcela. A comparação entre as duas curvas é o que justifica esta tela:
+  // é aqui que se vê o plano não cobrindo a demanda, antes do caixa ficar negativo.
+  const planoLigado = rascunho.aportes?.modoAporte === 'plano';
+  const parcelaPorMes = useMemo(() => {
+    const mapa = new Map<number, number>();
+    for (const p of rascunho.aportes?.parcelas ?? []) {
+      mapa.set(p.mes, (mapa.get(p.mes) ?? 0) + (p.valor || 0));
+    }
+    return mapa;
+  }, [rascunho.aportes?.parcelas]);
   const d = (v: number | null | undefined) => dinheiro(v, moeda);
   const colchao = rascunho.financiamento.colchaoMinimoCaixa;
   const teto = resultado.apuracao.tetoDivida;
@@ -189,7 +200,17 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
         <table className="w-full min-w-[900px]">
           <thead className="bg-slate-50">
             <tr>
-              {['Mês', 'Demanda bruta', 'Caixa de abertura', 'Saque', 'Aporte', 'Caixa de fechamento', 'Folga vs colchão', ''].map((h, i) => (
+              {[
+                'Mês',
+                'Demanda bruta',
+                'Caixa de abertura',
+                'Saque',
+                ...(planoLigado ? ['Plano de aportes'] : []),
+                'Aporte',
+                'Caixa de fechamento',
+                'Folga vs colchão',
+                '',
+              ].map((h, i) => (
                 <th key={h + i} className={cn('px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500', i === 0 ? 'text-left' : 'text-right')}>
                   {h}
                 </th>
@@ -209,6 +230,20 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.demandaBruta)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-600">{d(m.caixaAbertura)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.draw)}</td>
+                  {planoLigado ? (
+                    <td
+                      className={cn(
+                        'px-3 py-2 text-right text-sm tabular-nums',
+                        // O plano previu menos capital do que o mês pediu: é a
+                        // origem do buraco de caixa que a coluna à direita mostra.
+                        m.demandaBruta - m.draw > (parcelaPorMes.get(m.mes) ?? 0) + 0.01
+                          ? 'font-semibold text-amber-700'
+                          : 'text-slate-600',
+                      )}
+                    >
+                      {d(parcelaPorMes.get(m.mes) ?? 0)}
+                    </td>
+                  ) : null}
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.equityCall)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-900">{d(m.caixaAcumulado)}</td>
                   <td className={cn('px-3 py-2 text-right text-sm tabular-nums', abaixoColchao ? 'font-semibold text-red-600' : 'text-slate-600')}>

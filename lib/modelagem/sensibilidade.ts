@@ -7,7 +7,7 @@
  * bisseção sobre o próprio motor, não por fórmula fechada.
  */
 import { calcular } from './motor';
-import type { ModelInput, ModelOutput } from './tipos';
+import type { ModelInput, ModelOutput, Unidade } from './tipos';
 
 export interface CelulaSensibilidade {
   variacaoPreco: number;
@@ -93,8 +93,10 @@ export interface PontosEquilibrio {
 }
 
 export function pontosDeEquilibrio(input: ModelInput): PontosEquilibrio {
-  const vgv = input.unidades.reduce((a, u) => a + (u.precoVenda || 0), 0);
-  const obra = input.unidades.reduce((a, u) => a + (u.custoObra || 0), 0);
+  // Totais do projeto, não por unidade: os valores da tipologia são unitários.
+  const qtd = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
+  const vgv = input.unidades.reduce((a, u) => a + (u.precoVenda || 0) * qtd(u), 0);
+  const obra = input.unidades.reduce((a, u) => a + (u.custoObra || 0) * qtd(u), 0);
 
   const fatorPreco = fatorDeEquilibrio(input, (f) => perturbar(input, f, 1), 0.01, 1);
   const fatorCusto = fatorDeEquilibrio(input, (f) => perturbar(input, 1, f), 1, 10);

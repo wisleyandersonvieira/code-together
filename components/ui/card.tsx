@@ -30,31 +30,25 @@ const CardHeader = React.forwardRef<
 CardHeader.displayName = "CardHeader"
 
 /**
- * `size` existe para o título de seção do Dashboard sem mexer no default: as
- * outras ~57 telas que usam CardTitle continuam no `text-2xl` de sempre.
+ * `page` keeps the historical look (large, high-contrast) used by form and
+ * report screens. `section` is the quieter label used when the card title must
+ * not compete with the data it introduces.
  */
 const cardTitleSizes = {
-  default: "text-2xl font-semibold leading-none tracking-tight",
-  sm: "text-sm font-semibold leading-none tracking-tight",
-  section: "text-sm font-semibold uppercase tracking-wide leading-none text-muted-foreground",
+  page: "text-2xl font-semibold leading-none tracking-tight text-card-foreground",
+  section:
+    "text-sm font-semibold uppercase leading-none tracking-wide text-muted-foreground",
 } as const
 
-const CardTitle = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLHeadingElement> & {
-    size?: keyof typeof cardTitleSizes
-  }
->(({ className, size = "default", ...props }, ref) => (
-  <h3
-    ref={ref}
-    className={cn(
-      cardTitleSizes[size],
-      size === "section" ? undefined : "text-card-foreground",
-      className,
-    )}
-    {...props}
-  />
-))
+interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {
+  size?: keyof typeof cardTitleSizes
+}
+
+const CardTitle = React.forwardRef<HTMLParagraphElement, CardTitleProps>(
+  ({ className, size = "page", ...props }, ref) => (
+    <h3 ref={ref} className={cn(cardTitleSizes[size], className)} {...props} />
+  ),
+)
 CardTitle.displayName = "CardTitle"
 
 const CardDescription = React.forwardRef<
