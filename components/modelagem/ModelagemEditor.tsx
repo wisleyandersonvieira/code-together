@@ -2,8 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
-import { Loader2, Save } from 'lucide-react';
+import { ChevronDown, Download, FileSpreadsheet, FileText, Loader2, Save, Table2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FinanceDetailHeader, financeDetailTabsTriggerClassName } from '@/components/finance/detail-ui';
 import { useToast } from '@/hooks/use-toast';
@@ -66,7 +72,7 @@ import { AbaResultado } from './AbaResultado';
 import { AbaDemandaCaixa } from './AbaDemandaCaixa';
 import { AbaSensibilidade } from './AbaSensibilidade';
 import { PainelConferencias } from './PainelConferencias';
-import { exportarFluxoCsv, exportarXlsx } from './exportar';
+import { exportarFluxoCsv, exportarModelagemPdf, exportarXlsx } from './exportar';
 import { dinheiro, multiplo, percentual } from './formato';
 
 const ABAS = [
@@ -96,6 +102,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [original, setOriginal] = useState<ModelInput | null>(null);
   const [cenarioId, setCenarioId] = useState<number | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [exportando, setExportando] = useState<'pdf' | 'xlsx' | 'csv' | null>(null);
 
   const [salvarPremissas] = useMutateAction(updateModelagemPremissasAction);
   const [criarUnidade] = useMutateAction(createModelagemUnidadeAction);
@@ -280,6 +287,29 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     setRascunho({ ...rascunho, overrides: [] });
     await apagarOverridesTodos({ modelagemId, cenarioId }).catch(() => undefined);
     toast({ title: 'Modelagem revertida para automático' });
+  };
+
+  // ─── Exportação ───────────────────────────────────────────────────────────
+  const exportar = async (tipo: 'pdf' | 'xlsx' | 'csv') => {
+    if (!rascunho || !resultado || exportando) return;
+    setExportando(tipo);
+    try {
+      // O PDF roda a sensibilidade (dezenas de passadas do motor) e o Excel
+      // formata 60 colunas: os dois travam a thread por alguns segundos. Este
+      // respiro deixa o React pintar o botão em estado de carregamento antes.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      if (tipo === 'pdf') exportarModelagemPdf(rascunho, resultado);
+      else if (tipo === 'xlsx') await exportarXlsx(rascunho, resultado);
+      else exportarFluxoCsv(rascunho, resultado);
+    } catch (erro) {
+      toast({
+        title: 'Falha ao exportar',
+        description: erro instanceof Error ? erro.message : 'Não foi possível gerar o arquivo.',
+        variant: 'destructive',
+      });
+    } finally {
+      setExportando(null);
+    }
   };
 
   // ─── Salvamento ───────────────────────────────────────────────────────────
@@ -484,12 +514,33 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
           ))}
         </div>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={() => exportarFluxoCsv(rascunho, resultado)}>
-            CSV do fluxo
-          </Button>
-          <Button type="button" variant="outline" onClick={() => exportarXlsx(rascunho, resultado)}>
-            XLSX
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" disabled={exportando !== null}>
+                {exportando ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                {exportando ? 'Gerando…' : 'Exportar'}
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onSelect={() => exportar('pdf')}>
+                <FileText className="mr-2 h-4 w-4" />
+                Relatório PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportar('xlsx')}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Planilha Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportar('csv')}>
+                <Table2 className="mr-2 h-4 w-4" />
+                CSV do fluxo
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button type="button" onClick={salvar} disabled={salvando || bloqueios.length > 0}>
             {salvando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Salvar
