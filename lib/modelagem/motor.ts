@@ -351,19 +351,6 @@ export function fatorJurosDoMes(
   }
 }
 
-/**
- * Prestação constante (sistema Price) de `principal` em `n` meses à taxa `i`.
- *
- * Puro e total: nunca lança. Taxa zero ou negativa vira amortização linear, que é
- * o limite matemático da fórmula quando i → 0; sem essa cláusula a divisão por
- * `1 - (1+0)^-n` = 0 devolveria Infinity e contaminaria o fluxo inteiro.
- */
-export function prestacaoPrice(principal: number, i: number, n: number): number {
-  if (n <= 0) return principal;
-  if (i <= 0) return principal / n;
-  return (principal * i) / (1 - Math.pow(1 + i, -n));
-}
-
 interface EstadoPonto {
   feeTotal: number;
   /** Custo financeiro de caixa por mês, indexado de 1 a prazoTotal. */
@@ -896,18 +883,23 @@ export function calcular(input: ModelInput): ModelOutput {
   const reservaSacada = fin.reservaJurosSacada !== false;
 
   // ─── Amortização: só release e quitação na saída ───────────────────────────
-  // ATENÇÃO — MUDANÇA DELIBERADA DE COMPORTAMENTO. Até aqui os modos 'price' e
-  // 'sac' (migration 1762200000) amortizavam por PRESTAÇÃO, com carência,
-  // vencimento e balloon. O passo 3 passou a ser, por decisão explícita do
-  // produto, apenas o release do mês mais a quitação do mês de saída. Nos modos
-  // 'price' e 'sac' isso significa: sem venda, sem amortização — e saldo devedor
-  // em aberto no fim, que `saldo_devedor_final` acusa em vermelho.
+  // Sobraram DOIS modos, e o passo 3 é a implementação inteira dos dois:
+  //   'at_exit' — o saldo remanescente sai no mês da saída;
+  //   'manual'  — nada automático, só overrides.
+  // O release por unidade vendida amortiza nos dois, porque não é modo: é
+  // cláusula do contrato.
+  //
+  // 'price' e 'sac' (prestação, carência, vencimento e balloon) foram removidos
+  // pela migration 1763400000, depois de o passo 3 ter passado a ser release +
+  // quitação na saída — a partir dali os dois já produziam exatamente o mesmo
+  // ModelOutput que 'manual', e a migration converteu as linhas para 'manual'
+  // sem mudar número nenhum.
   //
   // `prazoMeses`, `carenciaMeses`, `amortizacaoMeses` e `balloonNoVencimento`
-  // continuam no input e no banco, e continuam alimentando as conferências e a
-  // prévia de prestação da interface — mas NÃO entram mais no fluxo. Quem for
-  // reintroduzir a prestação: é aqui e no passo 3, e a previsão do passo 1 tem
-  // de aprender a mesma conta, senão o saque volta a ser dimensionado a menos.
+  // continuam no input e no banco por compatibilidade, e NÃO têm efeito em lugar
+  // nenhum. Quem for reintroduzir a prestação: é aqui e no passo 3, e a previsão
+  // do passo 1 tem de aprender a mesma conta, senão o saque volta a ser
+  // dimensionado a menos e o caixa volta a fechar negativo.
 
   // ─── Release price ─────────────────────────────────────────────────────────
   // Valor fixo tem precedência sobre o percentual — ver o COMMENT da coluna. O

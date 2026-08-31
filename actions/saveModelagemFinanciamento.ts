@@ -25,7 +25,10 @@ function saveModelagemFinanciamento() {
         reserva_juros = COALESCE({{params.reservaJuros}}::decimal, 0),
         reserva_juros_sacada = COALESCE({{params.reservaJurosSacada}}::boolean, TRUE),
 
-        -- Carência, prestação e balloon (1762200000). prazo_meses e
+        -- Carência, prestação e balloon (1762200000). INERTES desde a
+        -- 1763400000, que removeu os modos 'price' e 'sac': continuam sendo
+        -- gravados para não perder o que o usuário declarou, e não têm efeito
+        -- no cálculo. prazo_meses e
         -- amortizacao_meses aceitam NULL: nulo é "não declarado", não zero.
         prazo_meses = {{params.prazoMeses}}::int,
         carencia_meses = COALESCE({{params.carenciaMeses}}::int, 0),

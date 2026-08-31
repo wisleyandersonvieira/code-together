@@ -16,11 +16,11 @@ import type {
 } from '@/lib/modelagem';
 import {
   CONVENCOES_JUROS,
+  MODOS_AMORTIZACAO,
   EXPLICACAO_MODO_SAQUE,
-  fatorJurosDoMes,
   MODOS_SAQUE,
-  prestacaoPrice,
   ROTULO_CONVENCAO_JUROS,
+  ROTULO_MODO_AMORTIZACAO,
   ROTULO_MODO_SAQUE,
 } from '@/lib/modelagem';
 import { dinheiro, percentual } from './formato';
@@ -69,7 +69,6 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
     return Number.isFinite(minimo) ? dinheiro(minimo, rascunho.moeda) : 'sem teto';
   })();
 
-  const usaPrestacao = fin.modoAmortizacao === 'price' || fin.modoAmortizacao === 'sac';
   const curva = fin.benchmarkCurva ?? [];
   const prazoTotal = resultado.cronograma.prazoTotal;
 
@@ -92,19 +91,6 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
         valor: valorDoMes(k + 1) ?? fin.benchmarkPadrao,
       })),
     });
-
-  /**
-   * Prévia da prestação, pela MESMA função pura do motor. É só uma prévia: o
-   * motor recalcula a prestação a cada saque novo, sobre o principal daquele
-   * momento, e aqui o principal é o total sacado do projeto inteiro.
-   */
-  const previaPrestacao = () => {
-    const taxaAno = fin.tipoTaxa === 'variavel' ? fin.benchmarkPadrao + fin.spread : fin.taxaAnual;
-    const i = fatorJurosDoMes(fin.convencaoJuros, taxaAno, resultado.cronograma.dataInicio);
-    const n = Math.max(1, Math.trunc(fin.amortizacaoMeses ?? fin.prazoMeses ?? prazoTotal ?? 1));
-    const principal = resultado.apuracao.dividaSacada;
-    return fin.modoAmortizacao === 'sac' ? principal / n : prestacaoPrice(principal, i, n);
-  };
 
   return (
     <div className="space-y-6">
@@ -284,10 +270,11 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="at_exit">Quitação na saída</SelectItem>
-                <SelectItem value="price">Price (prestação constante)</SelectItem>
-                <SelectItem value="sac">SAC (principal constante)</SelectItem>
-                <SelectItem value="manual">Manual</SelectItem>
+                {MODOS_AMORTIZACAO.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {ROTULO_MODO_AMORTIZACAO[m]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -316,76 +303,13 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
           </div>
         </div>
 
-        {/* Carência, prestação e balloon: só aparecem nos modos que os usam. */}
-        {usaPrestacao ? (
-          <div className="mt-4 grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-4">
-            <div className="space-y-2">
-              <Label>Prazo da dívida (meses)</Label>
-              <Input
-                type="number"
-                min={1}
-                className={financeDetailFieldClassName}
-                placeholder="sem vencimento"
-                value={fin.prazoMeses ?? ''}
-                onChange={(e) => mudar({ prazoMeses: numeroOuNulo(e.target.value) })}
-              />
-              <p className="text-xs text-slate-500">
-                {fin.prazoMeses
-                  ? `Vence no mês ${fin.mesInicioSaque + fin.prazoMeses - 1}.`
-                  : 'Sem prazo não há vencimento nem balloon.'}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>Carência (meses)</Label>
-              <Input
-                type="number"
-                min={0}
-                className={financeDetailFieldClassName}
-                value={fin.carenciaMeses}
-                onChange={(e) => mudar({ carenciaMeses: Math.max(0, Number(e.target.value) || 0) })}
-              />
-              <p className="text-xs text-slate-500">Interest-only: só juros, sem amortizar.</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Amortização (meses)</Label>
-              <Input
-                type="number"
-                min={1}
-                className={financeDetailFieldClassName}
-                placeholder={String(fin.prazoMeses ?? prazoTotal)}
-                value={fin.amortizacaoMeses ?? ''}
-                onChange={(e) => mudar({ amortizacaoMeses: numeroOuNulo(e.target.value) })}
-              />
-              <p className="text-xs text-slate-500">
-                Maior que o prazo é o que gera o balloon — 20 de prazo e 300 de amortização é o
-                caso clássico.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>Prestação estimada</Label>
-              <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold tabular-nums text-slate-900">
-                {dinheiro(previaPrestacao(), rascunho.moeda)}
-              </div>
-              <p className="text-xs text-slate-500">
-                Prévia sobre os {dinheiro(resultado.apuracao.dividaSacada, rascunho.moeda)} sacados. O
-                motor recalcula a cada saque novo.
-              </p>
-            </div>
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 md:col-span-4">
-              <Switch
-                checked={fin.balloonNoVencimento}
-                onCheckedChange={(v) => mudar({ balloonNoVencimento: v })}
-              />
-              <span className="text-sm">
-                <span className="font-medium text-slate-800">Balloon no vencimento</span>
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  Todo o saldo remanescente é amortizado de uma vez no mês do vencimento. Desligado,
-                  a dívida simplesmente para de amortizar e o saldo fica em aberto.
-                </span>
-              </span>
-            </label>
-          </div>
-        ) : null}
+        <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600">
+          {fin.modoAmortizacao === 'at_exit'
+            ? 'Todo o saldo remanescente é amortizado no mês da saída.'
+            : 'Nenhuma amortização automática — só o que for lançado à mão na linha de amortização.'}{' '}
+          O release por unidade vendida amortiza nos dois modos: é cláusula do contrato, não modo de
+          amortização.
+        </p>
       </FinanceDetailSectionCard>
 
       <FinanceDetailSectionCard

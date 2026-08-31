@@ -959,45 +959,11 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
     );
   }
 
-  // ─── Carência, prestação e balloon ─────────────────────────────────────────
-  // Restritas aos modos NOVOS 'price' e 'sac': 'at_exit' e 'manual' seguem com as
-  // conferências de sempre.
-  if (fin.modoAmortizacao === 'price' || fin.modoAmortizacao === 'sac') {
-    const prazoDivida = fin.prazoMeses == null ? null : Math.max(1, Math.trunc(fin.prazoMeses));
-    const mesVencimento = prazoDivida == null ? null : fin.mesInicioSaque + prazoDivida - 1;
-
-    add(
-      'amortizacao_alem_do_prazo',
-      'Vencimento da dívida dentro do projeto',
-      mesVencimento != null && mesVencimento > cronograma.prazoTotal ? 'vermelho' : 'verde',
-      mesVencimento == null ? 'sem vencimento' : `mês ${mesVencimento}`,
-      mesVencimento == null
-        ? 'Nenhum prazo de dívida declarado: não há vencimento nem balloon, e a amortização segue até o fim do cronograma.'
-        : mesVencimento > cronograma.prazoTotal
-          ? `A dívida vence no mês ${mesVencimento}, depois dos ${cronograma.prazoTotal} meses do projeto. O balloon nunca é lançado e o saldo fica em aberto.`
-          : `A dívida vence no mês ${mesVencimento}, dentro dos ${cronograma.prazoTotal} meses do projeto.`,
-      'Encurte o prazo da dívida, aumente o cronograma do projeto, ou aceite que a dívida sobrevive ao modelo — mas então o saldo final não fecha.',
-    );
-
-    // Balloon que derruba o caixa: o mês do vencimento é o único que interessa,
-    // porque é ali que o saldo remanescente sai de uma vez.
-    const mesDoBalloon =
-      mesVencimento != null && fin.balloonNoVencimento
-        ? meses.find((m) => m.mes === mesVencimento)
-        : undefined;
-    if (mesDoBalloon) {
-      add(
-        'balloon_sem_caixa',
-        'Caixa no mês do balloon',
-        mesDoBalloon.caixaAcumulado < -TOLERANCIA ? 'ambar' : 'verde',
-        dinheiro(mesDoBalloon.caixaAcumulado),
-        mesDoBalloon.caixaAcumulado < -TOLERANCIA
-          ? `O balloon de ${dinheiro(mesDoBalloon.amortization)} no mês ${mesDoBalloon.mes} derruba o caixa acumulado para ${dinheiro(mesDoBalloon.caixaAcumulado)}.`
-          : `O caixa comporta o balloon de ${dinheiro(mesDoBalloon.amortization)} no mês ${mesDoBalloon.mes}.`,
-        'Antecipe receita para antes do vencimento, alongue o prazo da dívida, ou programe um aporte no mês do balloon.',
-      );
-    }
-  }
+  // As conferências `amortizacao_alem_do_prazo` e `balloon_sem_caixa` viviam aqui
+  // e saíram com os modos 'price' e 'sac' (migration 1763400000): as duas só
+  // faziam sentido com prestação, vencimento e balloon. `prazoMeses`,
+  // `carenciaMeses`, `amortizacaoMeses` e `balloonNoVencimento` continuam no
+  // input, sem efeito e sem conferência — não há mais nada a cobrar deles.
 
   // ─── Release price ─────────────────────────────────────────────────────────
   // Restritas a quem de fato configurou release: com releasePrice = 0 e

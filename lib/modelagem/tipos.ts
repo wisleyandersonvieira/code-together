@@ -331,13 +331,31 @@ export const EXPLICACAO_MODO_SAQUE: Record<ModoSaque, string> = {
 };
 
 /**
- * 'at_exit' e 'manual' são os modos de sempre. 'price' (prestação constante) e
- * 'sac' (principal constante) são modos NOVOS da migration 1762200000 — nenhuma
- * modelagem já salva os tem, então o caminho novo é inalcançável para ela.
+ * Como a dívida é quitada.
+ *
+ * 'at_exit' — todo o saldo remanescente sai no mês da saída.
+ * 'manual'  — nenhuma amortização automática, só overrides.
+ *
+ * Em QUALQUER um dos dois, o release por unidade vendida amortiza no mês da
+ * venda: release não é modo de amortização, é cláusula do contrato, e vale
+ * junto com o modo escolhido.
+ *
+ * 'price' (prestação constante) e 'sac' (principal constante) existiram entre as
+ * migrations 1762200000 e 1763400000 e foram REMOVIDOS. A 1763400000 converteu
+ * as linhas que os tinham em 'manual' — que é exatamente o resultado que elas já
+ * produziam desde que o passo 3 do motor passou a ser release + quitação na
+ * saída. `prazoMeses`, `carenciaMeses`, `amortizacaoMeses` e
+ * `balloonNoVencimento` continuam no input e no banco por compatibilidade, mas
+ * não têm efeito em lugar nenhum.
  */
-export type ModoAmortizacao = 'at_exit' | 'manual' | 'price' | 'sac';
+export type ModoAmortizacao = 'at_exit' | 'manual';
 
-export const MODOS_AMORTIZACAO: ModoAmortizacao[] = ['at_exit', 'manual', 'price', 'sac'];
+export const MODOS_AMORTIZACAO: ModoAmortizacao[] = ['at_exit', 'manual'];
+
+export const ROTULO_MODO_AMORTIZACAO: Record<ModoAmortizacao, string> = {
+  at_exit: 'Quitação na saída',
+  manual: 'Manual',
+};
 
 export type MomentoFee = 'first_draw' | 'contract_month';
 
@@ -428,14 +446,19 @@ export interface Financiamento {
    */
   reservaJurosSacada: boolean;
 
-  // ─── Carência, prestação e balloon (migration 1762200000) ──────────────────
-  /** Prazo da dívida a partir de `mesInicioSaque`. Nulo = sem vencimento. */
+  // ─── Carência, prestação e balloon (1762200000, INERTES desde a 1763400000) ─
+  // Os quatro campos existiam para os modos 'price' e 'sac'. Com os dois modos
+  // removidos, NENHUM deles tem efeito: não entram no fluxo, não alimentam
+  // conferência e não aparecem na interface. Continuam no tipo e no banco para
+  // não apagar o que o usuário declarou — e para quem for reintroduzir
+  // amortização por prestação encontrar os dados no lugar.
+  /** INERTE. Prazo da dívida a partir de `mesInicioSaque`. Nulo = sem vencimento. */
   prazoMeses?: number | null;
-  /** Meses de interest-only contados de `mesInicioSaque`. */
+  /** INERTE. Meses de interest-only contados de `mesInicioSaque`. */
   carenciaMeses: number;
-  /** Prazo de amortização. Maior que `prazoMeses` é o que gera o balloon. */
+  /** INERTE. Prazo de amortização. Maior que `prazoMeses` é o que gerava o balloon. */
   amortizacaoMeses?: number | null;
-  /** No vencimento, amortiza todo o saldo remanescente de uma vez. */
+  /** INERTE. No vencimento, amortizava todo o saldo remanescente de uma vez. */
   balloonNoVencimento: boolean;
 
   // ─── Release price (migration 1762300000) ──────────────────────────────────

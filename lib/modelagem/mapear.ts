@@ -409,9 +409,17 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
       maxLtcPct: numeroOuNulo(fin.max_ltc_pct),
       valorContratado: numeroOuNulo(fin.valor_contratado),
       custoFinanceiroNaDemanda: bool(fin.custo_financeiro_na_demanda),
-      modoAmortizacao: (MODOS_AMORTIZACAO.includes(fin.modo_amortizacao)
-        ? fin.modo_amortizacao
-        : 'at_exit') as ModelInput['financiamento']['modoAmortizacao'],
+      // 'price' e 'sac' foram removidos pela migration 1763400000, que converteu
+      // as linhas gravadas em 'manual'. A tradução é repetida AQUI de propósito:
+      // enquanto a migration não tiver rodado — ou numa réplica atrasada —, uma
+      // linha ainda em 'price' precisa mapear para 'manual', que é exatamente o
+      // resultado que ela já produzia. Cair no fallback 'at_exit' acrescentaria
+      // uma quitação no mês da saída que ela nunca teve.
+      modoAmortizacao: (fin.modo_amortizacao === 'price' || fin.modo_amortizacao === 'sac'
+        ? 'manual'
+        : MODOS_AMORTIZACAO.includes(fin.modo_amortizacao)
+          ? fin.modo_amortizacao
+          : 'at_exit') as ModelInput['financiamento']['modoAmortizacao'],
       capitalizarJuros: bool(fin.capitalizar_juros),
       colchaoMinimoCaixa: num(fin.colchao_minimo_caixa),
       // Ausente = FALSE, o default da coluna (migration 1763300000): toda

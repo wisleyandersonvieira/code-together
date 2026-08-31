@@ -6,7 +6,6 @@ export {
   basesDeCalculo,
   calcular,
   fatorJurosDoMes,
-  prestacaoPrice,
   resolverCustos,
   valorEfetivoCusto,
 } from './motor';

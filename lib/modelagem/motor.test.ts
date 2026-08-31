@@ -24,7 +24,7 @@ import {
 } from './aportes';
 import { apuracaoAnual, totalAnual } from './anual';
 import { mapearAportes, mapearCustos, mapearModelInput, mapearSocios } from './mapear';
-import { CATEGORIAS_CUSTO } from './tipos';
+import { CATEGORIAS_CUSTO, MODOS_AMORTIZACAO } from './tipos';
 import type { CustoAdicional, ModelInput, Override, RegraRateioCapital, Socio, Takedown } from './tipos';
 
 const DOLAR = 1.0;
@@ -2305,13 +2305,19 @@ describe('17 — reserva de juros', () => {
 });
 
 describe('18 — amortização: só release e quitação na saída', () => {
-  // MUDANÇA DELIBERADA DE COMPORTAMENTO. Até aqui 'price' e 'sac' (migration
-  // 1762200000) amortizavam por PRESTAÇÃO, com carência, vencimento e balloon. O
-  // passo 3 passou a ser apenas o release do mês mais a quitação do mês de saída.
-  // Estes testes fixam o contrato NOVO — e o de 'at_exit', que não mudou.
+  // Sobraram DOIS modos: 'at_exit' e 'manual'. 'price' e 'sac' foram removidos
+  // pela migration 1763400000 — a essa altura já produziam exatamente o mesmo
+  // ModelOutput que 'manual', e as linhas gravadas foram convertidas para ele.
   const referencia = calcular(casoBase());
 
-  it("at_exit produz o resultado idêntico ao de hoje, com os campos novos preenchidos", () => {
+  it('só existem dois modos de amortização', () => {
+    expect(MODOS_AMORTIZACAO).toEqual(['at_exit', 'manual']);
+  });
+
+  it("at_exit produz o resultado de sempre, e os campos de prestação não têm efeito", () => {
+    // `prazoMeses`, `carenciaMeses`, `amortizacaoMeses` e `balloonNoVencimento`
+    // continuam no input por compatibilidade e são INERTES: preenchidos com
+    // valores absurdos, o fluxo é byte a byte o mesmo.
     const out = calcular(
       comFin({
         modoAmortizacao: 'at_exit',
@@ -2325,38 +2331,33 @@ describe('18 — amortização: só release e quitação na saída', () => {
     expect(out.conferencias.map((c) => c.chave)).toEqual(referencia.conferencias.map((c) => c.chave));
   });
 
-  it('price e sac não amortizam mais por prestação — sem release, não há amortização', () => {
-    for (const modo of ['price', 'sac'] as const) {
-      const out = calcular(
-        comFin({
-          modoSaque: 'cash_demand',
-          modoAmortizacao: modo,
-          mesInicioSaque: 1,
-          mesFimSaque: 10,
-          prazoMeses: 20,
-          carenciaMeses: 2,
-          amortizacaoMeses: 23,
-          balloonNoVencimento: true,
-        }),
-      );
-      // Nenhum mês amortiza: não há release configurado e o modo não é at_exit.
-      expect(out.meses.every((m) => m.amortization === 0)).toBe(true);
-      // E o saldo fica em aberto no fim — a conferência acusa em vermelho, que é
-      // como o motor mostra o que não fecha em vez de esconder.
-      expect(out.meses[out.meses.length - 1].saldoDevedor).toBeGreaterThan(0);
-      expect(semaforo(out, 'saldo_devedor_final')).toBe('vermelho');
-    }
-  });
-
-  it('em price e sac o release passa a ser a única amortização automática', () => {
-    const out = calcular({
-      ...comFin({
+  it('manual não amortiza nada sozinho — sem release, sem amortização', () => {
+    const out = calcular(
+      comFin({
         modoSaque: 'cash_demand',
-        modoAmortizacao: 'price',
+        modoAmortizacao: 'manual',
         mesInicioSaque: 1,
         mesFimSaque: 10,
         prazoMeses: 20,
+        carenciaMeses: 2,
         amortizacaoMeses: 23,
+        balloonNoVencimento: true,
+      }),
+    );
+    expect(out.meses.every((m) => m.amortization === 0)).toBe(true);
+    // E o saldo fica em aberto no fim — a conferência acusa em vermelho, que é
+    // como o motor mostra o que não fecha em vez de esconder.
+    expect(out.meses[out.meses.length - 1].saldoDevedor).toBeGreaterThan(0);
+    expect(semaforo(out, 'saldo_devedor_final')).toBe('vermelho');
+  });
+
+  it('em manual o release é a única amortização automática', () => {
+    const out = calcular({
+      ...comFin({
+        modoSaque: 'cash_demand',
+        modoAmortizacao: 'manual',
+        mesInicioSaque: 1,
+        mesFimSaque: 10,
         releasePrice: 200_000,
       }),
       receita: {
@@ -2375,41 +2376,35 @@ describe('18 — amortização: só release e quitação na saída', () => {
     const comAmort = out.meses.filter((m) => m.amortization > 0).map((m) => m.mes);
     expect(comAmort).toEqual([19, 20]);
     expect(out.meses[20].saldoDevedor).toBe(0);
-    // Toda a amortização é release, e nenhuma passa do saldo de abertura.
     for (const m of out.meses) {
       expect(m.amortizacaoRelease).toBeCloseTo(m.amortization, 6);
-      expect(m.amortization).toBeLessThanOrEqual(m.saldoDevedor + m.amortization + DOLAR);
     }
-    // O release cortado é informado, em âmbar: não é erro, é a dívida acabando
-    // antes das vendas.
     const conf = out.conferencias.find((c) => c.chave === 'release_insuficiente')!;
     expect(conf.semaforo).toBe('ambar');
     expect(conf.detalhe).toMatch(/de release não chegaram a ser amortizados/);
   });
 
-  it('acusa vencimento além do prazo do projeto', () => {
-    // `prazoMeses` continua no input e continua alimentando as conferências,
-    // mesmo sem entrar mais no fluxo.
-    const alem = calcular(
-      comFin({ modoAmortizacao: 'price', mesInicioSaque: 13, prazoMeses: 60, amortizacaoMeses: 300 }),
-    );
-    expect(semaforo(alem, 'amortizacao_alem_do_prazo')).toBe('vermelho');
-    // Vermelho que NÃO bloqueia salvamento.
-    expect(bloqueiaSalvamento(alem.conferencias)).toHaveLength(0);
-
-    const dentro = calcular(
-      comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 }),
-    );
-    expect(semaforo(dentro, 'amortizacao_alem_do_prazo')).toBe('verde');
+  it('as conferências de prestação saíram junto com os modos', () => {
+    // Nenhuma modelagem produz mais `amortizacao_alem_do_prazo` nem
+    // `balloon_sem_caixa`: as duas só faziam sentido com vencimento e balloon.
+    for (const modo of MODOS_AMORTIZACAO) {
+      const out = calcular(comFin({ modoAmortizacao: modo, prazoMeses: 60, amortizacaoMeses: 300 }));
+      const chaves = out.conferencias.map((c) => c.chave);
+      expect(chaves).not.toContain('amortizacao_alem_do_prazo');
+      expect(chaves).not.toContain('balloon_sem_caixa');
+    }
   });
 
   it('override de amortização continua vencendo tudo', () => {
-    const base = comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 });
+    const base = comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'manual', mesInicioSaque: 1, mesFimSaque: 10 });
     base.overrides = [{ mes: 20, linha: 'amortization', valor: 1_000 }];
     const comOverride = calcular(base);
     expect(comOverride.meses[19].amortization).toBe(1_000);
     // Sem o override o mês não amortizaria nada.
-    expect(calcular(comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 })).meses[19].amortization).toBe(0);
+    expect(
+      calcular(comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'manual', mesInicioSaque: 1, mesFimSaque: 10 }))
+        .meses[19].amortization,
+    ).toBe(0);
   });
 });
 
@@ -2653,7 +2648,10 @@ describe('21 — taxa variável: benchmark mais spread', () => {
     expect(comCurva.reservaJuros).toBe(100_000);
     expect(comCurva.reservaJurosSacada).toBe(false);
     expect(comCurva.convencaoJuros).toBe('actual_360');
-    expect(comCurva.modoAmortizacao).toBe('price');
+    // Linha gravada em 'price' (modo removido pela 1763400000) mapeia para
+    // 'manual', que é o resultado que ela já produzia — não para 'at_exit', que
+    // acrescentaria uma quitação no mês da saída.
+    expect(comCurva.modoAmortizacao).toBe('manual');
     expect(comCurva.releasePrice).toBe(43_500);
     expect(comCurva.releasePricePct).toBe(0.3);
     // Ordenada por mês, e os valores viraram número de verdade.
