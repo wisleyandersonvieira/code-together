@@ -11,6 +11,7 @@ import type {
   BaseCalculoCusto,
   CategoriaCusto,
   CustoAdicional,
+  GatilhoCusto,
   Fase,
   ModelInput,
   Override,
@@ -18,7 +19,7 @@ import type {
   Socio,
   Unidade,
 } from './tipos';
-import { BASES_CALCULO_CUSTO, CATEGORIAS_CUSTO, LINHAS_FLUXO } from './tipos';
+import { BASES_CALCULO_CUSTO, CATEGORIAS_CUSTO, GATILHOS_CUSTO, LINHAS_FLUXO } from './tipos';
 
 /** Número tolerante: string do Postgres, null, undefined ou '' viram `padrao`. */
 export const num = (v: unknown, padrao = 0): number => {
@@ -182,6 +183,19 @@ export function mapearCustos(linhas: unknown): CustoAdicional[] {
     // DECIMAL(15,4) — chega como STRING. Sem num(), "214.3750" × 81000 daria NaN
     // e o custo sumiria do orçamento sem erro nenhum.
     valorUnitario: num(c.valor_unitario),
+    // Categoria de referência do percentual. `null` quando ausente ou fora da
+    // lista — o motor devolve 0 e `custo_base_zerada` acusa.
+    grupoReferencia: CATEGORIAS_CUSTO.includes(c.grupo_referencia as CategoriaCusto)
+      ? (c.grupo_referencia as CategoriaCusto)
+      : null,
+    // DECIMAL(9,6) — também chega como STRING. "0.050000" sem num() seria texto,
+    // e "0.050000" × base daria coerção implícita silenciosa.
+    percentual: num(c.percentual),
+    // 'cronograma' é o default da coluna (migration 1761500000) e o que reproduz
+    // o comportamento anterior para toda linha já gravada.
+    gatilho: GATILHOS_CUSTO.includes(c.gatilho as GatilhoCusto)
+      ? (c.gatilho as GatilhoCusto)
+      : 'cronograma',
   }));
 }
 

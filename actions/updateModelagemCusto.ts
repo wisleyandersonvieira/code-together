@@ -2,7 +2,7 @@ import { action } from '@uibakery/data';
 
 /**
  * Atualiza um custo adicional. Ver `createModelagemCusto` para categoria,
- * grupo_pai e base_calculo.
+ * grupo_pai, base_calculo, grupo_referencia/percentual e gatilho.
  *
  * `valor` continua sendo gravado mesmo quando a base é derivada: é o último total
  * que o usuário digitou, e apagá-lo ao trocar de base destruiria input dele. O
@@ -23,7 +23,10 @@ function updateModelagemCusto() {
         -- e o ciclo de tamanho 1 é o único que a interface consegue produzir.
         grupo_pai = NULLIF({{params.grupoPaiId}}::int, {{params.id}}::int),
         base_calculo = COALESCE(NULLIF('{{params.baseCalculo}}', ''), 'total'),
-        valor_unitario = COALESCE({{params.valorUnitario}}::decimal, 0)
+        valor_unitario = COALESCE({{params.valorUnitario}}::decimal, 0),
+        grupo_referencia = NULLIF(NULLIF('{{params.grupoReferencia}}', ''), 'null'),
+        percentual = COALESCE({{params.percentual}}::decimal, 0),
+        gatilho = COALESCE(NULLIF('{{params.gatilho}}', ''), 'cronograma')
       WHERE id = {{params.id}}::int
     `,
   });

@@ -127,15 +127,21 @@ export const ROTULO_CATEGORIA: Record<CategoriaCusto, string> = {
  * Os denominadores respeitam a regra do módulo: os valores da tipologia são POR
  * UNIDADE, então área entra como `areaSf × quantidade`.
  */
-export type BaseCalculoCusto = 'total' | 'por_unidade' | 'por_sf';
+export type BaseCalculoCusto = 'total' | 'por_unidade' | 'por_sf' | 'pct_de_grupo';
 
 /** Chaves estáveis: são o CHECK de `modelagem_custos.base_calculo`. */
-export const BASES_CALCULO_CUSTO: BaseCalculoCusto[] = ['total', 'por_unidade', 'por_sf'];
+export const BASES_CALCULO_CUSTO: BaseCalculoCusto[] = [
+  'total',
+  'por_unidade',
+  'por_sf',
+  'pct_de_grupo',
+];
 
 export const ROTULO_BASE_CALCULO: Record<BaseCalculoCusto, string> = {
   total: 'Valor total',
   por_unidade: 'Por unidade',
   por_sf: 'Por pé quadrado',
+  pct_de_grupo: '% de um grupo',
 };
 
 /** Sufixo do valor unitário, para a tela e a planilha lerem igual. */
@@ -143,6 +149,47 @@ export const SUFIXO_BASE_CALCULO: Record<BaseCalculoCusto, string> = {
   total: '',
   por_unidade: '/unidade',
   por_sf: '/sf',
+  pct_de_grupo: '%',
+};
+
+/**
+ * Quando o custo vence.
+ *
+ * 'cronograma' é o default do banco e o comportamento anterior à migration
+ * 1761500000: quem manda no lançamento é `distribuicao`/`mesAncora`. Nos demais,
+ * o gatilho SUBSTITUI a distribuição — o custo passa a acompanhar um evento do
+ * cronograma em vez de uma curva.
+ */
+export type GatilhoCusto =
+  | 'cronograma'
+  | 'inicio_obra'
+  | 'fim_obra'
+  | 'por_venda'
+  | 'mes_fixo';
+
+/** Chaves estáveis: são o CHECK de `modelagem_custos.gatilho`. */
+export const GATILHOS_CUSTO: GatilhoCusto[] = [
+  'cronograma',
+  'inicio_obra',
+  'fim_obra',
+  'por_venda',
+  'mes_fixo',
+];
+
+export const ROTULO_GATILHO: Record<GatilhoCusto, string> = {
+  cronograma: 'Pelo cronograma',
+  inicio_obra: 'No início da obra',
+  fim_obra: 'No fim da obra',
+  por_venda: 'A cada venda',
+  mes_fixo: 'Em mês fixo',
+};
+
+export const EXPLICACAO_GATILHO: Record<GatilhoCusto, string> = {
+  cronograma: 'Segue a distribuição escolhida ao lado.',
+  inicio_obra: 'Lançado inteiro no primeiro mês de obra.',
+  fim_obra: 'Lançado inteiro no último mês de obra.',
+  por_venda: 'Rateado pelas unidades vendidas em cada mês.',
+  mes_fixo: 'Lançado inteiro no mês âncora, independente da distribuição.',
 };
 
 export interface CustoAdicional {
@@ -173,6 +220,22 @@ export interface CustoAdicional {
   baseCalculo: BaseCalculoCusto;
   /** Custo por unidade ou por pé quadrado. Ignorado quando a base é 'total'. */
   valorUnitario: number;
+  /**
+   * Categoria sobre a qual o percentual incide. Obrigatório quando `baseCalculo`
+   * é 'pct_de_grupo', ignorado nas demais bases.
+   *
+   * A base do grupo é definida por `resolverCustos` em motor.ts: os custos
+   * daquela categoria mais o custo direto das tipologias quando a categoria tem
+   * contrapartida na unidade ('terreno' e 'vertical').
+   */
+  grupoReferencia?: CategoriaCusto | null;
+  /** FRAÇÃO, não percentual: 0.05 = 5%. Ignorado fora de 'pct_de_grupo'. */
+  percentual: number;
+  /**
+   * Quando o custo vence. 'cronograma' (default do banco) reproduz o
+   * comportamento anterior; os demais SUBSTITUEM `distribuicao`.
+   */
+  gatilho: GatilhoCusto;
 }
 
 export type ModoSaque = 'equity_first' | 'cash_demand' | 'manual';

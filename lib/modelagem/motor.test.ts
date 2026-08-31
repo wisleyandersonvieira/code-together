@@ -5,13 +5,13 @@
  * 0,0001 nos indicadores adimensionais.
  */
 import { describe, expect, it } from 'vitest';
-import { basesDeCalculo, calcular, valorEfetivoCusto } from './motor';
+import { basesDeCalculo, calcular, resolverCustos, valorEfetivoCusto } from './motor';
 import { bloqueiaSalvamento } from './conferencias';
 import { indiceMes, tirMensal, somarMeses } from './indicadores';
 import { comParcelaNoMes, curvaComoParcelas, editaPlanoDeAportes, semParcelaNoMes } from './aportes';
 import { mapearModelInput } from './mapear';
 import { CATEGORIAS_CUSTO } from './tipos';
-import type { ModelInput, Override } from './tipos';
+import type { CustoAdicional, ModelInput, Override } from './tipos';
 
 const DOLAR = 1.0;
 const RATIO = 0.0001;
@@ -35,7 +35,7 @@ const casoBase = (): ModelInput => ({
     // `categoria: 'outros'` é o DEFAULT da coluna criada pela migration 1761200000
     // e é justamente o que toda linha já gravada recebe. O caso base continua
     // sendo, portanto, o mesmo caso base de antes da categorização.
-    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0 },
+    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
   ],
   // Antes da migration 1761000000 esta premissa era a SOMA de
   // modelagem_unidades.aporte_base: 100.250 × 2 + 266.139 × 2 = 732.778. É
@@ -1180,7 +1180,7 @@ describe('11 — orçamento por categoria', () => {
     // Exatamente o que o mapeador entrega para uma linha gravada antes da
     // migration: `categoria` ausente no banco vira 'outros'.
     base.custosAdicionais = [
-      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0 },
+      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
     ];
     return base;
   };
@@ -1230,11 +1230,11 @@ describe('11 — orçamento por categoria', () => {
     // quatro categorias. A distribuição no tempo de cada linha é a mesma da
     // linha única original, então o fluxo tem de sair idêntico.
     base.custosAdicionais = [
-      { label: 'Sitework', valor: 20_000, distribuicao: 'linear_construction', categoria: 'sitework', baseCalculo: 'total', valorUnitario: 0 },
-      { label: 'Mobilização', valor: 6_000, distribuicao: 'linear_construction', categoria: 'sitework', grupoPaiId: 1, baseCalculo: 'total', valorUnitario: 0 },
-      { label: 'Amenidades', valor: 10_000, distribuicao: 'linear_construction', categoria: 'amenidades', baseCalculo: 'total', valorUnitario: 0 },
-      { label: 'Projeto', valor: 12_000, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'total', valorUnitario: 0 },
-      { label: 'Contingência', valor: 8_000, distribuicao: 'linear_construction', categoria: 'contingencia', baseCalculo: 'total', valorUnitario: 0 },
+      { label: 'Sitework', valor: 20_000, distribuicao: 'linear_construction', categoria: 'sitework', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Mobilização', valor: 6_000, distribuicao: 'linear_construction', categoria: 'sitework', grupoPaiId: 1, baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Amenidades', valor: 10_000, distribuicao: 'linear_construction', categoria: 'amenidades', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Projeto', valor: 12_000, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Contingência', valor: 8_000, distribuicao: 'linear_construction', categoria: 'contingencia', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const out = calcular(base);
 
@@ -1257,7 +1257,7 @@ describe('11 — orçamento por categoria', () => {
     const base = casoBase();
     base.custosAdicionais = [
       // Input inconsistente vira resultado, nunca erro — e nunca chave nova.
-      { label: 'Ruído', valor: 9_000, distribuicao: 'linear_total', categoria: 'inexistente' as never, baseCalculo: 'total', valorUnitario: 0 },
+      { label: 'Ruído', valor: 9_000, distribuicao: 'linear_total', categoria: 'inexistente' as never, baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const out = calcular(base);
     expect(Object.keys(out.agregados.custosPorCategoria)).toEqual(CATEGORIAS_CUSTO);
@@ -1310,7 +1310,7 @@ describe('12 — base de cálculo do custo', () => {
   it("base 'total' produz exatamente o valor de antes", () => {
     const base = casoBase();
     base.custosAdicionais = [
-      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 999 },
+      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 999, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const out = calcular(base);
     // valorUnitario preenchido é INERTE quando a base é 'total': se vazasse para
@@ -1336,7 +1336,7 @@ describe('12 — base de cálculo do custo', () => {
       { nome: 'Casa', quantidade: 45, custoTerreno: 25_000, custoObra: 210_000, precoVenda: 320_000, propertyTaxAno: 850 },
     ];
     base.custosAdicionais = [
-      { label: 'Taxas', valor: 0, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200.93 },
+      { label: 'Taxas', valor: 0, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200.93, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const out = calcular(base);
     expect(out.agregados.unidadesTotal).toBe(45);
@@ -1349,7 +1349,7 @@ describe('12 — base de cálculo do custo', () => {
   it('por_sf multiplica pela área TOTAL: areaSf × quantidade', () => {
     const base = comArea();
     base.custosAdicionais = [
-      { label: 'Construção vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214 },
+      { label: 'Construção vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const out = calcular(base);
     // 214 × 7.200 sf = 1.540.800. A área é POR UNIDADE e o motor multiplica pela
@@ -1363,11 +1363,11 @@ describe('12 — base de cálculo do custo', () => {
     // produzir fluxos idênticos.
     const porUnidade = comArea();
     porUnidade.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_unidade', valorUnitario: 385_200 },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_unidade', valorUnitario: 385_200, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const porSf = comArea();
     porSf.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214 },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
     ];
     expect(JSON.stringify(calcular(porSf).meses)).toBe(JSON.stringify(calcular(porUnidade).meses));
   });
@@ -1377,7 +1377,7 @@ describe('12 — base de cálculo do custo', () => {
     const de45 = casoBase();
     de45.unidades = [{ nome: 'Casa', quantidade: 45, custoTerreno: 0, custoObra: 0, precoVenda: 320_000, propertyTaxAno: 0 }];
     de45.custosAdicionais = [
-      { label: 'Taxas', valor: 0, distribuicao: 'linear_total', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000 },
+      { label: 'Taxas', valor: 0, distribuicao: 'linear_total', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const de60 = { ...de45, unidades: [{ ...de45.unidades[0], quantidade: 60 }] };
     expect(calcular(de45).agregados.custosPorCategoria.soft).toBeCloseTo(45_000, 2);
@@ -1390,10 +1390,10 @@ describe('12 — base de cálculo do custo', () => {
     const base = casoBase();
     base.unidades = base.unidades.map((u) => ({ ...u, areaSf: 1_800 }));
     const comoTotal = { ...base, custosAdicionais: [
-      { label: 'X', valor: 56_000, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'total' as const, valorUnitario: 0 },
+      { label: 'X', valor: 56_000, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'total' as const, valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
     ] };
     const comoUnitario = { ...base, custosAdicionais: [
-      { label: 'X', valor: 0, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'por_unidade' as const, valorUnitario: 14_000 },
+      { label: 'X', valor: 0, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'por_unidade' as const, valorUnitario: 14_000, percentual: 0, gatilho: 'cronograma' as const },
     ] };
     expect(JSON.stringify(calcular(comoUnitario).meses)).toBe(JSON.stringify(calcular(comoTotal).meses));
   });
@@ -1402,7 +1402,7 @@ describe('12 — base de cálculo do custo', () => {
     const base = casoBase();
     // Tipologias sem área: por_sf fica sem denominador.
     base.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214 },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
     ];
     const out = calcular(base);
     expect(out.agregados.custosPorCategoria.vertical).toBe(0);
@@ -1415,7 +1415,7 @@ describe('12 — base de cálculo do custo', () => {
   it('não acende custo_base_zerada quando o denominador existe', () => {
     const base = comArea();
     base.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214 },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
     ];
     expect(semaforo(calcular(base), 'custo_base_zerada')).toBeUndefined();
     // E o caso base, todo em 'total', tampouco ganha conferência nova.
@@ -1427,7 +1427,7 @@ describe('12 — base de cálculo do custo', () => {
     // linha; o override daquela célula ganha sempre.
     const base = comArea();
     base.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214 },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
     ];
     base.overrides = [{ mes: 12, linha: 'other_costs', valor: 1_234 }];
     const out = calcular(base);
@@ -1470,5 +1470,383 @@ describe('12 — base de cálculo do custo', () => {
     // Chamar duas vezes devolve o mesmo: nada de estado escondido.
     expect(basesDeCalculo(unidades)).toEqual(basesDeCalculo(unidades));
     expect(basesDeCalculo([])).toEqual({ unidades: 0, areaSf: 0 });
+  });
+});
+
+/** Custo com os defaults do banco; cada teste declara só o que importa. */
+const custo = (p: Partial<CustoAdicional> & { label: string }): CustoAdicional => ({
+  valor: 0,
+  distribuicao: 'linear_construction',
+  mesAncora: null,
+  categoria: 'outros',
+  grupoPaiId: null,
+  baseCalculo: 'total',
+  valorUnitario: 0,
+  grupoReferencia: null,
+  percentual: 0,
+  gatilho: 'cronograma',
+  ...p,
+});
+
+describe('13 — despesa como percentual de um grupo', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1761400000.
+  //
+  // 'pct_de_grupo' é inalcançável para toda linha já gravada (o default é
+  // 'total'), então o caminho novo não pode tocar em nada do que existe.
+  const referencia = calcular(casoBase());
+
+  it("base 'total' com percentual preenchido não muda nada", () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      // percentual e grupoReferencia INERTES fora de 'pct_de_grupo': se vazassem
+      // para a conta, o fluxo mudaria.
+      custo({ label: 'Contingência', valor: 56_000, categoria: 'outros', percentual: 0.5, grupoReferencia: 'vertical' }),
+    ];
+    const out = calcular(base);
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+    expect(JSON.stringify(out.agregados)).toBe(JSON.stringify(referencia.agregados));
+    expect(out.conferencias.map((c) => c.chave)).toEqual(
+      referencia.conferencias.map((c) => c.chave),
+    );
+  });
+
+  it('incide sobre a categoria de referência mais o custo direto das tipologias', () => {
+    const base = casoBase();
+    // Uma categoria 'vertical' de $21.834.000: $20.000.000 de obra nas
+    // tipologias + $1.834.000 lançados como custo adicional vertical.
+    base.unidades = [
+      { nome: 'Casa', quantidade: 40, custoTerreno: 25_000, custoObra: 500_000, precoVenda: 900_000, propertyTaxAno: 0 },
+    ];
+    base.custosAdicionais = [
+      custo({ label: 'Vertical extra', valor: 1_834_000, categoria: 'vertical' }),
+      custo({ label: 'Contingência', categoria: 'contingencia', baseCalculo: 'pct_de_grupo', grupoReferencia: 'vertical', percentual: 0.05 }),
+    ];
+    const out = calcular(base);
+    // obraTotal = 40 × 500.000 = 20.000.000; + 1.834.000 = 21.834.000.
+    expect(out.agregados.obraTotal).toBeCloseTo(20_000_000, 2);
+    // 5% de 21.834.000 = 1.091.700.
+    expect(out.agregados.custosPorCategoria.contingencia).toBeCloseTo(1_091_700, 2);
+    // E é esse número que entra no fluxo.
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(1_834_000 + 1_091_700, 2);
+  });
+
+  it('sobe sozinha quando a obra sobe, no mesmo recálculo', () => {
+    // O ponto do item: ninguém precisa lembrar de refazer a conta.
+    const montar = (custoObra: number): ModelInput => {
+      const base = casoBase();
+      base.unidades = [
+        { nome: 'Casa', quantidade: 40, custoTerreno: 25_000, custoObra, precoVenda: 900_000, propertyTaxAno: 0 },
+      ];
+      base.custosAdicionais = [
+        custo({ label: 'Vertical extra', valor: 1_834_000, categoria: 'vertical' }),
+        custo({ label: 'Contingência', categoria: 'contingencia', baseCalculo: 'pct_de_grupo', grupoReferencia: 'vertical', percentual: 0.05 }),
+      ];
+      return base;
+    };
+    expect(calcular(montar(500_000)).agregados.custosPorCategoria.contingencia).toBeCloseTo(1_091_700, 2);
+    // +10% de obra → 22.000.000 + 1.834.000 = 23.834.000 × 5% = 1.191.700.
+    expect(calcular(montar(550_000)).agregados.custosPorCategoria.contingencia).toBeCloseTo(1_191_700, 2);
+  });
+
+  it("'terreno' soma o custo de terreno das tipologias; as demais categorias não somam nada da unidade", () => {
+    const base = casoBase();
+    base.unidades = [
+      { nome: 'Casa', quantidade: 10, custoTerreno: 100_000, custoObra: 300_000, precoVenda: 900_000, propertyTaxAno: 0 },
+    ];
+    base.custosAdicionais = [
+      custo({ label: 'Sobre terreno', categoria: 'soft', baseCalculo: 'pct_de_grupo', grupoReferencia: 'terreno', percentual: 0.1 }),
+      // 'sitework' não tem contrapartida em modelagem_unidades: a base é só o que
+      // estiver lançado como custo adicional daquela categoria, e não há nada.
+      custo({ label: 'Sobre sitework', categoria: 'offsite', baseCalculo: 'pct_de_grupo', grupoReferencia: 'sitework', percentual: 0.1 }),
+    ];
+    const out = calcular(base);
+    expect(out.agregados.custosPorCategoria.soft).toBeCloseTo(100_000, 2); // 10% de 1.000.000
+    expect(out.agregados.custosPorCategoria.offsite).toBe(0);
+    // O que ficou zerado por falta de base acende âmbar, não some calado.
+    expect(semaforo(out, 'custo_base_zerada')).toBe('ambar');
+  });
+
+  it('encadeia percentual sobre percentual sem duplicar', () => {
+    const base = casoBase();
+    base.unidades = [
+      { nome: 'Casa', quantidade: 1, custoTerreno: 0, custoObra: 1_000_000, precoVenda: 2_000_000, propertyTaxAno: 0 },
+    ];
+    base.custosAdicionais = [
+      // 10% da obra = 100.000, na categoria soft.
+      custo({ label: 'Projeto', categoria: 'soft', baseCalculo: 'pct_de_grupo', grupoReferencia: 'vertical', percentual: 0.1 }),
+      // 20% de soft = 20.000. Depende do item acima — a ordem de resolução é
+      // topológica, não a ordem do array.
+      custo({ label: 'Gerenciamento', categoria: 'amenidades', baseCalculo: 'pct_de_grupo', grupoReferencia: 'soft', percentual: 0.2 }),
+    ];
+    const out = calcular(base);
+    expect(out.agregados.custosPorCategoria.soft).toBeCloseTo(100_000, 2);
+    expect(out.agregados.custosPorCategoria.amenidades).toBeCloseTo(20_000, 2);
+    expect(semaforo(out, 'custo_referencia_circular')).toBeUndefined();
+  });
+
+  it('resolve na ordem topológica, não na ordem do array', () => {
+    const montar = (invertido: boolean): ModelInput => {
+      const base = casoBase();
+      base.unidades = [
+        { nome: 'Casa', quantidade: 1, custoTerreno: 0, custoObra: 1_000_000, precoVenda: 2_000_000, propertyTaxAno: 0 },
+      ];
+      const a = custo({ label: 'Projeto', categoria: 'soft', baseCalculo: 'pct_de_grupo', grupoReferencia: 'vertical', percentual: 0.1 });
+      const b = custo({ label: 'Gerenciamento', categoria: 'amenidades', baseCalculo: 'pct_de_grupo', grupoReferencia: 'soft', percentual: 0.2 });
+      base.custosAdicionais = invertido ? [b, a] : [a, b];
+      return base;
+    };
+    const normal = calcular(montar(false));
+    const invertido = calcular(montar(true));
+    expect(invertido.agregados.custosPorCategoria.amenidades).toBeCloseTo(20_000, 2);
+    expect(JSON.stringify(invertido.agregados.custosPorCategoria)).toBe(
+      JSON.stringify(normal.agregados.custosPorCategoria),
+    );
+  });
+
+  it('zera a auto-referência e acende custo_referencia_circular em vermelho', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Contingência', valor: 10_000, categoria: 'contingencia' }),
+      // Incide sobre a PRÓPRIA categoria: cada passada aumentaria a anterior.
+      custo({ label: 'Circular', categoria: 'contingencia', baseCalculo: 'pct_de_grupo', grupoReferencia: 'contingencia', percentual: 0.05 }),
+    ];
+    const out = calcular(base);
+    expect(semaforo(out, 'custo_referencia_circular')).toBe('vermelho');
+    // O item em ciclo vale 0; o custo fixo da mesma categoria continua valendo.
+    expect(out.agregados.custosPorCategoria.contingencia).toBeCloseTo(10_000, 2);
+    // Nunca lança e nunca bloqueia o salvamento.
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+    expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
+  });
+
+  it('zera OS DOIS itens de um ciclo mútuo, qualquer que seja a ordem', () => {
+    const montar = (invertido: boolean): ModelInput => {
+      const base = casoBase();
+      const a = custo({ label: 'A', categoria: 'soft', baseCalculo: 'pct_de_grupo', grupoReferencia: 'amenidades', percentual: 0.1 });
+      const b = custo({ label: 'B', categoria: 'amenidades', baseCalculo: 'pct_de_grupo', grupoReferencia: 'soft', percentual: 0.2 });
+      base.custosAdicionais = invertido ? [b, a] : [a, b];
+      return base;
+    };
+    for (const invertido of [false, true]) {
+      const out = calcular(montar(invertido));
+      // Determinismo: os DOIS zeram, não "o que a travessia encontrar primeiro".
+      expect(out.agregados.custosPorCategoria.soft).toBe(0);
+      expect(out.agregados.custosPorCategoria.amenidades).toBe(0);
+      const conf = out.conferencias.find((c) => c.chave === 'custo_referencia_circular');
+      expect(conf?.semaforo).toBe('vermelho');
+      expect(conf?.valor).toBe('2');
+      expect(conf?.detalhe).toContain('A →');
+      expect(conf?.detalhe).toContain('B →');
+    }
+  });
+
+  it('detecta ciclo indireto de três categorias', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'A', categoria: 'soft', baseCalculo: 'pct_de_grupo', grupoReferencia: 'amenidades', percentual: 0.1 }),
+      custo({ label: 'B', categoria: 'amenidades', baseCalculo: 'pct_de_grupo', grupoReferencia: 'offsite', percentual: 0.1 }),
+      custo({ label: 'C', categoria: 'offsite', baseCalculo: 'pct_de_grupo', grupoReferencia: 'soft', percentual: 0.1 }),
+      // Fora do ciclo: depende de 'soft' (que zerou), mas nada volta para 'sitework'.
+      custo({ label: 'D', categoria: 'sitework', baseCalculo: 'pct_de_grupo', grupoReferencia: 'soft', percentual: 0.1 }),
+    ];
+    const out = calcular(base);
+    expect(out.conferencias.find((c) => c.chave === 'custo_referencia_circular')?.valor).toBe('3');
+    expect(out.agregados.custosPorCategoria.sitework).toBe(0); // 10% de 0
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+  });
+
+  it('mapeia grupo_referencia e percentual do banco, com o default para linha antiga', () => {
+    const custos = mapearModelInput({
+      id: 7,
+      data_inicio: '2025-12-01',
+      custos: [
+        // Linha gravada ANTES da migration: sem as colunas novas.
+        { id: 1, ordem: 0, label: 'Antiga', valor: '56000.00', distribuicao: 'linear_construction', mes_ancora: null },
+        // DECIMAL(9,6) chega como STRING: sem num(), "0.050000" × base seria
+        // coerção implícita silenciosa.
+        { id: 2, ordem: 1, label: 'Contingência', valor: '0.00', distribuicao: 'linear_construction', mes_ancora: null, categoria: 'contingencia', base_calculo: 'pct_de_grupo', grupo_referencia: 'vertical', percentual: '0.050000' },
+        // Grupo fora da lista não deveria existir no banco; o mapeador não confia.
+        { id: 3, ordem: 2, label: 'Torta', valor: '0.00', distribuicao: 'manual', mes_ancora: null, base_calculo: 'pct_de_grupo', grupo_referencia: 'zzz', percentual: '0.10' },
+      ],
+    } as never).custosAdicionais!;
+
+    expect(custos[0].baseCalculo).toBe('total');
+    expect(custos[0].grupoReferencia).toBeNull();
+    expect(custos[0].percentual).toBe(0);
+    expect(custos[1].grupoReferencia).toBe('vertical');
+    expect(custos[1].percentual).toBe(0.05);
+    expect(custos[2].grupoReferencia).toBeNull();
+  });
+
+  it('resolverCustos é puro: mesma entrada, mesma saída', () => {
+    const lista = [
+      custo({ label: 'Obra extra', valor: 1_000_000, categoria: 'vertical' }),
+      custo({ label: 'Contingência', categoria: 'contingencia', baseCalculo: 'pct_de_grupo', grupoReferencia: 'vertical', percentual: 0.05 }),
+    ];
+    const bases = { unidades: 0, areaSf: 0 };
+    const diretos = { terreno: 0, vertical: 0 };
+    const a = resolverCustos(lista, bases, diretos);
+    const b = resolverCustos(lista, bases, diretos);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    expect(a.valores[1]).toBeCloseTo(50_000, 6);
+    expect(a.referencias.vertical).toBeCloseTo(1_000_000, 6);
+    // A entrada não é mutada.
+    expect(lista[1].valor).toBe(0);
+  });
+});
+
+describe('14 — gatilho de vencimento do custo', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1761500000.
+  //
+  // 'cronograma' é o default e reproduz a distribuição de sempre. Este bloco é o
+  // que garante que a inversão do laço de lançamento (antes por mês, agora por
+  // custo) não moveu um centavo.
+  const referencia = calcular(casoBase());
+
+  it("gatilho 'cronograma' produz o fluxo idêntico ao de antes", () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Contingência', valor: 56_000, categoria: 'outros', gatilho: 'cronograma' }),
+    ];
+    const out = calcular(base);
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+    expect(out.conferencias.map((c) => c.chave)).toEqual(
+      referencia.conferencias.map((c) => c.chave),
+    );
+  });
+
+  it('gatilho ausente cai em cronograma, como a linha nunca migrada', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      // Exatamente o objeto que existia antes desta migration.
+      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0 } as never,
+    ];
+    expect(JSON.stringify(calcular(base).meses)).toBe(JSON.stringify(referencia.meses));
+  });
+
+  it('lança 100% no início e no fim da obra', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra' }),
+      custo({ label: 'Habite-se', valor: 30_000, categoria: 'soft', gatilho: 'fim_obra' }),
+    ];
+    const out = calcular(base);
+    // Caso base: 10 meses de aprovação, 8 de obra → obra do mês 11 ao 18.
+    expect(out.cronograma.mesInicioObra).toBe(11);
+    expect(out.cronograma.mesFimObra).toBe(18);
+    expect(out.meses[10].otherCosts).toBeCloseTo(90_000, 2);
+    expect(out.meses[17].otherCosts).toBeCloseTo(30_000, 2);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(120_000, 2);
+    expect(semaforo(out, 'custo_gatilho_nao_lancado')).toBeUndefined();
+  });
+
+  it('o gatilho substitui a distribuição, não convive com ela', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      // distribuicao linear_construction seria diluída em 8 meses; o gatilho
+      // mes_fixo manda tudo para o mês 3.
+      custo({ label: 'Impact fee', valor: 60_000, categoria: 'soft', distribuicao: 'linear_construction', mesAncora: 3, gatilho: 'mes_fixo' }),
+    ];
+    const out = calcular(base);
+    expect(out.meses[2].otherCosts).toBeCloseTo(60_000, 2);
+    expect(out.meses[10].otherCosts).toBe(0);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(60_000, 2);
+  });
+
+  it('por_venda distribui pelas vendas e soma o total, sem perder centavo', () => {
+    // A verificação do item: $5.200,93 por unidade, 45 unidades em 12 levas de
+    // 3 e 4, somando $234.041,85. Sem takedown, cada leva é uma tipologia.
+    const base = casoBase();
+    const levas = [4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3]; // 12 meses, 45 unidades
+    base.unidades = levas.map((n, k) => ({
+      nome: `Leva ${k + 1}`,
+      quantidade: n,
+      custoTerreno: 0,
+      custoObra: 0,
+      precoVenda: 300_000,
+      propertyTaxAno: 0,
+    }));
+    base.receita.modoVenda = 'per_unit';
+    base.receita.vendasPorUnidade = levas.map((_n, k) => ({ unidadeIndex: k, mesVenda: 12 + k }));
+    base.custosAdicionais = [
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200.93, gatilho: 'por_venda' }),
+    ];
+    const out = calcular(base);
+
+    expect(out.agregados.unidadesTotal).toBe(45);
+    expect(out.agregados.custosPorCategoria.soft).toBeCloseTo(234_041.85, 2);
+
+    // Aparece nos 12 meses das vendas, e em nenhum outro.
+    const comCusto = out.meses.filter((m) => m.otherCosts > 0).map((m) => m.mes);
+    expect(comCusto).toEqual([12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
+    // Cada mês recebe valorUnitario × unidades daquela leva.
+    expect(out.meses[11].otherCosts).toBeCloseTo(5_200.93 * 4, 2);
+    expect(out.meses[20].otherCosts).toBeCloseTo(5_200.93 * 3, 2);
+    // E o total fecha exatamente com o orçamento: nada some no rateio.
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(234_041.85, 2);
+    expect(semaforo(out, 'custo_gatilho_nao_lancado')).toBeUndefined();
+  });
+
+  it('por_venda com saída única lança tudo no mês da saída', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda' }),
+    ];
+    // Caso base é single_exit com mesSaida 23: todas as unidades fecham ali.
+    const out = calcular(base);
+    expect(out.meses[22].otherCosts).toBeCloseTo(4_000, 2);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(4_000, 2);
+  });
+
+  it('acusa em âmbar o que o gatilho não conseguiu lançar', () => {
+    const base = casoBase();
+    base.receita.modoVenda = 'manual'; // nenhuma venda declarada
+    base.custosAdicionais = [
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda' }),
+      // mes_fixo sem âncora: não há onde lançar.
+      custo({ label: 'Taxa', valor: 5_000, categoria: 'soft', gatilho: 'mes_fixo' }),
+      // Âncora além do prazo de 23 meses.
+      custo({ label: 'Tardia', valor: 7_000, categoria: 'soft', mesAncora: 99, gatilho: 'mes_fixo' }),
+    ];
+    const out = calcular(base);
+    const conf = out.conferencias.find((c) => c.chave === 'custo_gatilho_nao_lancado');
+    expect(conf?.semaforo).toBe('ambar');
+    expect(conf?.detalhe).toContain('Impact fee');
+    expect(conf?.detalhe).toContain('Taxa');
+    expect(conf?.detalhe).toContain('Tardia');
+    // Nada foi lançado, e nada foi apagado: o orçamento segue mostrando o total.
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBe(0);
+    expect(out.agregados.custosPorCategoria.soft).toBeCloseTo(4_000 + 5_000 + 7_000, 2);
+    expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
+  });
+
+  it('override em other_costs continua vencendo o gatilho', () => {
+    // A invariante do módulo: a regra nova é só a FONTE AUTOMÁTICA da linha.
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra' }),
+    ];
+    base.overrides = [{ mes: 11, linha: 'other_costs', valor: 1_234 }];
+    const out = calcular(base);
+    expect(out.meses[10].otherCosts).toBe(1_234);
+    // O orçamento declarado não muda por causa do override.
+    expect(out.agregados.custosPorCategoria.soft).toBeCloseTo(90_000, 2);
+  });
+
+  it('mapeia gatilho do banco, com o default para linha antiga', () => {
+    const custos = mapearModelInput({
+      id: 7,
+      data_inicio: '2025-12-01',
+      custos: [
+        { id: 1, ordem: 0, label: 'Antiga', valor: '56000.00', distribuicao: 'linear_construction', mes_ancora: null },
+        { id: 2, ordem: 1, label: 'Fee', valor: '0.00', distribuicao: 'manual', mes_ancora: null, gatilho: 'por_venda' },
+        { id: 3, ordem: 2, label: 'Torta', valor: '0.00', distribuicao: 'manual', mes_ancora: null, gatilho: 'zzz' },
+      ],
+    } as never).custosAdicionais!;
+    expect(custos[0].gatilho).toBe('cronograma');
+    expect(custos[1].gatilho).toBe('por_venda');
+    expect(custos[2].gatilho).toBe('cronograma');
   });
 });

@@ -18,7 +18,8 @@ import type {
   Override,
   Semaforo,
 } from './tipos';
-import type { BasesDeCalculo } from './motor';
+import type { BasesDeCalculo, ResolucaoCustos } from './motor';
+import { ROTULO_CATEGORIA, ROTULO_GATILHO } from './tipos';
 import { TOLERANCIA } from './indicadores';
 
 /** Tolerância de participação: 0,01 ponto percentual. */
@@ -46,6 +47,10 @@ interface Contexto {
    * duas contas divergirem.
    */
   bases: BasesDeCalculo;
+  /** Orçamento já resolvido: valores efetivos, itens em ciclo e base dos grupos. */
+  resolucao: ResolucaoCustos;
+  /** Quanto de cada custo o gatilho conseguiu de fato lançar no fluxo. */
+  lancadoPorCusto: number[];
 }
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
@@ -430,13 +435,27 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
   // rastro. O motor não pode lançar exceção por isso — a invariante do módulo é
   // que input inconsistente vira conferência —, mas sumir em silêncio seria pior
   // que qualquer erro: o usuário digitou $214/sf e o orçamento não mexeu.
-  const ROTULO_BASE: Record<string, string> = {
-    por_unidade: 'por unidade',
-    por_sf: 'por pé quadrado',
+  const custos = input.custosAdicionais ?? [];
+  const emCiclo = new Set(ctx.resolucao.circulares);
+  const nomeDoCusto = (c: (typeof custos)[number], i: number) => c.label || `Custo ${i + 1}`;
+
+  /** Como o item foi digitado — para a mensagem dizer o que o usuário informou. */
+  const comoFoiDigitado = (c: (typeof custos)[number]) => {
+    if (c.baseCalculo === 'por_unidade') return `${dinheiro(c.valorUnitario || 0)} por unidade`;
+    if (c.baseCalculo === 'por_sf') return `${dinheiro(c.valorUnitario || 0)} por pé quadrado`;
+    if (c.baseCalculo === 'pct_de_grupo') return `${pct(c.percentual || 0)} de um grupo`;
+    return dinheiro(c.valor || 0);
   };
-  const semDenominador = (input.custosAdicionais ?? []).filter((c) => {
+
+  const semDenominador = custos.filter((c, i) => {
     if (c.baseCalculo === 'por_unidade') return ctx.bases.unidades <= 0;
     if (c.baseCalculo === 'por_sf') return ctx.bases.areaSf <= 0;
+    if (c.baseCalculo === 'pct_de_grupo') {
+      // Item em ciclo já tem conferência própria, em vermelho: não duplicar aqui.
+      if (emCiclo.has(i)) return false;
+      const ref = c.grupoReferencia;
+      return ref == null || (ctx.resolucao.referencias[ref] ?? 0) <= 0;
+    }
     return false;
   });
   if (semDenominador.length > 0) {
@@ -446,14 +465,76 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
       'ambar',
       `${semDenominador.length}`,
       `${semDenominador
+        .map((c, i) => `${nomeDoCusto(c, i)} (${comoFoiDigitado(c)})`)
+        .join('; ')} — a base sobre a qual o valor incide é zero, então o custo entra no fluxo como ${dinheiro(0)}.`,
+      'Cadastre as tipologias e a área por unidade na aba Tipologias, escolha um grupo de referência que tenha custo lançado, ou mude a base do custo para "Valor total".',
+    );
+  }
+
+  // ─── Referência circular entre custos percentuais ──────────────────────────
+  // Uma contingência de 5% que incide sobre a própria categoria — ou duas linhas
+  // que incidem uma sobre a outra — não tem valor definido: cada passada
+  // aumentaria a anterior, sem parar. O motor devolve ZERO para os itens
+  // envolvidos em vez de iterar até estourar, e a conferência nomeia cada um
+  // deles para que o zero não passe por acaso.
+  //
+  // Vermelho, mas NÃO bloqueia o salvamento: o usuário precisa poder gravar o
+  // trabalho pela metade e voltar depois. Ver `bloqueiaSalvamento`.
+  if (ctx.resolucao.circulares.length > 0) {
+    const nomes = ctx.resolucao.circulares.map((i) => {
+      const c = custos[i];
+      const alvo = c?.grupoReferencia ? ROTULO_CATEGORIA[c.grupoReferencia] : 'sem grupo';
+      return `${nomeDoCusto(c, i)} → ${alvo}`;
+    });
+    add(
+      'custo_referencia_circular',
+      'Referência circular entre custos',
+      'vermelho',
+      `${ctx.resolucao.circulares.length}`,
+      `${nomes.join('; ')}. A referência volta para a própria categoria do item, direta ou indiretamente, então o valor não existe — estes itens entram no fluxo como ${dinheiro(0)}.`,
+      'Aponte o percentual para uma categoria que não dependa da categoria do próprio item. Uma contingência em "Contingência" não pode incidir sobre "Contingência".',
+    );
+  }
+
+  // ─── Gatilho sem mês para lançar ───────────────────────────────────────────
+  // O gatilho pode não encontrar mês nenhum: 'mes_fixo' sem âncora ou com âncora
+  // fora do prazo, 'fim_obra' num projeto sem meses de construção, 'por_venda'
+  // sem venda declarada (modo manual, ou tipologia sem mês de venda). Nesses
+  // casos o dinheiro não entra no fluxo — e a invariante do módulo é que input
+  // do usuário nunca some em silêncio.
+  //
+  // Restrita a gatilho <> 'cronograma' DE PROPÓSITO: com o default da migration
+  // 1761500000 esta conferência é inalcançável, então nenhuma modelagem já salva
+  // ganha item novo no painel.
+  const naoLancados = custos
+    .map((c, i) => ({
+      c,
+      i,
+      efetivo: ctx.resolucao.valores[i] ?? 0,
+      lancado: ctx.lancadoPorCusto[i] ?? 0,
+    }))
+    .filter(
+      (x) =>
+        x.c.gatilho !== 'cronograma' &&
+        Math.abs(x.efetivo) > TOLERANCIA &&
+        Math.abs(x.efetivo - x.lancado) > TOLERANCIA,
+    );
+  if (naoLancados.length > 0) {
+    const total = naoLancados.reduce((a, x) => a + (x.efetivo - x.lancado), 0);
+    add(
+      'custo_gatilho_nao_lancado',
+      'Gatilho sem mês para lançar',
+      'ambar',
+      dinheiro(total),
+      `${naoLancados
         .map(
-          (c) =>
-            `${c.label || 'sem descrição'} (${ROTULO_BASE[c.baseCalculo] ?? c.baseCalculo}, ${dinheiro(
-              c.valorUnitario || 0,
-            )} unitário)`,
+          (x) =>
+            `${nomeDoCusto(x.c, x.i)} (${ROTULO_GATILHO[x.c.gatilho] ?? x.c.gatilho}): ${dinheiro(
+              x.lancado,
+            )} de ${dinheiro(x.efetivo)}`,
         )
-        .join('; ')} — o denominador é zero, então o custo entra no fluxo como ${dinheiro(0)}.`,
-      'Cadastre as tipologias na aba Tipologias e preencha a área por unidade, ou mude a base do custo para "Valor total".',
+        .join('; ')}. O que não foi lançado NÃO é apagado — volta ao fluxo assim que o gatilho encontrar mês.`,
+      'Informe o mês âncora, ajuste o cronograma para que o evento caia dentro do prazo, ou declare o mês de venda das tipologias na aba Receita.',
     );
   }
 

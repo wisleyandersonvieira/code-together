@@ -76,6 +76,53 @@ export function basesDeCalculo(unidades: Unidade[]): BasesDeCalculo {
 }
 
 /**
+ * Custo direto das tipologias, por categoria do orçamento.
+ *
+ * Só existem estas duas porque só estas duas categorias têm contrapartida em
+ * `modelagem_unidades`: 'terreno' ↔ custo_terreno e 'vertical' ↔ custo_obra.
+ * Sitework, amenidades, offsite, soft e as demais não têm coluna na tipologia, e
+ * por isso a base de referência delas é apenas a soma dos custos adicionais.
+ */
+export interface CustosDiretos {
+  /** Σ (custoTerreno × quantidade). */
+  terreno: number;
+  /** Σ (custoObra × quantidade). */
+  vertical: number;
+}
+
+/**
+ * Base de referência de cada categoria — o denominador de um custo percentual.
+ *
+ * NÃO é o mesmo que `Agregados.custosPorCategoria`: aquele é só a soma dos
+ * custos adicionais da categoria (e é o que a tela e a planilha mostram como
+ * subtotal do orçamento), enquanto este soma também o custo direto das
+ * tipologias. Somar o direto no agregado faria terrenosTotal e obraTotal
+ * entrarem duas vezes em quem lê os dois campos.
+ */
+export type ReferenciasCategoria = Record<CategoriaCusto, number>;
+
+export interface ResolucaoCustos {
+  /** Valor efetivo de cada custo, alinhado com o array de entrada. */
+  valores: number[];
+  /**
+   * Índices dos custos percentuais que participam de um ciclo de referência.
+   * Valem ZERO e acendem `custo_referencia_circular` em vermelho.
+   */
+  circulares: number[];
+  /** Base de cada categoria, para a tela mostrar "5% de $X (Categoria)". */
+  referencias: ReferenciasCategoria;
+}
+
+const categoriaDe = (c: CustoAdicional): CategoriaCusto =>
+  CATEGORIAS_CUSTO.includes(c.categoria) ? c.categoria : 'outros';
+
+/** Referência normalizada; `null` quando ausente ou fora da lista. */
+const referenciaDe = (c: CustoAdicional): CategoriaCusto | null =>
+  c.grupoReferencia != null && CATEGORIAS_CUSTO.includes(c.grupoReferencia)
+    ? c.grupoReferencia
+    : null;
+
+/**
  * Valor efetivo de um custo adicional — o número que de fato entra no fluxo.
  *
  * Puro e total: nunca lança. Base 'total', ausente ou desconhecida devolve
@@ -86,16 +133,136 @@ export function basesDeCalculo(unidades: Unidade[]): BasesDeCalculo {
  * para que o custo sumido não passe despercebido. Zerar em silêncio seria o pior
  * dos mundos, mas lançar exceção violaria a invariante do módulo: input
  * inconsistente vira conferência, nunca erro.
+ *
+ * `pct_de_grupo` depende das OUTRAS linhas do orçamento, então precisa das bases
+ * de referência já resolvidas. Sem elas o resultado é 0 — quem calcula um
+ * orçamento inteiro chama `resolverCustos`, que monta as referências, poda os
+ * ciclos e chama esta função na ordem certa.
  */
-export function valorEfetivoCusto(custo: CustoAdicional, bases: BasesDeCalculo): number {
+export function valorEfetivoCusto(
+  custo: CustoAdicional,
+  bases: BasesDeCalculo,
+  referencias?: ReferenciasCategoria,
+): number {
   switch (custo.baseCalculo) {
     case 'por_unidade':
       return (custo.valorUnitario || 0) * bases.unidades;
     case 'por_sf':
       return (custo.valorUnitario || 0) * bases.areaSf;
+    case 'pct_de_grupo': {
+      const ref = referenciaDe(custo);
+      if (ref == null || !referencias) return 0;
+      return (custo.percentual || 0) * referencias[ref];
+    }
     default:
       return custo.valor || 0;
   }
+}
+
+/**
+ * Resolve o orçamento inteiro: valor efetivo de cada linha e base de cada grupo.
+ *
+ * Existe porque `pct_de_grupo` quebra a independência entre as linhas — a
+ * contingência de 5% dos hard costs só é conhecida depois que os hard costs
+ * estão. As demais bases não dependem de nada e são resolvidas de saída.
+ *
+ * ── Ciclos ───────────────────────────────────────────────────────────────────
+ * Um item percentual na categoria A que referencia B cria a aresta A → B. Há
+ * ciclo quando B alcança A de volta — inclusive o caso trivial B = A, um item
+ * que incide sobre a própria categoria.
+ *
+ * A detecção acontece ANTES da resolução, sobre o grafo completo das 9
+ * categorias, e não durante uma travessia: fosse durante, qual dos dois itens de
+ * um par mútuo seria zerado dependeria de por onde a travessia começasse, e o
+ * motor deixaria de ser determinístico. Aqui os DOIS são zerados, sempre, e a
+ * conferência `custo_referencia_circular` nomeia cada um.
+ *
+ * Podados os itens em ciclo, o que sobra é acíclico e resolve por memoização.
+ */
+export function resolverCustos(
+  custos: CustoAdicional[],
+  bases: BasesDeCalculo,
+  diretos: CustosDiretos,
+): ResolucaoCustos {
+  const lista = custos ?? [];
+  const cats = lista.map(categoriaDe);
+
+  // 1. Tudo que não depende de ninguém. Os percentuais ficam em 0 por enquanto.
+  const valores = lista.map((c) =>
+    c.baseCalculo === 'pct_de_grupo' ? 0 : valorEfetivoCusto(c, bases),
+  );
+
+  // Contribuição fixa de cada categoria: o custo direto das tipologias.
+  const direto = Object.fromEntries(CATEGORIAS_CUSTO.map((c) => [c, 0])) as ReferenciasCategoria;
+  direto.terreno = diretos.terreno;
+  direto.vertical = diretos.vertical;
+
+  const indicesPct = lista
+    .map((c, i) => (c.baseCalculo === 'pct_de_grupo' ? i : -1))
+    .filter((i) => i >= 0);
+
+  // 2. Alcance entre categorias, por fecho transitivo sobre as 9 chaves.
+  const alcanca = new Map<CategoriaCusto, Set<CategoriaCusto>>(
+    CATEGORIAS_CUSTO.map((c) => [c, new Set<CategoriaCusto>()]),
+  );
+  for (const i of indicesPct) {
+    const ref = referenciaDe(lista[i]);
+    if (ref != null) alcanca.get(cats[i])!.add(ref);
+  }
+  // Warshall: 9 categorias, então o cubo é irrelevante e o código fica óbvio.
+  for (const k of CATEGORIAS_CUSTO) {
+    for (const a of CATEGORIAS_CUSTO) {
+      if (!alcanca.get(a)!.has(k)) continue;
+      for (const b of alcanca.get(k)!) alcanca.get(a)!.add(b);
+    }
+  }
+
+  // 3. Item em ciclo: a referência dele alcança a própria categoria dele.
+  const circulares = indicesPct.filter((i) => {
+    const ref = referenciaDe(lista[i]);
+    if (ref == null) return false; // sem referência é outro problema, não ciclo
+    return ref === cats[i] || alcanca.get(ref)!.has(cats[i]);
+  });
+  const emCiclo = new Set(circulares);
+
+  // 4. Resolução do que sobrou — grafo acíclico, memoização por categoria.
+  //
+  // `referencias` é preenchido à medida que cada categoria fecha, e é o mesmo
+  // objeto entregue a `valorEfetivoCusto`: a referência de um item é sempre
+  // resolvida na linha anterior à leitura, então nunca se lê base pela metade.
+  const referencias = Object.fromEntries(
+    CATEGORIAS_CUSTO.map((c) => [c, 0]),
+  ) as ReferenciasCategoria;
+  const resolvidas = new Set<CategoriaCusto>();
+  const emCalculo = new Set<CategoriaCusto>();
+
+  const somaCategoria = (cat: CategoriaCusto): number => {
+    if (resolvidas.has(cat)) return referencias[cat];
+    // Guarda de segurança. Os ciclos já foram podados no passo 3, então isto não
+    // deveria disparar nunca; se disparar, devolve 0 em vez de recursão infinita.
+    // O motor não pode travar por input inconsistente.
+    if (emCalculo.has(cat)) return 0;
+    emCalculo.add(cat);
+    let total = direto[cat];
+    for (let i = 0; i < lista.length; i++) {
+      if (cats[i] !== cat) continue;
+      const c = lista[i];
+      if (c.baseCalculo === 'pct_de_grupo' && !emCiclo.has(i)) {
+        const ref = referenciaDe(c);
+        if (ref != null) somaCategoria(ref);
+        valores[i] = valorEfetivoCusto(c, bases, referencias);
+      }
+      total += valores[i];
+    }
+    emCalculo.delete(cat);
+    referencias[cat] = total;
+    resolvidas.add(cat);
+    return total;
+  };
+
+  for (const cat of CATEGORIAS_CUSTO) somaCategoria(cat);
+
+  return { valores, circulares, referencias };
 }
 
 interface EstadoPonto {
@@ -255,7 +422,11 @@ export function calcular(input: ModelInput): ModelOutput {
   // no loop mensal: os dois têm de enxergar exatamente o mesmo número, senão o
   // subtotal do orçamento deixaria de bater com o que é lançado no fluxo.
   const bases = basesDeCalculo(unidades);
-  const efetivoPorCusto = custosAdicionais.map((c) => valorEfetivoCusto(c, bases));
+  const resolucao = resolverCustos(custosAdicionais, bases, {
+    terreno: terrenosTotal,
+    vertical: obraTotal,
+  });
+  const efetivoPorCusto = resolucao.valores;
 
   // ─── Subtotais do orçamento por categoria ──────────────────────────────────
   // Agregado de SAÍDA, não regra de lançamento: nada aqui toca o loop mensal, e
@@ -338,29 +509,101 @@ export function calcular(input: ModelInput): ModelOutput {
   }
 
   for (let m = 1; m <= prazoTotal; m++) {
-    // Property tax e outros custos ainda não conhecem fase: o tax continua rateado
-    // linearmente pelo prazo inteiro e os custos adicionais seguem a janela de
-    // construção do projeto. O próximo passo natural é o property tax por fase,
+    // Property tax ainda não conhece fase: continua rateado linearmente pelo
+    // prazo inteiro. O próximo passo natural é o property tax por fase,
     // começando no mês de início de cada uma — quem for mexer, mexe aqui.
     propertyTax[m] = taxAnoTotal / 12;
+  }
 
-    let outros = 0;
-    // O valor efetivo entra exatamente onde `c.valor` era lido: a base de cálculo
-    // muda QUANTO é lançado, nunca QUANDO. A distribuição no tempo segue saindo
-    // só de `distribuicao`/`mesAncora`.
-    for (let i = 0; i < custosAdicionais.length; i++) {
-      const c = custosAdicionais[i];
-      const valor = efetivoPorCusto[i];
-      if (c.distribuicao === 'linear_construction') {
-        if (mesesConstrucao > 0 && m >= mesInicioObra && m <= mesFimObra) outros += valor / mesesConstrucao;
-      } else if (c.distribuicao === 'linear_total') {
-        if (prazoTotal > 0) outros += valor / prazoTotal;
-      } else if (c.distribuicao === 'single_month') {
-        if (c.mesAncora === m) outros += valor;
-      }
-      // 'manual' → só overrides.
+  // ─── Unidades vendidas por mês (gatilho 'por_venda') ───────────────────────
+  // Impact fee, water/sewer fee e alvará vencem no FECHAMENTO da unidade, então
+  // precisam saber quantas unidades fecham em cada mês.
+  //
+  // A venda escalonada dentro de uma tipologia (takedown) ainda não existe neste
+  // módulo — `modelagem_vendas_unidade` guarda um único mês por tipologia. Logo,
+  // a tipologia inteira fecha de uma vez. Quando o takedown chegar, é ESTE mapa
+  // que passa a ser montado a partir dele; nada mais abaixo precisa mudar.
+  const unidadesVendidasPorMes = new Map<number, number>();
+  const venderNoMes = (mes: number, n: number) => {
+    if (mes < 1 || mes > prazoTotal || n <= 0) return;
+    unidadesVendidasPorMes.set(mes, (unidadesVendidasPorMes.get(mes) ?? 0) + n);
+  };
+  if (rec.modoVenda === 'single_exit') {
+    // Saída única: todas as unidades fecham no mês da venda do projeto.
+    venderNoMes(mesSaida, unidadesTotal);
+  } else if (rec.modoVenda === 'per_unit') {
+    for (const venda of rec.vendasPorUnidade ?? []) {
+      const u = unidades[venda.unidadeIndex];
+      if (u) venderNoMes(venda.mesVenda, qtd(u));
     }
-    otherCosts[m] = outros;
+  }
+  // 'manual' → o usuário não declarou cronograma de venda nenhum. O motor NÃO
+  // inventa um: nada é lançado por venda, e `custo_gatilho_nao_lancado` acende
+  // âmbar dizendo quanto ficou de fora. É a mesma postura da alocação por fase.
+
+  // ─── Lançamento dos custos adicionais no tempo ─────────────────────────────
+  // Laço por CUSTO, acumulando nos meses — antes era um laço por mês somando os
+  // custos. Para um mês fixo, as parcelas continuam entrando na ordem do índice
+  // do custo, então a soma em ponto flutuante é bit a bit a mesma de antes; é o
+  // que o teste de não-regressão cobra.
+  //
+  // Duas grandezas independentes, nesta ordem:
+  //   o GATILHO decide QUANDO — e, fora de 'cronograma', substitui a distribuição;
+  //   a BASE decide QUANTO, e já foi resolvida em `efetivoPorCusto`.
+  //
+  // `lancadoPorCusto` fecha o circuito: o que o gatilho não conseguiu lançar
+  // (mês fora do prazo, nenhuma venda declarada) vira conferência em vez de
+  // sumir em silêncio.
+  const lancadoPorCusto = new Array<number>(custosAdicionais.length).fill(0);
+  const lancar = (i: number, mes: number, valor: number) => {
+    // `Number.isInteger` reproduz exatamente o comportamento anterior: o laço
+    // antigo comparava `c.mesAncora === m` contra meses inteiros, então âncora
+    // fracionária nunca casava e nada era lançado. Sem esta guarda, `mes = 5.5`
+    // criaria uma propriedade solta no array — invisível no fluxo, mas contada
+    // como lançada.
+    if (!Number.isInteger(mes) || mes < 1 || mes > prazoTotal) return;
+    otherCosts[mes] += valor;
+    lancadoPorCusto[i] += valor;
+  };
+
+  for (let i = 0; i < custosAdicionais.length; i++) {
+    const c = custosAdicionais[i];
+    const valor = efetivoPorCusto[i];
+
+    if (c.gatilho === 'inicio_obra') {
+      lancar(i, mesInicioObra, valor);
+    } else if (c.gatilho === 'fim_obra') {
+      lancar(i, mesFimObra, valor);
+    } else if (c.gatilho === 'mes_fixo') {
+      // Sem mês âncora não há onde lançar. Não é erro: é conferência.
+      if (c.mesAncora != null) lancar(i, c.mesAncora, valor);
+    } else if (c.gatilho === 'por_venda') {
+      // Rateio pro-rata pelas unidades que fecham em cada mês. Com base
+      // 'por_unidade' isto é exatamente valorUnitario × unidades vendidas no mês;
+      // para as demais bases é o equivalente pro-rata do total.
+      //
+      // Sem unidade nenhuma o rateio não tem denominador — nada é lançado, e a
+      // conferência acusa. Dividir por zero devolveria NaN e contaminaria o fluxo
+      // inteiro em silêncio, que é o pior desfecho possível.
+      if (unidadesTotal > 0) {
+        for (const [mes, n] of unidadesVendidasPorMes) lancar(i, mes, (valor * n) / unidadesTotal);
+      }
+    } else {
+      // 'cronograma' — o default, e o caminho de toda modelagem anterior à
+      // migration 1761500000: quem manda é a distribuição, exatamente como antes.
+      if (c.distribuicao === 'linear_construction') {
+        if (mesesConstrucao > 0) {
+          for (let m = mesInicioObra; m <= mesFimObra; m++) lancar(i, m, valor / mesesConstrucao);
+        }
+      } else if (c.distribuicao === 'linear_total') {
+        if (prazoTotal > 0) {
+          for (let m = 1; m <= prazoTotal; m++) lancar(i, m, valor / prazoTotal);
+        }
+      } else if (c.distribuicao === 'single_month') {
+        if (c.mesAncora != null) lancar(i, c.mesAncora, valor);
+      }
+      // 'manual' → só overrides. Lançar zero aqui é intencional.
+    }
   }
 
   if (rec.modoVenda === 'single_exit') {
@@ -713,6 +956,8 @@ export function calcular(input: ModelInput): ModelOutput {
     orfaos,
     compartilhado,
     bases,
+    resolucao,
+    lancadoPorCusto,
   });
 
   return {

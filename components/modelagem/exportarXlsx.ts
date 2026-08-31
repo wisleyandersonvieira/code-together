@@ -14,10 +14,11 @@ import {
   CATEGORIAS_CUSTO,
   gradeSensibilidade,
   pontosDeEquilibrio,
+  resolverCustos,
   ROTULO_CATEGORIA,
+  ROTULO_GATILHO,
   sensibilidadePrazo,
   SUFIXO_BASE_CALCULO,
-  valorEfetivoCusto,
   VARIACOES_CUSTO,
   VARIACOES_PRECO,
 } from '@/lib/modelagem';
@@ -447,20 +448,29 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     } else {
       cabecalhoTabela(ws, l++, 2, [
         { titulo: 'Custo adicional' }, { titulo: 'Categoria' }, { titulo: 'Base' },
-        { titulo: 'Valor', align: 'right' }, { titulo: 'Distribuição' },
-        { titulo: 'Mês âncora', align: 'right' },
+        { titulo: 'Valor', align: 'right' }, { titulo: 'Gatilho' },
+        { titulo: 'Distribuição' }, { titulo: 'Mês âncora', align: 'right' },
       ]);
-      // Mesma função pura do motor: a planilha não tem conta própria.
+      // Mesmas funções puras do motor — inclusive a poda de referência circular:
+      // a planilha não tem conta própria.
       const basesCusto = basesDeCalculo(input.unidades ?? []);
+      const resolucaoCusto = resolverCustos(custos, basesCusto, {
+        terreno: ag.terrenosTotal,
+        vertical: ag.obraTotal,
+      });
+      // Índice do custo dentro de `custos`, que é a MESMA ordem de
+      // `resolucaoCusto.valores`. O agrupamento por categoria abaixo reordena a
+      // leitura, então o índice precisa viajar junto com a linha.
+      const comIndice = custos.map((c, i) => ({ c, i }));
       // Agrupado por categoria, e dentro dela na ordem em que o usuário cadastrou
       // — a mesma leitura da aba Orçamento na tela.
       //
       // Os subtotais saem de `agregados.custosPorCategoria`: o motor é quem soma,
       // aqui só se lê. Se a planilha divergir da tela, é bug de leitura.
       for (const categoria of CATEGORIAS_CUSTO) {
-        const doGrupo = custos.filter((c) => c.categoria === categoria);
+        const doGrupo = comIndice.filter((x) => x.c.categoria === categoria);
         if (doGrupo.length === 0) continue;
-        for (const c of doGrupo) {
+        for (const { c, i } of doGrupo) {
           const linha = ws.getRow(l++);
           const valores: (string | number)[] = [
             // Filho de outra linha entra recuado, igual à indentação da tela.
@@ -471,16 +481,21 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
             // <> 'total' ele guarda só o último total digitado.
             c.baseCalculo === 'total'
               ? 'Valor total'
-              : `${c.valorUnitario}${SUFIXO_BASE_CALCULO[c.baseCalculo]}`,
-            valorEfetivoCusto(c, basesCusto),
-            c.distribuicao,
+              : c.baseCalculo === 'pct_de_grupo'
+                ? `${(c.percentual * 100).toFixed(2)}% de ${ROTULO_CATEGORIA[c.grupoReferencia ?? 'outros']}`
+                : `${c.valorUnitario}${SUFIXO_BASE_CALCULO[c.baseCalculo]}`,
+            resolucaoCusto.valores[i] ?? 0,
+            ROTULO_GATILHO[c.gatilho] ?? c.gatilho,
+            // Fora de 'cronograma' o gatilho substitui a distribuição; dizer isso
+            // evita que quem lê a planilha atribua o mês à coluna errada.
+            c.gatilho === 'cronograma' ? c.distribuicao : '–',
             c.mesAncora ?? '–',
           ];
           valores.forEach((v, k) => {
             const cel = linha.getCell(2 + k);
             cel.value = v;
             cel.font = fonte({ color: { argb: T.entrada } });
-            cel.alignment = k === 0 || k === 1 || k === 2 || k === 4 ? esq : dir;
+            cel.alignment = k === 0 || k === 1 || k === 2 || k === 4 || k === 5 ? esq : dir;
             if (k === 3) cel.numFmt = MOEDA;
           });
         }
@@ -490,16 +505,16 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
         subtotal.getCell(5).value = ag.custosPorCategoria[categoria];
         subtotal.getCell(5).numFmt = MOEDA;
         subtotal.getCell(5).alignment = dir;
-        bordaSuperior(ws, l, 2, 7);
+        bordaSuperior(ws, l, 2, 8);
         l += 1;
       }
       const total = ws.getRow(l);
       total.getCell(2).value = 'Total do orçamento';
       total.getCell(2).alignment = esq;
-      total.getCell(5).value = custos.reduce((a, c) => a + valorEfetivoCusto(c, basesCusto), 0);
+      total.getCell(5).value = resolucaoCusto.valores.reduce((a, v) => a + v, 0);
       total.getCell(5).numFmt = MOEDA;
       total.getCell(5).alignment = dir;
-      estiloTotal(ws, l, 2, 7);
+      estiloTotal(ws, l, 2, 8);
       l += 1;
     }
     l += 1;
