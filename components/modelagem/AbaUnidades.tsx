@@ -126,6 +126,7 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
               <th className={`${cabecalho} bg-slate-50 text-right`}>Obra total</th>
               <th className={`${cabecalho} bg-slate-50 text-right`}>VGV total</th>
               <th className={`${cabecalho} bg-slate-50 text-right`}>Custo total</th>
+              <th className={`${cabecalho} bg-slate-50 text-right`}>Custo unitário</th>
               <th className={`${cabecalho} bg-slate-50 text-right`}>Margem</th>
               <th className="w-10" />
             </tr>
@@ -185,6 +186,10 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
                   <td className={lido}>
                     {dinheiro(res?.custoTotal ?? ((u.custoTerreno || 0) + (u.custoObra || 0)) * n, rascunho.moeda)}
                   </td>
+                  {/* Tudo incluído: já traz o rateio de property tax, juros e fee.
+                      Vem do motor (`custoTotalUnitario`), não de uma divisão feita
+                      aqui — a tela não tem conta própria. */}
+                  <td className={lido}>{dinheiro(res?.custoTotalUnitario, rascunho.moeda)}</td>
                   <td className={lido}>{percentual(res?.margem)}</td>
                   <td className="px-1 py-1.5">
                     <Button
@@ -202,7 +207,7 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
             })}
             {unidades.length === 0 ? (
               <tr>
-                <td colSpan={14} className="px-2 py-8 text-center text-sm text-slate-500">
+                <td colSpan={15} className="px-2 py-8 text-center text-sm text-slate-500">
                   Nenhuma tipologia cadastrada.
                 </td>
               </tr>
@@ -239,6 +244,11 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
                     resultado.resultadoUnidades.reduce((a, r) => a + r.custoTotal, 0),
                     rascunho.moeda,
                   )}
+                </td>
+                {/* Custo médio do projeto por unidade — o mesmo indicador da aba
+                    Resultado, e não a média das médias das tipologias. */}
+                <td className="px-2 py-2 text-right text-sm tabular-nums">
+                  {dinheiro(resultado.indicadores.custoPorUnidade, rascunho.moeda)}
                 </td>
                 <td className="px-2 py-2" colSpan={2} />
               </tr>

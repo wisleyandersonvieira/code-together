@@ -153,6 +153,18 @@ export function AbaCustos({ rascunho, alterar, resultado }: Props) {
               </span>
               <span className="text-sm font-semibold tabular-nums text-slate-900">
                 {dinheiro(resultado.agregados.custosPorCategoria[g.categoria], moeda)}
+                {/* $/unidade em toda linha do orçamento, que é como uma pro forma
+                    se lê. Sem unidade cadastrada não há denominador: some. */}
+                {resultado.agregados.unidadesTotal > 0 ? (
+                  <span className="ml-2 font-normal text-slate-500">
+                    {dinheiro(
+                      resultado.agregados.custosPorCategoria[g.categoria] /
+                        resultado.agregados.unidadesTotal,
+                      moeda,
+                    )}
+                    /un.
+                  </span>
+                ) : null}
               </span>
             </div>
 
@@ -436,7 +448,14 @@ export function AbaCustos({ rascunho, alterar, resultado }: Props) {
           <div className="space-y-1 rounded-xl bg-slate-50 px-4 py-3 text-sm">
             <div className="flex justify-between font-semibold text-slate-900">
               <span>Total do orçamento</span>
-              <span className="tabular-nums">{dinheiro(totalOrcamento, moeda)}</span>
+              <span className="tabular-nums">
+                {dinheiro(totalOrcamento, moeda)}
+                {resultado.agregados.unidadesTotal > 0 ? (
+                  <span className="ml-2 font-normal text-slate-500">
+                    {dinheiro(totalOrcamento / resultado.agregados.unidadesTotal, moeda)}/un.
+                  </span>
+                ) : null}
+              </span>
             </div>
             {/* Os dois divergem quando algum custo cai fora do prazo do cronograma
                 — mês âncora além do último mês, ou obra com zero meses. Mostrar os

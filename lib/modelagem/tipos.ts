@@ -620,6 +620,25 @@ export interface Indicadores {
   tirMensal: number | null;
   tirAnual: number | null;
   xirr: number | null;
+
+  // ─── Por unidade e por pé quadrado ─────────────────────────────────────────
+  // Derivação PURA de `apuracao` e `agregados`: não há input novo nem migration.
+  // Denominador zero devolve `null`, nunca NaN nem Infinity — é a mesma regra dos
+  // demais indicadores, e `razao` em indicadores.ts é quem a aplica.
+  /**
+   * Custo TOTAL do projeto por unidade: (custoEmpreendimento + custoFinanceiro)
+   * ÷ unidadesTotal. Multiplicado de volta por `unidadesTotal`, reconstitui a
+   * apuração — há teste cobrando isso.
+   */
+  custoPorUnidade: number | null;
+  /** Mesmo numerador de `custoPorUnidade`, dividido pela área total. */
+  custoPorSf: number | null;
+  /** VGV ÷ unidadesTotal. É preço BRUTO, antes de comissão e cartório. */
+  precoMedioPorUnidade: number | null;
+  /** VGV ÷ área total. Bruto, para casar com `precoMedioPorUnidade`. */
+  receitaPorSf: number | null;
+  /** Lucro do projeto ÷ unidadesTotal. */
+  margemPorUnidade: number | null;
 }
 
 export interface RateioSocio {
@@ -714,6 +733,14 @@ export interface Agregados {
    * como o usuário o declarou — um custo em mês fora do prazo aparece aqui e não lá.
    */
   custosPorCategoria: Record<CategoriaCusto, number>;
+  /**
+   * Σ (areaSf × quantidade). A área é POR UNIDADE na tipologia, então o total
+   * multiplica pela quantidade — mesma regra de `terrenosTotal` e `vgv`.
+   *
+   * É o denominador de `custoPorSf` e `receitaPorSf`, e por isso precisa estar no
+   * output: sem ele, quem lê um $/sf não tem como auditar de onde veio.
+   */
+  areaTotalSf: number;
 }
 
 export interface ModelOutput {

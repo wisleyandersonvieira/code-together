@@ -10,14 +10,17 @@
  */
 import type { Alignment, Fill, Font, Workbook, Worksheet } from 'exceljs';
 import {
+  apuracaoAnual,
   basesDeCalculo,
   CATEGORIAS_CUSTO,
   gradeSensibilidade,
   pontosDeEquilibrio,
   resolverCustos,
   ROTULO_CATEGORIA,
+  LINHAS_ANUAL,
   ROTULO_GATILHO,
   sensibilidadePrazo,
+  totalAnual,
   SUFIXO_BASE_CALCULO,
   VARIACOES_CUSTO,
   VARIACOES_PRECO,
@@ -276,6 +279,7 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
   abaPremissas();
   abaTipologias();
   abaUsosFontes();
+  abaAnual();
   abaFluxo();
   abaAportes();
   abaJuros();
@@ -580,7 +584,7 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
 
   // ── 3 · Tipologias ────────────────────────────────────────────────────────
   function abaTipologias() {
-    const larguras = [5, 28, 18, ...(temQuantidade ? [8] : []), 12, 16, 16, 16, 16, 14, 16, 16, 16, 12];
+    const larguras = [5, 28, 18, ...(temQuantidade ? [8] : []), 12, 16, 16, 16, 16, 14, 16, 16, 16, 16, 12];
     const ws = novaAba(wb, 'Tipologias', larguras);
     const ULT = 1 + larguras.length;
     tituloAba(ws, 1, 2, ULT, `${nome.toUpperCase()}  ·  TIPOLOGIAS`,
@@ -592,7 +596,8 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
       { titulo: 'Área sf', align: 'right' }, { titulo: 'Terreno', align: 'right' },
       { titulo: 'Obra', align: 'right' }, { titulo: 'Custo direto', align: 'right' },
       { titulo: 'Preço de venda', align: 'right' }, { titulo: 'Tax/ano', align: 'right' },
-      { titulo: 'Custo total', align: 'right' }, { titulo: 'Receita líquida', align: 'right' },
+      { titulo: 'Custo total', align: 'right' }, { titulo: 'Custo unitário', align: 'right' },
+      { titulo: 'Receita líquida', align: 'right' },
       { titulo: 'Lucro', align: 'right' }, { titulo: 'Margem', align: 'right' },
     ];
     const HEADER = 4;
@@ -613,6 +618,9 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
         (u.precoVenda || 0) * qtd,
         (u.propertyTaxAno || 0) * qtd,
         r?.custoTotal ?? 0,
+        // Tudo incluído, já com o rateio de property tax, juros e fee. Vem do
+        // motor: a planilha não divide por conta própria.
+        r?.custoTotalUnitario ?? 0,
         r?.receitaLiquida ?? 0,
         r?.lucro ?? 0,
       ];
@@ -646,13 +654,23 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     rowTotal.getCell(3).alignment = esq;
     // Colunas somáveis: SUM de verdade, para quem abrir a planilha auditar.
     const primeiraSomavel = temQuantidade ? 5 : 6;
+    // A coluna de custo UNITÁRIO fica de fora do SUM: somar custo por unidade
+    // entre tipologias não significa nada — daria a soma das médias, não a média.
+    // No lugar entra o custo médio do PROJETO por unidade, que é o indicador
+    // `custoPorUnidade` do motor, o mesmo que a aba Resultado mostra.
+    const colCustoUnitario = ULT - 3;
     for (let c = primeiraSomavel; c < ULT; c++) {
+      if (c === colCustoUnitario) continue;
       const L = letra(ws, c);
       const cel = ws.getCell(total, c);
       cel.value = { formula: `SUM(${L}${primeira}:${L}${ultima})`, date1904: false };
       cel.numFmt = ws.getCell(primeira, c).numFmt;
       cel.alignment = dir;
     }
+    const celCustoUnitario = ws.getCell(total, colCustoUnitario);
+    celCustoUnitario.value = ind.custoPorUnidade ?? 0;
+    celCustoUnitario.numFmt = MOEDA;
+    celCustoUnitario.alignment = dir;
     const cRt = letra(ws, ULT - 2);
     const cLt = letra(ws, ULT - 1);
     const margemTotal = ws.getCell(total, ULT);
@@ -781,7 +799,67 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     ws.views = [{ showGridLines: false }];
   }
 
-  // ── 5 · Fluxo de Caixa ────────────────────────────────────────────────────
+  // ── 5 · P&L Anual ─────────────────────────────────────────────────────────
+  // Derivação pura do fluxo, por `lib/modelagem/anual.ts` — a planilha não soma
+  // nada por conta própria, nem a coluna Total.
+  function abaAnual() {
+    const anos = apuracaoAnual(resultado);
+    const larguras = [34, ...anos.map(() => 18), 20];
+    const ws = novaAba(wb, 'P&L Anual', larguras);
+    const ULT = 1 + larguras.length;
+    tituloAba(ws, 1, 2, ULT, `${nome.toUpperCase()}  ·  P&L ANUAL`,
+      'Demonstração por ano-calendário. Comissão e cartório incidem sobre a receita de cada ano, não sobre o VGV total.');
+
+    let l = 4;
+    if (anos.length === 0) {
+      nota(ws, l, 2, ULT, 'O cronograma não tem mês nenhum.');
+      ws.views = [{ showGridLines: false }];
+      return;
+    }
+
+    const HEADER = l;
+    cabecalhoTabela(ws, HEADER, 2, [
+      { titulo: 'Linha' },
+      ...anos.map((a) => ({
+        titulo: `${a.ano}\n${a.meses} ${a.meses === 1 ? 'mês' : 'meses'}`,
+        align: 'right' as const,
+      })),
+      { titulo: 'Total', align: 'right' as const },
+    ]);
+    l += 1;
+
+    const totalAnos = totalAnual(anos);
+    for (const def of LINHAS_ANUAL) {
+      const linha = ws.getRow(l);
+      linha.getCell(2).value = def.rotulo;
+      linha.getCell(2).alignment = esq;
+      linha.getCell(2).font = fonte({ bold: !!def.total || !!def.subtotal });
+      [...anos, totalAnos].forEach((col, k) => {
+        const cel = linha.getCell(3 + k);
+        const v = col[def.chave] as number;
+        // Dedução entra NEGATIVA na planilha, para que a coluna some sozinha e
+        // quem auditar veja a demonstração fechar célula a célula.
+        cel.value = def.deducao ? -Math.abs(v) : v;
+        cel.numFmt = MOEDA;
+        cel.alignment = dir;
+        cel.font = fonte({ bold: !!def.total || k === anos.length });
+      });
+      if (def.total) estiloTotal(ws, l, 2, ULT);
+      else if (def.subtotal) bordaSuperior(ws, l, 2, ULT);
+      l += 1;
+    }
+
+    l += 1;
+    nota(ws, l++, 2, ULT,
+      'O primeiro e o último ano são parciais — a contagem de meses está no cabeçalho.');
+    nota(ws, l++, 2, ULT,
+      `A soma dos resultados anuais é ${totalAnos.resultado.toFixed(2)}, contra ${ap.lucroProjeto.toFixed(2)} de lucro do projeto. Quando divergir, é porque a receita foi lançada à mão no fluxo — ver a conferência "Receita lançada vs apurada".`);
+
+    ws.views = [{ state: 'frozen', xSplit: 2, ySplit: HEADER, showGridLines: false }];
+    ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  }
+
+  // ── 6 · Fluxo de Caixa ────────────────────────────────────────────────────
   function abaFluxo() {
     const ws = novaAba(wb, 'Fluxo de Caixa', [30, ...meses.map(() => 11.5), 14]);
     const COL0 = 3;                       // primeira coluna de mês

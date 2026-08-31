@@ -15,6 +15,7 @@ import {
 import { bloqueiaSalvamento } from './conferencias';
 import { indiceMes, tirMensal, somarMeses } from './indicadores';
 import { comParcelaNoMes, curvaComoParcelas, editaPlanoDeAportes, semParcelaNoMes } from './aportes';
+import { apuracaoAnual, totalAnual } from './anual';
 import { mapearModelInput } from './mapear';
 import { CATEGORIAS_CUSTO } from './tipos';
 import type { CustoAdicional, ModelInput, Override } from './tipos';
@@ -1215,7 +1216,12 @@ describe('11 — orçamento por categoria', () => {
   });
 
   it('só acrescenta custosPorCategoria aos agregados', () => {
-    const { custosPorCategoria, ...resto } = referencia.agregados;
+    // `areaTotalSf` também sai da comparação: entrou depois, com o item 4.3, e é
+    // agregado de SAÍDA como `custosPorCategoria` — não muda valor nenhum dos
+    // que já existiam, e é isso que o `resto` abaixo cobra.
+    const { custosPorCategoria, areaTotalSf, ...resto } = referencia.agregados;
+    // O caso base não tem área por unidade, então o total é zero.
+    expect(areaTotalSf).toBe(0);
     // O que já existia continua idêntico ao caso base de antes da categorização.
     expect(resto).toEqual({
       terrenosTotal: 240_000,
@@ -2681,5 +2687,244 @@ describe('21 — taxa variável: benchmark mais spread', () => {
       { id: 2, mes: 1, valor: 0.05 },
       { id: 1, mes: 2, valor: 0.06 },
     ]);
+  });
+});
+
+describe('22 — indicadores por unidade e por pé quadrado', () => {
+  // Derivação PURA de apuracao e agregados: nenhum input novo, nenhuma migration.
+  const referencia = calcular(casoBase());
+
+  it('não muda nenhum número que já existia', () => {
+    // Os indicadores antigos seguem idênticos; só há campos novos.
+    const { custoPorUnidade, custoPorSf, precoMedioPorUnidade, receitaPorSf, margemPorUnidade, ...antigos } =
+      referencia.indicadores;
+    expect(Object.keys(antigos)).toEqual([
+      'moic', 'roi', 'margemVgv', 'ltc', 'alavancagem', 'custoTotalDividaPct',
+      'tirMensal', 'tirAnual', 'xirr',
+    ]);
+    expect(custoPorUnidade).not.toBeNull();
+    expect(precoMedioPorUnidade).not.toBeNull();
+    expect(margemPorUnidade).not.toBeNull();
+    // Sem área cadastrada, os dois por-sf são NULL — não NaN, não Infinity.
+    expect(custoPorSf).toBeNull();
+    expect(receitaPorSf).toBeNull();
+  });
+
+  it('custoPorUnidade × unidadesTotal reconstitui a apuração', () => {
+    // A verificação do item, com tolerância de centavos.
+    const { indicadores: ind, apuracao: ap, agregados: ag } = referencia;
+    expect(ind.custoPorUnidade! * ag.unidadesTotal).toBeCloseTo(
+      ap.custoEmpreendimento + ap.custoFinanceiro,
+      2,
+    );
+    expect(ind.precoMedioPorUnidade! * ag.unidadesTotal).toBeCloseTo(ap.receitaBruta, 2);
+    expect(ind.margemPorUnidade! * ag.unidadesTotal).toBeCloseTo(ap.lucroProjeto, 2);
+  });
+
+  it('por sf usa a área TOTAL: areaSf × quantidade', () => {
+    const base = casoBase();
+    // 1.800 sf por unidade em 4 unidades = 7.200 sf.
+    base.unidades = base.unidades.map((u) => ({ ...u, areaSf: 1_800 }));
+    const out = calcular(base);
+    expect(out.agregados.areaTotalSf).toBe(7_200);
+    expect(out.indicadores.custoPorSf! * 7_200).toBeCloseTo(
+      out.apuracao.custoEmpreendimento + out.apuracao.custoFinanceiro,
+      2,
+    );
+    expect(out.indicadores.receitaPorSf! * 7_200).toBeCloseTo(out.apuracao.receitaBruta, 2);
+  });
+
+  it('respeita a quantidade da tipologia na área total', () => {
+    const base = casoBase();
+    base.unidades = [
+      { nome: 'A', quantidade: 45, custoTerreno: 0, custoObra: 0, precoVenda: 300_000, propertyTaxAno: 0, areaSf: 1_800 },
+    ];
+    const out = calcular(base);
+    expect(out.agregados.areaTotalSf).toBe(81_000); // 45 × 1.800
+    expect(out.indicadores.precoMedioPorUnidade).toBeCloseTo(300_000, 6);
+  });
+
+  it('denominador zero devolve null, nunca NaN nem Infinity', () => {
+    const base = casoBase();
+    base.unidades = [];
+    const out = calcular(base);
+    expect(out.agregados.unidadesTotal).toBe(0);
+    for (const k of ['custoPorUnidade', 'custoPorSf', 'precoMedioPorUnidade', 'receitaPorSf', 'margemPorUnidade'] as const) {
+      expect(out.indicadores[k]).toBeNull();
+    }
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+  });
+});
+
+describe('23 — P&L por ano-calendário', () => {
+  const referencia = calcular(casoBase());
+  const anos = apuracaoAnual(referencia);
+
+  it('abre um ano-calendário por ano tocado pelo cronograma', () => {
+    // Caso base: mês 1 em dez/2025, 23 meses → dez/25, 2026 e 2027.
+    expect(anos.map((a) => a.ano)).toEqual([2025, 2026, 2027]);
+    expect(anos.map((a) => a.meses)).toEqual([1, 12, 10]);
+    expect(soma(anos.map((a) => a.meses))).toBe(referencia.meses.length);
+  });
+
+  it('Σ resultado dos anos = lucroProjeto', () => {
+    // A verificação do item, com tolerância de centavos.
+    expect(soma(anos.map((a) => a.resultado))).toBeCloseTo(referencia.apuracao.lucroProjeto, 2);
+    // E o acumulado da última coluna é o mesmo número.
+    expect(anos[anos.length - 1].resultadoAcumulado).toBeCloseTo(referencia.apuracao.lucroProjeto, 2);
+  });
+
+  it('cada linha da demonstração fecha com a apuração do projeto', () => {
+    const ap = referencia.apuracao;
+    expect(soma(anos.map((a) => a.receitaBruta))).toBeCloseTo(ap.receitaBruta, 2);
+    expect(soma(anos.map((a) => a.comissoes))).toBeCloseTo(ap.comissoes, 2);
+    expect(soma(anos.map((a) => a.cartorio))).toBeCloseTo(ap.cartorio, 2);
+    expect(soma(anos.map((a) => a.receitaLiquida))).toBeCloseTo(ap.receitaLiquida, 2);
+    expect(soma(anos.map((a) => a.custoTerrenos))).toBeCloseTo(ap.custoTerrenos, 2);
+    expect(soma(anos.map((a) => a.custoObra))).toBeCloseTo(ap.custoObra, 2);
+    expect(soma(anos.map((a) => a.custoPropertyTax))).toBeCloseTo(ap.custoPropertyTax, 2);
+    expect(soma(anos.map((a) => a.custoOutros))).toBeCloseTo(ap.custoOutros, 2);
+    expect(soma(anos.map((a) => a.custoEmpreendimento))).toBeCloseTo(ap.custoEmpreendimento, 2);
+    expect(soma(anos.map((a) => a.jurosTotais))).toBeCloseTo(ap.jurosTotais, 2);
+    expect(soma(anos.map((a) => a.feeTotal))).toBeCloseTo(ap.feeTotal, 2);
+  });
+
+  it('comissão incide sobre a receita DO ANO, não sobre o VGV total', () => {
+    // No caso base a venda é única, no mês 23 (ano 2027). Os anos sem venda têm
+    // de sair com comissão ZERO — ratear o desconto do projeto pelos anos poria
+    // comissão em ano sem venda nenhuma.
+    expect(anos[0].receitaBruta).toBe(0);
+    expect(anos[0].comissoes).toBe(0);
+    expect(anos[0].cartorio).toBe(0);
+    expect(anos[1].comissoes).toBe(0);
+    // E o ano da venda concentra tudo.
+    expect(anos[2].receitaBruta).toBeCloseTo(referencia.apuracao.receitaBruta, 2);
+    expect(anos[2].comissoes).toBeCloseTo(referencia.apuracao.comissoes, 2);
+    // A identidade da demonstração fecha dentro da coluna.
+    for (const a of anos) {
+      expect(a.receitaBruta - a.comissoes - a.cartorio).toBeCloseTo(a.receitaLiquida, 2);
+      expect(a.receitaLiquida - a.custoEmpreendimento - a.custoFinanceiro).toBeCloseTo(a.resultado, 6);
+    }
+  });
+
+  it('distribui a receita entre os anos quando há takedown', () => {
+    const base = casoBase();
+    base.unidades = [
+      { nome: 'Casa', quantidade: 24, custoTerreno: 10_000, custoObra: 50_000, precoVenda: 500_000, propertyTaxAno: 0 },
+    ];
+    base.receita.modoVenda = 'takedown';
+    // 2 unidades por mês do 12 ao 23 — cruza a virada de 2026 para 2027.
+    base.receita.takedowns = Array.from({ length: 12 }, (_, k) => ({
+      unidadeIndex: 0, faseIndex: null, ordem: k, mes: 12 + k, quantidade: 2, precoUnitario: 0,
+    }));
+    const out = calcular(base);
+    const linhas = apuracaoAnual(out);
+    // Agora dois anos têm receita, e cada um tem a SUA comissão.
+    expect(linhas[1].receitaBruta).toBeGreaterThan(0);
+    expect(linhas[2].receitaBruta).toBeGreaterThan(0);
+    for (const a of linhas) {
+      expect(a.comissoes).toBeCloseTo(a.receitaBruta * 0.06, 2);
+      expect(a.cartorio).toBeCloseTo(a.receitaBruta * 0.02, 2);
+    }
+    expect(soma(linhas.map((a) => a.resultado))).toBeCloseTo(out.apuracao.lucroProjeto, 2);
+  });
+
+  it('segue o FLUXO quando um override afasta a receita do VGV', () => {
+    // Deliberado: a demonstração mostra o que entrou, não o que o VGV prometia.
+    // A divergência já tem conferência própria — `receita_lancada`.
+    const base = casoBase();
+    base.overrides = [{ mes: 23, linha: 'revenue', valor: 1_000_000 }];
+    const out = calcular(base);
+    const linhas = apuracaoAnual(out);
+    expect(semaforo(out, 'receita_lancada')).toBe('ambar');
+    expect(soma(linhas.map((a) => a.receitaLiquida))).toBeCloseTo(1_000_000, 2);
+    // Σ dos anos = lucro do FLUXO, que difere do lucro apurado pelo VGV
+    // exatamente na diferença que a conferência aponta.
+    const lucroDoFluxo =
+      1_000_000 - out.apuracao.custoEmpreendimento - out.apuracao.custoFinanceiro;
+    expect(soma(linhas.map((a) => a.resultado))).toBeCloseTo(lucroDoFluxo, 2);
+  });
+
+  it('é puro: mesma entrada, mesma saída, sem mutar o ModelOutput', () => {
+    const antes = JSON.stringify(referencia.meses);
+    const a = apuracaoAnual(referencia);
+    const b = apuracaoAnual(referencia);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    expect(JSON.stringify(referencia.meses)).toBe(antes);
+  });
+
+  it('totalAnual soma as colunas sem conta própria', () => {
+    const t = totalAnual(anos);
+    expect(t.resultado).toBeCloseTo(referencia.apuracao.lucroProjeto, 2);
+    expect(t.meses).toBe(referencia.meses.length);
+    expect(t.receitaBruta).toBeCloseTo(referencia.apuracao.receitaBruta, 2);
+    // Um total não tem acumulado próprio: repete o resultado.
+    expect(t.resultadoAcumulado).toBe(t.resultado);
+    expect(totalAnual([]).resultado).toBe(0);
+  });
+
+  it('projeto sem receita nenhuma não inventa comissão', () => {
+    const base = casoBase();
+    base.receita.modoVenda = 'manual';
+    base.unidades = base.unidades.map((u) => ({ ...u, precoVenda: 0 }));
+    const linhas = apuracaoAnual(calcular(base));
+    expect(linhas.every((a) => a.receitaBruta === 0 && a.comissoes === 0)).toBe(true);
+    expect(linhas.every((a) => Number.isFinite(a.resultado))).toBe(true);
+  });
+});
+
+describe('24 — o que a linha do tempo desenha', () => {
+  // A régua da aba Linha do tempo e a seção do PDF não têm conta própria: as duas
+  // leem `cronograma`, `cronograma.fases` e os takedowns do input. Este bloco
+  // cobra que essas fontes ficam coerentes nos dois extremos — projeto de frente
+  // única e projeto faseado com takedowns —, que é o que garante que a régua não
+  // quebra.
+  it('com usaFases = false há cronograma global e NENHUMA fase para desenhar', () => {
+    const out = calcular(casoBase());
+    expect(out.cronograma.prazoTotal).toBe(23);
+    expect(out.cronograma.mesInicioObra).toBe(11);
+    expect(out.cronograma.mesFimObra).toBe(18);
+    // A trilha de fases fica vazia — é por isso que a régua não quebra.
+    expect(out.cronograma.fases).toEqual([]);
+    // E os marcos do financiamento continuam dentro do prazo.
+    expect(out.cronograma.mesSaida).toBeLessThanOrEqual(out.cronograma.prazoTotal);
+  });
+
+  it('as fases derivadas cabem na régua, todas dentro de 1..prazoTotal', () => {
+    const base = casoBase();
+    base.usaFases = true;
+    base.fases = [
+      { ordem: 0, nome: 'PH1', dataInicio: '2026-10-01', dataFim: '2027-01-31' },
+      { ordem: 1, nome: 'PH2', dataInicio: '2027-02-01', dataFim: '2027-05-31' },
+    ];
+    base.alocacoes = [
+      { unidadeIndex: 0, faseIndex: 0, quantidade: 1 },
+      { unidadeIndex: 1, faseIndex: 0, quantidade: 1 },
+      { unidadeIndex: 2, faseIndex: 1, quantidade: 1 },
+      { unidadeIndex: 3, faseIndex: 1, quantidade: 1 },
+    ];
+    const out = calcular(base);
+    expect(out.cronograma.fases).toHaveLength(2);
+    for (const f of out.cronograma.fases) {
+      expect(f.mesInicio).toBeGreaterThanOrEqual(1);
+      expect(f.mesFim).toBeLessThanOrEqual(out.cronograma.prazoTotal);
+      expect(f.nome).toBeTruthy();
+    }
+  });
+
+  it('prazo zero não deixa a régua sem denominador', () => {
+    // A tela mostra um aviso em vez de dividir por zero; aqui basta garantir que
+    // o motor devolve prazo 0 sem estourar e sem mês nenhum.
+    const base = casoBase();
+    base.mesesAprovacao = 0;
+    base.mesesConstrucao = 0;
+    base.mesesPosObra = 0;
+    const out = calcular(base);
+    expect(out.cronograma.prazoTotal).toBe(0);
+    expect(out.meses).toEqual([]);
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+    // E a demonstração anual de um projeto sem mês é uma lista vazia, não um erro.
+    expect(apuracaoAnual(out)).toEqual([]);
+    expect(totalAnual(apuracaoAnual(out)).resultado).toBe(0);
   });
 });

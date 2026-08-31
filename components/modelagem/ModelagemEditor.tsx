@@ -69,6 +69,7 @@ import { AbaPremissas } from './AbaPremissas';
 import { AbaUnidades } from './AbaUnidades';
 import { AbaAportes } from './AbaAportes';
 import { AbaCustos } from './AbaCustos';
+import { AbaTimeline } from './AbaTimeline';
 import { AbaFinanciamento } from './AbaFinanciamento';
 import { AbaSocios } from './AbaSocios';
 import { AbaReceita } from './AbaReceita';
@@ -89,6 +90,7 @@ const ABAS = [
   { valor: 'socios', rotulo: 'Sócios' },
   { valor: 'receita', rotulo: 'Receita' },
   { valor: 'fluxo', rotulo: 'Fluxo de caixa' },
+  { valor: 'timeline', rotulo: 'Linha do tempo' },
   { valor: 'resultado', rotulo: 'Resultado' },
   { valor: 'demanda', rotulo: 'Demanda de caixa' },
   { valor: 'sensibilidade', rotulo: 'Sensibilidade' },
@@ -107,6 +109,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [original, setOriginal] = useState<ModelInput | null>(null);
   const [cenarioId, setCenarioId] = useState<number | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [aba, setAba] = useState('premissas');
   const [exportando, setExportando] = useState<'pdf' | 'xlsx' | 'csv' | null>(null);
 
   const [salvarPremissas] = useMutateAction(updateModelagemPremissasAction);
@@ -612,7 +615,9 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
 
       <PainelConferencias conferencias={resultado.conferencias} compacto />
 
-      <Tabs defaultValue="premissas" className="w-full">
+      {/* Controlado (e não `defaultValue`) porque a aba Linha do tempo navega:
+          clicar numa fase leva a Premissas, clicar num takedown leva a Receita. */}
+      <Tabs value={aba} onValueChange={setAba} className="w-full">
         <TabsList className="grid h-auto w-full grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50/85 p-2 shadow-sm md:grid-cols-5">
           {ABAS.map((a) => (
             <TabsTrigger key={a.valor} value={a.valor} className={cn(financeDetailTabsTriggerClassName, 'text-xs md:text-sm')}>
@@ -659,6 +664,9 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
               reverterLinha={reverterLinha}
               reverterTudo={reverterTudo}
             />
+          </TabsContent>
+          <TabsContent value="timeline">
+            <AbaTimeline rascunho={rascunho} resultado={resultado} irParaAba={setAba} />
           </TabsContent>
           <TabsContent value="resultado">
             <AbaResultado rascunho={rascunho} resultado={resultado} />

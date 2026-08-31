@@ -2,8 +2,9 @@
 
 import { FinanceDetailSectionCard } from '@/components/finance/detail-ui';
 import { cn } from '@/lib/utils';
-import type { ModelInput, ModelOutput } from '@/lib/modelagem';
-import { dinheiro, mesAno, multiplo, percentual } from './formato';
+import type { ApuracaoAnual, ModelInput, ModelOutput } from '@/lib/modelagem';
+import { apuracaoAnual, LINHAS_ANUAL, totalAnual } from '@/lib/modelagem';
+import { dinheiro, mesAno, multiplo, numero, percentual } from './formato';
 
 interface Props {
   rascunho: ModelInput;
@@ -61,6 +62,18 @@ export function AbaResultado({ rascunho, resultado }: Props) {
   const totalUsos = usos.reduce((a, u) => a + u.valor, 0);
   const totalOrigens = origens.reduce((a, o) => a + o.valor, 0);
 
+  // Demonstração por ano-calendário. A tela não soma nada por conta própria: a
+  // coluna Total vem de `totalAnual`, e as colunas de `apuracaoAnual`.
+  const anos = apuracaoAnual(resultado);
+  const totalAnos = totalAnual(anos);
+
+  /** Dedução sai entre parênteses, como numa demonstração de resultado. */
+  const celulaAnual = (linha: (typeof LINHAS_ANUAL)[number], col: ApuracaoAnual) => {
+    const v = col[linha.chave] as number;
+    if (linha.deducao) return v === 0 ? '—' : `(${d(Math.abs(v))})`;
+    return d(v);
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -77,6 +90,110 @@ export function AbaResultado({ rascunho, resultado }: Props) {
         />
         <Indicador rotulo="XIRR" valor={percentual(ind.xirr)} nota="Com as datas reais, base actual/365" />
       </div>
+
+      <FinanceDetailSectionCard
+        title="Por unidade"
+        description="O que uma pro forma mostra em toda linha do orçamento: custo por lote contra preço de venda. Derivado da apuração — não há premissa nova aqui."
+      >
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <Indicador
+            rotulo="Custo por unidade"
+            valor={d(ind.custoPorUnidade)}
+            nota={`Tudo incluído, sobre ${numero(ag.unidadesTotal, 0)} unidades`}
+          />
+          <Indicador
+            rotulo="Preço médio por unidade"
+            valor={d(ind.precoMedioPorUnidade)}
+            nota="Bruto, antes de comissão e cartório"
+          />
+          <Indicador
+            rotulo="Margem por unidade"
+            valor={d(ind.margemPorUnidade)}
+            nota={`${percentual(ind.margemVgv)} sobre o VGV`}
+          />
+          <Indicador
+            rotulo="Custo por sf"
+            valor={d(ind.custoPorSf)}
+            nota={
+              ag.areaTotalSf > 0
+                ? `Sobre ${numero(ag.areaTotalSf, 0)} sf`
+                : 'Sem área por unidade cadastrada'
+            }
+          />
+          <Indicador
+            rotulo="Receita por sf"
+            valor={d(ind.receitaPorSf)}
+            nota={
+              ag.areaTotalSf > 0
+                ? `Sobre ${numero(ag.areaTotalSf, 0)} sf`
+                : 'Informe a área na aba Unidades'
+            }
+          />
+        </div>
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          O custo por unidade é <strong>tudo incluído</strong>: custo do empreendimento mais juros e
+          fee, dividido pelas {numero(ag.unidadesTotal, 0)} unidades. Multiplicado de volta pela
+          quantidade, reconstitui a apuração acima.
+        </p>
+      </FinanceDetailSectionCard>
+
+      <FinanceDetailSectionCard
+        title="Resultado por ano"
+        description="Demonstração por ano-calendário. Comissão e cartório incidem sobre a receita de cada ano, não sobre o VGV total."
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200">
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Linha
+                </th>
+                {anos.map((a) => (
+                  <th
+                    key={a.ano}
+                    className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {a.ano}
+                    <span className="block font-normal normal-case text-slate-400">
+                      {a.meses} {a.meses === 1 ? 'mês' : 'meses'}
+                    </span>
+                  </th>
+                ))}
+                <th className="border-l border-slate-300 bg-slate-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {LINHAS_ANUAL.map((linha) => (
+                <tr
+                  key={linha.chave}
+                  className={cn(
+                    'border-b border-slate-100 last:border-0',
+                    linha.total && 'bg-slate-50 font-semibold text-slate-900',
+                    linha.subtotal && 'font-medium',
+                  )}
+                >
+                  <td className="px-3 py-1.5 text-sm text-slate-700">{linha.rotulo}</td>
+                  {anos.map((a) => (
+                    <td key={a.ano} className="px-3 py-1.5 text-right text-sm tabular-nums text-slate-800">
+                      {celulaAnual(linha, a)}
+                    </td>
+                  ))}
+                  <td className="border-l border-slate-300 bg-slate-50 px-3 py-1.5 text-right text-sm font-medium tabular-nums text-slate-900">
+                    {celulaAnual(linha, totalAnos)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-slate-500">
+          O primeiro e o último ano são parciais — a contagem de meses está no cabeçalho. A soma dos
+          resultados anuais é o lucro do projeto; quando divergir, é porque a receita foi lançada à
+          mão no fluxo, e a conferência <em>Receita lançada vs apurada</em> aponta a diferença.
+        </p>
+      </FinanceDetailSectionCard>
 
       <FinanceDetailSectionCard title="Cascata de apuração" description="Do VGV ao lucro repartido.">
         <div className="overflow-hidden rounded-2xl border border-slate-200">

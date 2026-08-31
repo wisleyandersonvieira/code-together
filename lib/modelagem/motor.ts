@@ -503,6 +503,7 @@ export function calcular(input: ModelInput): ModelOutput {
     equityDisponivelObra,
     aportePlanejadoTotal,
     custosPorCategoria,
+    areaTotalSf: bases.areaSf,
   };
 
   // ─── Overrides ─────────────────────────────────────────────────────────────
@@ -1094,6 +1095,19 @@ export function calcular(input: ModelInput): ModelOutput {
     tirMensal: tir,
     tirAnual: anualizar(tir),
     xirr: xirr(fluxoInvestidor, meses.map((x) => x.data)),
+    // Uma pro forma mostra custo por lote em toda linha do orçamento, e o custo
+    // total por unidade contra o preço de venda. Tudo aqui é derivação pura do
+    // que já foi apurado — `razao` devolve null em denominador zero, então nunca
+    // sai NaN nem Infinity para a tela.
+    //
+    // O numerador do custo é `custoEmpreendimento + custoFinanceiro`, e não só o
+    // custo do empreendimento: o que interessa a quem decide é o custo TUDO
+    // INCLUÍDO da unidade, comparável com o preço de venda.
+    custoPorUnidade: razao(custoEmpreendimento + custoFinanceiro, unidadesTotal),
+    custoPorSf: razao(custoEmpreendimento + custoFinanceiro, bases.areaSf),
+    precoMedioPorUnidade: razao(vgv, unidadesTotal),
+    receitaPorSf: razao(vgv, bases.areaSf),
+    margemPorUnidade: razao(lucroProjeto, unidadesTotal),
   };
 
   // ─── Rateio por sócio — todos pro-rata ─────────────────────────────────────

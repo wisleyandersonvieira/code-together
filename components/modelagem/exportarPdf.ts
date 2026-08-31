@@ -24,9 +24,12 @@ import {
   type Tom,
 } from '@/utils/pdf-theme';
 import {
+  apuracaoAnual,
   gradeSensibilidade,
+  LINHAS_ANUAL,
   pontosDeEquilibrio,
   sensibilidadePrazo,
+  totalAnual,
   VARIACOES_CUSTO,
   VARIACOES_PRECO,
 } from '@/lib/modelagem';
@@ -385,7 +388,13 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
   const yCap = drawTabela(ctx, colsCapital, linhasCapital, { x: ctx.marginX + larguraMetade + 6, y: yUsos, tamanhoFonte: 7 });
   ctx.y = Math.max(yPag, yCap) + 6;
 
-  // ── 8 · Fluxo de caixa mensal (paisagem) ──────────────────────────────────
+  // ── 8 · P&L por ano-calendário ────────────────────────────────────────────
+  desenharAnual(ctx, resultado);
+
+  // ── 8b · Linha do tempo ───────────────────────────────────────────────────
+  desenharTimeline(ctx, input, resultado);
+
+  // ── 8c · Fluxo de caixa mensal (paisagem) ─────────────────────────────────
   desenharFluxo(ctx, input, resultado);
 
   // ── 9 · Cronograma de aportes ─────────────────────────────────────────────
@@ -607,6 +616,213 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
 }
 
 /** Seção 8: blocos de 12 meses em páginas paisagem. */
+/**
+ * Demonstração por ano-calendário. Lê `lib/modelagem/anual.ts` — o PDF não soma
+ * nada por conta própria, nem a coluna Total.
+ */
+function desenharAnual(ctx: ContextoPdf, resultado: ModelOutput) {
+  const anos = apuracaoAnual(resultado);
+  if (anos.length === 0) return;
+  const total = totalAnual(anos);
+
+  ctx.addPage('portrait');
+  drawSectionTitle(ctx, '', 'P&L por ano-calendário', 'title');
+
+  const colunas = distribuir(
+    [
+      { label: 'Linha', width: 44, align: 'left' as const },
+      ...anos.map((a) => ({ label: `${a.ano}\n${a.meses}m`, width: 22, align: 'right' as const })),
+      { label: 'Total', width: 26, align: 'right' as const },
+    ],
+    ctx.contentWidth,
+  );
+
+  const linhas: LinhaTabela[] = LINHAS_ANUAL.map((def) => ({
+    celulas: [
+      def.rotulo,
+      ...[...anos, total].map((col) => {
+        const v = col[def.chave] as number;
+        // Dedução entre parênteses, como numa demonstração de resultado.
+        const texto = def.deducao
+          ? v === 0
+            ? '—'
+            : `(${dinheiroCurto(Math.abs(v))})`
+          : dinheiroCurto(v);
+        return {
+          texto,
+          cor: !def.deducao && v < 0 ? C.rose : undefined,
+          negrito: def.total,
+        };
+      }),
+    ],
+    fundo: def.total ? C.navySoft : undefined,
+    negrito: def.total || def.subtotal,
+    cor: def.total ? C.navy : undefined,
+    reguaSuperior: def.subtotal,
+    altura: 6.5,
+  }));
+
+  drawTabela(ctx, colunas, linhas, { tamanhoFonte: 7, tamanhoCabecalho: 6.5, alturaCabecalho: 10 });
+
+  ctx.y += 3;
+  ctx.st(C.slate);
+  ctx.doc.setFont('helvetica', 'normal');
+  ctx.doc.setFontSize(6.5);
+  ctx.doc.text(
+    'Comissão e cartório incidem sobre a receita de cada ano, não sobre o VGV total. O primeiro e o último ano são parciais — a contagem de meses está no cabeçalho.',
+    ctx.marginX,
+    ctx.y,
+    { maxWidth: ctx.contentWidth },
+  );
+  ctx.y += 6;
+}
+
+/**
+ * A mesma régua da aba Linha do tempo, com os primitivos de retângulo do jsPDF.
+ *
+ * Sem fases e sem takedowns sobra só o cronograma global — e é justamente isso
+ * que faz a seção não quebrar num projeto de frente única: cada trilha só é
+ * desenhada se tiver o que desenhar.
+ */
+function desenharTimeline(ctx: ContextoPdf, input: ModelInput, resultado: ModelOutput) {
+  const { doc } = ctx;
+  const cr = resultado.cronograma;
+  const prazo = cr.prazoTotal;
+  if (prazo <= 0) return;
+
+  ctx.addPage('landscape');
+  drawSectionTitle(ctx, '', 'Linha do tempo', 'title');
+
+  const ROTULO = 34;
+  const x0 = ctx.marginX + ROTULO;
+  const largura = ctx.contentWidth - ROTULO;
+  const xDe = (mes: number) => x0 + ((Math.max(1, Math.min(mes, prazo)) - 1) / prazo) * largura;
+  const larguraDe = (de: number, ate: number) => {
+    const i = Math.max(1, Math.min(Math.trunc(de), prazo));
+    const f = Math.max(i, Math.min(Math.trunc(Math.max(ate, de)), prazo));
+    return ((f - i + 1) / prazo) * largura;
+  };
+  const xPonto = (mes: number) => xDe(mes) + largura / prazo / 2;
+
+  // Régua de meses.
+  const passo = prazo <= 24 ? 2 : prazo <= 48 ? 4 : 6;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6);
+  ctx.st(C.slate);
+  for (let m = 1; m <= prazo; m += passo) {
+    const rotulo = resultado.meses[m - 1] ? mesAnoLongo(resultado.meses[m - 1].data) : `${m}`;
+    doc.text(`${m} · ${rotulo}`, xPonto(m), ctx.y, { align: 'center' });
+  }
+  ctx.y += 2;
+  ctx.sd(C.border);
+  doc.setLineWidth(0.2);
+  doc.line(x0, ctx.y, x0 + largura, ctx.y);
+  ctx.y += 3;
+
+  const barra = (rotulo: string, de: number, ate: number, cor: readonly number[]) => {
+    ctx.ensureSpace(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    ctx.st(C.graphite);
+    doc.text(rotulo, ctx.marginX, ctx.y + 3.4, { maxWidth: ROTULO - 2 });
+    ctx.sf(C.light);
+    doc.rect(x0, ctx.y, largura, 4.6, 'F');
+    ctx.sf(cor as [number, number, number]);
+    doc.rect(xDe(de), ctx.y, larguraDe(de, ate), 4.6, 'F');
+    ctx.y += 6.2;
+  };
+
+  // Trilha 1 — cronograma global.
+  if (input.mesesAprovacao > 0) barra('Aprovação', 1, cr.mesInicioObra - 1, C.slate);
+  if (input.mesesConstrucao > 0) barra('Obra', cr.mesInicioObra, cr.mesFimObra, C.navy);
+  if (input.mesesPosObra > 0) barra('Pós-obra', cr.mesFimObra + 1, prazo, C.border);
+
+  // Trilha 2 — fases, quando houver.
+  if (input.usaFases && cr.fases.length > 0) {
+    ctx.y += 1.5;
+    for (let i = 0; i < cr.fases.length; i++) {
+      const f = cr.fases[i];
+      barra(f.nome || `Fase ${i + 1}`, f.mesInicio, f.mesFim, CORES_FASE_PDF[i % CORES_FASE_PDF.length]);
+    }
+  }
+
+  // Trilha 3 — takedowns, quando o modo de venda for esse.
+  const vendasPorMes = new Map<number, number>();
+  if (input.receita.modoVenda === 'takedown') {
+    for (const t of input.receita.takedowns ?? []) {
+      if (!input.unidades[t.unidadeIndex] || t.mes < 1 || t.mes > prazo) continue;
+      vendasPorMes.set(t.mes, (vendasPorMes.get(t.mes) ?? 0) + Math.max(0, Math.trunc(t.quantidade || 0)));
+    }
+  }
+  if (vendasPorMes.size > 0) {
+    ctx.y += 1.5;
+    ctx.ensureSpace(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    ctx.st(C.graphite);
+    doc.text('Unidades vendidas', ctx.marginX, ctx.y + 3.4, { maxWidth: ROTULO - 2 });
+    ctx.sf(C.light);
+    doc.rect(x0, ctx.y, largura, 4.6, 'F');
+    for (const [mes, n] of [...vendasPorMes.entries()].sort((a, b) => a[0] - b[0])) {
+      ctx.sf(C.navy);
+      doc.rect(xPonto(mes) - 0.35, ctx.y, 0.7, 4.6, 'F');
+      doc.setFontSize(5);
+      ctx.st(C.navy);
+      doc.text(String(n), xPonto(mes), ctx.y - 0.6, { align: 'center' });
+    }
+    ctx.y += 6.2;
+  }
+
+  // Trilha 4 — marcos do financiamento.
+  const marcos = [
+    { mes: input.financiamento.mesInicioSaque, rotulo: 'Início do saque', cor: C.green },
+    { mes: input.financiamento.mesFimSaque, rotulo: 'Fim do saque', cor: C.gold },
+    { mes: cr.mesSaida, rotulo: 'Saída', cor: C.rose },
+  ].filter((x) => x.mes >= 1 && x.mes <= prazo);
+  if (marcos.length > 0) {
+    ctx.y += 1.5;
+    ctx.ensureSpace(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    ctx.st(C.graphite);
+    doc.text('Financiamento', ctx.marginX, ctx.y + 3.4, { maxWidth: ROTULO - 2 });
+    ctx.sf(C.light);
+    doc.rect(x0, ctx.y, largura, 4.6, 'F');
+    for (const x of marcos) {
+      ctx.sf(x.cor);
+      doc.rect(xPonto(x.mes) - 0.4, ctx.y, 0.8, 4.6, 'F');
+    }
+    ctx.y += 6.2;
+
+    doc.setFontSize(6);
+    let legenda = ctx.marginX + ROTULO;
+    for (const x of marcos) {
+      ctx.sf(x.cor);
+      doc.rect(legenda, ctx.y - 1.6, 2, 2, 'F');
+      ctx.st(C.slate);
+      const texto = `${x.rotulo} · mês ${x.mes}`;
+      doc.text(texto, legenda + 3, ctx.y);
+      legenda += doc.getTextWidth(texto) + 10;
+    }
+    ctx.y += 5;
+  }
+
+  ctx.st(C.slate);
+  doc.setFontSize(6.5);
+  doc.text(
+    input.usaFases
+      ? 'As fases se encaixam dentro do cronograma global, que é quem define o prazo do projeto.'
+      : 'Projeto de frente única — sem divisão em fases, a régua mostra só o cronograma global.',
+    ctx.marginX,
+    ctx.y,
+    { maxWidth: ctx.contentWidth },
+  );
+  ctx.y += 5;
+}
+
+/** Cores de série das fases no PDF. Espelham a paleta da aba Linha do tempo. */
+const CORES_FASE_PDF = [C.navy, C.green, C.gold, C.blue, C.rose];
+
 function desenharFluxo(ctx: ContextoPdf, input: ModelInput, resultado: ModelOutput) {
   const { doc } = ctx;
   const meses = resultado.meses;
