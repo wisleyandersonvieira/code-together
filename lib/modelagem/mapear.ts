@@ -8,6 +8,7 @@
 import type {
   AlocacaoFase,
   AporteParcela,
+  BaseCalculoCusto,
   CategoriaCusto,
   CustoAdicional,
   Fase,
@@ -17,7 +18,7 @@ import type {
   Socio,
   Unidade,
 } from './tipos';
-import { CATEGORIAS_CUSTO, LINHAS_FLUXO } from './tipos';
+import { BASES_CALCULO_CUSTO, CATEGORIAS_CUSTO, LINHAS_FLUXO } from './tipos';
 
 /** Número tolerante: string do Postgres, null, undefined ou '' viram `padrao`. */
 export const num = (v: unknown, padrao = 0): number => {
@@ -173,6 +174,14 @@ export function mapearCustos(linhas: unknown): CustoAdicional[] {
     // Id de outra linha de modelagem_custos, não valor numérico de cálculo — mas
     // chega como INTEGER e passa pela mesma coerção das demais chaves.
     grupoPaiId: inteiroOuNulo(c.grupo_pai),
+    // 'total' é o default da coluna (migration 1761300000) e o que reproduz o
+    // comportamento anterior para toda linha já gravada.
+    baseCalculo: BASES_CALCULO_CUSTO.includes(c.base_calculo as BaseCalculoCusto)
+      ? (c.base_calculo as BaseCalculoCusto)
+      : 'total',
+    // DECIMAL(15,4) — chega como STRING. Sem num(), "214.3750" × 81000 daria NaN
+    // e o custo sumiria do orçamento sem erro nenhum.
+    valorUnitario: num(c.valor_unitario),
   }));
 }
 

@@ -24,6 +24,7 @@ import type {
   Apuracao,
   CategoriaCusto,
   Conferencia,
+  CustoAdicional,
   Cronograma,
   FaseCronograma,
   Indicadores,
@@ -46,6 +47,56 @@ const TOL_CONVERGENCIA = 0.01;
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 const soma = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const chave = (mes: number, linha: LinhaFluxo) => `${mes}:${linha}`;
+
+/**
+ * Denominadores das tipologias usados pelas bases de cálculo de custo.
+ *
+ * Todo campo da tipologia é POR UNIDADE, então a área entra multiplicada pela
+ * quantidade — a mesma regra de `terrenosTotal`, `obraTotal` e `vgv`.
+ */
+export interface BasesDeCalculo {
+  /** Σ quantidade das tipologias: quantas unidades o projeto tem de fato. */
+  unidades: number;
+  /** Σ (areaSf × quantidade). */
+  areaSf: number;
+}
+
+const quantidadeDe = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
+
+/** Puro: mesmas tipologias, mesmos denominadores. */
+export function basesDeCalculo(unidades: Unidade[]): BasesDeCalculo {
+  let n = 0;
+  let area = 0;
+  for (const u of unidades ?? []) {
+    const q = quantidadeDe(u);
+    n += q;
+    area += (u.areaSf || 0) * q;
+  }
+  return { unidades: n, areaSf: area };
+}
+
+/**
+ * Valor efetivo de um custo adicional — o número que de fato entra no fluxo.
+ *
+ * Puro e total: nunca lança. Base 'total', ausente ou desconhecida devolve
+ * `custo.valor`, que é exatamente o que o motor lia antes da migration 1761300000
+ * — é essa cláusula que garante que nenhuma modelagem já salva mude de resultado.
+ *
+ * Denominador zero devolve zero, e a conferência `custo_base_zerada` acende âmbar
+ * para que o custo sumido não passe despercebido. Zerar em silêncio seria o pior
+ * dos mundos, mas lançar exceção violaria a invariante do módulo: input
+ * inconsistente vira conferência, nunca erro.
+ */
+export function valorEfetivoCusto(custo: CustoAdicional, bases: BasesDeCalculo): number {
+  switch (custo.baseCalculo) {
+    case 'por_unidade':
+      return (custo.valorUnitario || 0) * bases.unidades;
+    case 'por_sf':
+      return (custo.valorUnitario || 0) * bases.areaSf;
+    default:
+      return custo.valor || 0;
+  }
+}
 
 interface EstadoPonto {
   feeTotal: number;
@@ -122,7 +173,7 @@ export function calcular(input: ModelInput): ModelOutput {
   // Cada linha de `unidades` é uma TIPOLOGIA e seus valores são POR UNIDADE, então
   // todo agregado multiplica por quantidade. Com quantidade = 1 (o default da
   // migration 1761000000) a multiplicação é a identidade e nada muda.
-  const qtd = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
+  const qtd = quantidadeDe;
   const terrenosTotal = soma(unidades.map((u) => (u.custoTerreno || 0) * qtd(u)));
   const obraTotal = soma(unidades.map((u) => (u.custoObra || 0) * qtd(u)));
   const vgv = soma(unidades.map((u) => (u.precoVenda || 0) * qtd(u)));
@@ -199,6 +250,13 @@ export function calcular(input: ModelInput): ModelOutput {
       ? Math.max(0, (parcelasAcumuladas[m] ?? 0) - terrenosTotal)
       : equityDisponivelObra;
 
+  // ─── Valor efetivo de cada custo adicional ─────────────────────────────────
+  // Resolvido UMA vez, aqui, e reusado tanto nos subtotais por categoria quanto
+  // no loop mensal: os dois têm de enxergar exatamente o mesmo número, senão o
+  // subtotal do orçamento deixaria de bater com o que é lançado no fluxo.
+  const bases = basesDeCalculo(unidades);
+  const efetivoPorCusto = custosAdicionais.map((c) => valorEfetivoCusto(c, bases));
+
   // ─── Subtotais do orçamento por categoria ──────────────────────────────────
   // Agregado de SAÍDA, não regra de lançamento: nada aqui toca o loop mensal, e
   // trocar a categoria de uma linha não move um único mês do fluxo. É o que
@@ -214,10 +272,10 @@ export function calcular(input: ModelInput): ModelOutput {
   const custosPorCategoria = Object.fromEntries(
     CATEGORIAS_CUSTO.map((c) => [c, 0]),
   ) as Record<CategoriaCusto, number>;
-  for (const c of custosAdicionais) {
+  custosAdicionais.forEach((c, i) => {
     const cat: CategoriaCusto = CATEGORIAS_CUSTO.includes(c.categoria) ? c.categoria : 'outros';
-    custosPorCategoria[cat] += c.valor || 0;
-  }
+    custosPorCategoria[cat] += efetivoPorCusto[i];
+  });
 
   const agregados: Agregados = {
     terrenosTotal,
@@ -287,8 +345,12 @@ export function calcular(input: ModelInput): ModelOutput {
     propertyTax[m] = taxAnoTotal / 12;
 
     let outros = 0;
-    for (const c of custosAdicionais) {
-      const valor = c.valor || 0;
+    // O valor efetivo entra exatamente onde `c.valor` era lido: a base de cálculo
+    // muda QUANTO é lançado, nunca QUANDO. A distribuição no tempo segue saindo
+    // só de `distribuicao`/`mesAncora`.
+    for (let i = 0; i < custosAdicionais.length; i++) {
+      const c = custosAdicionais[i];
+      const valor = efetivoPorCusto[i];
       if (c.distribuicao === 'linear_construction') {
         if (mesesConstrucao > 0 && m >= mesInicioObra && m <= mesFimObra) outros += valor / mesesConstrucao;
       } else if (c.distribuicao === 'linear_total') {
@@ -650,6 +712,7 @@ export function calcular(input: ModelInput): ModelOutput {
     convergiu,
     orfaos,
     compartilhado,
+    bases,
   });
 
   return {

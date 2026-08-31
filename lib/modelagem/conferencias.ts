@@ -18,6 +18,7 @@ import type {
   Override,
   Semaforo,
 } from './tipos';
+import type { BasesDeCalculo } from './motor';
 import { TOLERANCIA } from './indicadores';
 
 /** Tolerância de participação: 0,01 ponto percentual. */
@@ -37,6 +38,14 @@ interface Contexto {
   convergiu: boolean;
   orfaos: Override[];
   compartilhado: number;
+  /**
+   * Denominadores das bases de cálculo de custo, já resolvidos pelo motor.
+   *
+   * Vêm prontos em vez de serem recalculados aqui: a conferência tem de cobrar
+   * exatamente o número que o cálculo usou, e recomputar abriria espaço para as
+   * duas contas divergirem.
+   */
+  bases: BasesDeCalculo;
 }
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
@@ -413,6 +422,39 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
         'Estenda uma fase vizinha ou crie a fase que falta na aba Premissas.',
       );
     }
+  }
+
+  // ─── Custo com base de cálculo sem denominador ─────────────────────────────
+  // Um custo em 'por_unidade' sem tipologia nenhuma, ou em 'por_sf' com área
+  // total zerada, é multiplicado por zero e desaparece do fluxo sem deixar
+  // rastro. O motor não pode lançar exceção por isso — a invariante do módulo é
+  // que input inconsistente vira conferência —, mas sumir em silêncio seria pior
+  // que qualquer erro: o usuário digitou $214/sf e o orçamento não mexeu.
+  const ROTULO_BASE: Record<string, string> = {
+    por_unidade: 'por unidade',
+    por_sf: 'por pé quadrado',
+  };
+  const semDenominador = (input.custosAdicionais ?? []).filter((c) => {
+    if (c.baseCalculo === 'por_unidade') return ctx.bases.unidades <= 0;
+    if (c.baseCalculo === 'por_sf') return ctx.bases.areaSf <= 0;
+    return false;
+  });
+  if (semDenominador.length > 0) {
+    add(
+      'custo_base_zerada',
+      'Custo com base de cálculo zerada',
+      'ambar',
+      `${semDenominador.length}`,
+      `${semDenominador
+        .map(
+          (c) =>
+            `${c.label || 'sem descrição'} (${ROTULO_BASE[c.baseCalculo] ?? c.baseCalculo}, ${dinheiro(
+              c.valorUnitario || 0,
+            )} unitário)`,
+        )
+        .join('; ')} — o denominador é zero, então o custo entra no fluxo como ${dinheiro(0)}.`,
+      'Cadastre as tipologias na aba Tipologias e preencha a área por unidade, ou mude a base do custo para "Valor total".',
+    );
   }
 
   // ─── Obra sem meses de construção ──────────────────────────────────────────

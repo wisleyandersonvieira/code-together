@@ -6,13 +6,22 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FinanceDetailSectionCard } from '@/components/finance/detail-ui';
 import type {
+  BaseCalculoCusto,
   CategoriaCusto,
   CustoAdicional,
   DistribuicaoCusto,
   ModelInput,
   ModelOutput,
 } from '@/lib/modelagem';
-import { CATEGORIAS_CUSTO, ROTULO_CATEGORIA } from '@/lib/modelagem';
+import {
+  BASES_CALCULO_CUSTO,
+  basesDeCalculo,
+  CATEGORIAS_CUSTO,
+  ROTULO_BASE_CALCULO,
+  ROTULO_CATEGORIA,
+  SUFIXO_BASE_CALCULO,
+  valorEfetivoCusto,
+} from '@/lib/modelagem';
 import { dinheiro } from './formato';
 
 interface Props {
@@ -80,7 +89,16 @@ export function AbaCustos({ rascunho, alterar, resultado }: Props) {
           k !== i && c.id != null && c.categoria === custos[i].categoria && c.grupoPaiId == null,
       );
 
-  const totalOrcamento = custos.reduce((a, c) => a + (c.valor || 0), 0);
+  /**
+   * Denominadores das bases de cálculo, pela MESMA função pura que o motor usa.
+   * A tela não tem conta própria: se divergir do fluxo, é bug de leitura.
+   */
+  const bases = basesDeCalculo(rascunho.unidades ?? []);
+  const efetivo = (c: CustoAdicional) => valorEfetivoCusto(c, bases);
+  const denominador = (c: CustoAdicional) =>
+    c.baseCalculo === 'por_unidade' ? bases.unidades : c.baseCalculo === 'por_sf' ? bases.areaSf : 0;
+
+  const totalOrcamento = custos.reduce((a, c) => a + efetivo(c), 0);
 
   return (
     <FinanceDetailSectionCard
@@ -101,6 +119,8 @@ export function AbaCustos({ rascunho, alterar, resultado }: Props) {
                   mesAncora: null,
                   categoria: 'outros',
                   grupoPaiId: null,
+                  baseCalculo: 'total',
+                  valorUnitario: 0,
                 },
               ],
             })
@@ -126,7 +146,7 @@ export function AbaCustos({ rascunho, alterar, resultado }: Props) {
             {g.linhas.map(({ c, i }) => (
               <div
                 key={c.id ?? `novo-${i}`}
-                className={`grid grid-cols-1 items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-[2fr_1.2fr_1fr_1.4fr_1fr_auto] ${
+                className={`grid grid-cols-1 items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-[1.8fr_1.1fr_1.1fr_1fr_1.3fr_1fr_auto] ${
                   c.grupoPaiId != null ? 'md:ml-6' : ''
                 }`}
               >
@@ -182,14 +202,59 @@ export function AbaCustos({ rascunho, alterar, resultado }: Props) {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-500">Valor</label>
+                  <label className="text-xs font-medium text-slate-500">Base</label>
+                  <Select
+                    value={c.baseCalculo}
+                    onValueChange={(v) => mudar(i, { baseCalculo: v as BaseCalculoCusto })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BASES_CALCULO_CUSTO.map((b) => (
+                        <SelectItem key={b} value={b}>
+                          {ROTULO_BASE_CALCULO[b]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-slate-500">
+                    {c.baseCalculo === 'total' ? 'Valor' : `Unitário${SUFIXO_BASE_CALCULO[c.baseCalculo]}`}
+                  </label>
+                  {/* Um campo só, e nunca os dois ao mesmo tempo: `valor` e
+                      `valorUnitario` são inputs alternativos, e deixar o total
+                      editável numa base derivada convidaria a gravar um número
+                      que o motor ignora. Ao trocar de base, o valor anterior fica
+                      guardado no banco — nada de input do usuário é apagado. */}
                   <Input
                     type="number"
                     step="any"
                     className="text-right tabular-nums"
-                    value={c.valor}
-                    onChange={(e) => mudar(i, { valor: Number(e.target.value) || 0 })}
+                    value={c.baseCalculo === 'total' ? c.valor : c.valorUnitario}
+                    onChange={(e) =>
+                      mudar(
+                        i,
+                        c.baseCalculo === 'total'
+                          ? { valor: Number(e.target.value) || 0 }
+                          : { valorUnitario: Number(e.target.value) || 0 },
+                      )
+                    }
                   />
+                  {c.baseCalculo !== 'total' ? (
+                    // A conta acontecendo à vista do usuário. Denominador zero é
+                    // dito com todas as letras — a conferência `custo_base_zerada`
+                    // repete o aviso no painel.
+                    <p className="text-[11px] leading-4 text-slate-500 tabular-nums">
+                      × {denominador(c).toLocaleString('pt-BR')}{' '}
+                      {c.baseCalculo === 'por_unidade' ? 'un.' : 'sf'} ={' '}
+                      <span className={denominador(c) <= 0 ? 'text-amber-600' : ''}>
+                        {dinheiro(efetivo(c), moeda)}
+                      </span>
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-1.5">

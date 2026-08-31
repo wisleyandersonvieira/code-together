@@ -117,9 +117,42 @@ export const ROTULO_CATEGORIA: Record<CategoriaCusto, string> = {
   outros: 'Outros',
 };
 
+/**
+ * Como o valor do custo é obtido.
+ *
+ * 'total' é o default do banco e o comportamento anterior à migration 1761300000:
+ * `valor` é o total digitado. Nas demais, `valor` passa a ser DERIVADO e não deve
+ * ser lido — quem manda é `valorUnitario` × o denominador das tipologias.
+ *
+ * Os denominadores respeitam a regra do módulo: os valores da tipologia são POR
+ * UNIDADE, então área entra como `areaSf × quantidade`.
+ */
+export type BaseCalculoCusto = 'total' | 'por_unidade' | 'por_sf';
+
+/** Chaves estáveis: são o CHECK de `modelagem_custos.base_calculo`. */
+export const BASES_CALCULO_CUSTO: BaseCalculoCusto[] = ['total', 'por_unidade', 'por_sf'];
+
+export const ROTULO_BASE_CALCULO: Record<BaseCalculoCusto, string> = {
+  total: 'Valor total',
+  por_unidade: 'Por unidade',
+  por_sf: 'Por pé quadrado',
+};
+
+/** Sufixo do valor unitário, para a tela e a planilha lerem igual. */
+export const SUFIXO_BASE_CALCULO: Record<BaseCalculoCusto, string> = {
+  total: '',
+  por_unidade: '/unidade',
+  por_sf: '/sf',
+};
+
 export interface CustoAdicional {
   id?: number;
   label: string;
+  /**
+   * Total do custo — INPUT apenas quando `baseCalculo` é 'total'. Nas demais
+   * bases é derivado por `valorEfetivoCusto` e este campo guarda só o último
+   * total digitado; não leia daqui.
+   */
   valor: number;
   distribuicao: DistribuicaoCusto;
   /** Obrigatório quando distribuicao = 'single_month'; ignorado nos demais. */
@@ -136,6 +169,10 @@ export interface CustoAdicional {
    * duplicidade. `null` = primeiro nível.
    */
   grupoPaiId?: number | null;
+  /** 'total' (default do banco) reproduz o comportamento anterior. */
+  baseCalculo: BaseCalculoCusto;
+  /** Custo por unidade ou por pé quadrado. Ignorado quando a base é 'total'. */
+  valorUnitario: number;
 }
 
 export type ModoSaque = 'equity_first' | 'cash_demand' | 'manual';

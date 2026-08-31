@@ -10,11 +10,14 @@
  */
 import type { Alignment, Fill, Font, Workbook, Worksheet } from 'exceljs';
 import {
+  basesDeCalculo,
   CATEGORIAS_CUSTO,
   gradeSensibilidade,
   pontosDeEquilibrio,
   ROTULO_CATEGORIA,
   sensibilidadePrazo,
+  SUFIXO_BASE_CALCULO,
+  valorEfetivoCusto,
   VARIACOES_CUSTO,
   VARIACOES_PRECO,
 } from '@/lib/modelagem';
@@ -443,9 +446,12 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
       nota(ws, l++, 2, ULT, 'Nenhum custo adicional cadastrado.');
     } else {
       cabecalhoTabela(ws, l++, 2, [
-        { titulo: 'Custo adicional' }, { titulo: 'Categoria' }, { titulo: 'Valor', align: 'right' },
-        { titulo: 'Distribuição' }, { titulo: 'Mês âncora', align: 'right' },
+        { titulo: 'Custo adicional' }, { titulo: 'Categoria' }, { titulo: 'Base' },
+        { titulo: 'Valor', align: 'right' }, { titulo: 'Distribuição' },
+        { titulo: 'Mês âncora', align: 'right' },
       ]);
+      // Mesma função pura do motor: a planilha não tem conta própria.
+      const basesCusto = basesDeCalculo(input.unidades ?? []);
       // Agrupado por categoria, e dentro dela na ordem em que o usuário cadastrou
       // — a mesma leitura da aba Orçamento na tela.
       //
@@ -460,7 +466,13 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
             // Filho de outra linha entra recuado, igual à indentação da tela.
             (c.grupoPaiId != null ? '    ' : '') + c.label,
             ROTULO_CATEGORIA[categoria],
-            c.valor,
+            // Numa base derivada, a coluna Valor traz o TOTAL efetivo e esta
+            // coluna mostra de onde ele veio. `c.valor` não é lido: com base
+            // <> 'total' ele guarda só o último total digitado.
+            c.baseCalculo === 'total'
+              ? 'Valor total'
+              : `${c.valorUnitario}${SUFIXO_BASE_CALCULO[c.baseCalculo]}`,
+            valorEfetivoCusto(c, basesCusto),
             c.distribuicao,
             c.mesAncora ?? '–',
           ];
@@ -468,26 +480,26 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
             const cel = linha.getCell(2 + k);
             cel.value = v;
             cel.font = fonte({ color: { argb: T.entrada } });
-            cel.alignment = k === 0 || k === 1 || k === 3 ? esq : dir;
-            if (k === 2) cel.numFmt = MOEDA;
+            cel.alignment = k === 0 || k === 1 || k === 2 || k === 4 ? esq : dir;
+            if (k === 3) cel.numFmt = MOEDA;
           });
         }
         const subtotal = ws.getRow(l);
         subtotal.getCell(2).value = `Subtotal — ${ROTULO_CATEGORIA[categoria]}`;
         subtotal.getCell(2).alignment = esq;
-        subtotal.getCell(4).value = ag.custosPorCategoria[categoria];
-        subtotal.getCell(4).numFmt = MOEDA;
-        subtotal.getCell(4).alignment = dir;
-        bordaSuperior(ws, l, 2, 6);
+        subtotal.getCell(5).value = ag.custosPorCategoria[categoria];
+        subtotal.getCell(5).numFmt = MOEDA;
+        subtotal.getCell(5).alignment = dir;
+        bordaSuperior(ws, l, 2, 7);
         l += 1;
       }
       const total = ws.getRow(l);
       total.getCell(2).value = 'Total do orçamento';
       total.getCell(2).alignment = esq;
-      total.getCell(4).value = custos.reduce((a, c) => a + (c.valor || 0), 0);
-      total.getCell(4).numFmt = MOEDA;
-      total.getCell(4).alignment = dir;
-      estiloTotal(ws, l, 2, 6);
+      total.getCell(5).value = custos.reduce((a, c) => a + valorEfetivoCusto(c, basesCusto), 0);
+      total.getCell(5).numFmt = MOEDA;
+      total.getCell(5).alignment = dir;
+      estiloTotal(ws, l, 2, 7);
       l += 1;
     }
     l += 1;
