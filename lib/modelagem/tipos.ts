@@ -73,13 +73,106 @@ export type DistribuicaoCusto =
   | 'linear_construction'
   | 'manual';
 
+/**
+ * Categoria do orçamento. Chaves estáveis: não renomear — são o CHECK da coluna
+ * `modelagem_custos.categoria`.
+ *
+ * É agrupamento de SAÍDA, não regra de lançamento: a distribuição no tempo
+ * continua saindo só de `distribuicao`/`mesAncora`, e trocar a categoria de uma
+ * linha não muda um único mês do fluxo.
+ */
+export type CategoriaCusto =
+  | 'terreno'
+  | 'sitework'
+  | 'vertical'
+  | 'amenidades'
+  | 'offsite'
+  | 'contingencia'
+  | 'soft'
+  | 'financeiro'
+  | 'outros';
+
+/** Ordem de exibição do orçamento, do hard cost ao soft cost. */
+export const CATEGORIAS_CUSTO: CategoriaCusto[] = [
+  'terreno',
+  'sitework',
+  'vertical',
+  'amenidades',
+  'offsite',
+  'contingencia',
+  'soft',
+  'financeiro',
+  'outros',
+];
+
+export const ROTULO_CATEGORIA: Record<CategoriaCusto, string> = {
+  terreno: 'Terreno',
+  sitework: 'Sitework',
+  vertical: 'Construção vertical',
+  amenidades: 'Amenidades',
+  offsite: 'Offsite',
+  contingencia: 'Contingência',
+  soft: 'Soft costs',
+  financeiro: 'Custos financeiros',
+  outros: 'Outros',
+};
+
+/**
+ * Como o valor do custo é obtido.
+ *
+ * 'total' é o default do banco e o comportamento anterior à migration 1761300000:
+ * `valor` é o total digitado. Nas demais, `valor` passa a ser DERIVADO e não deve
+ * ser lido — quem manda é `valorUnitario` × o denominador das tipologias.
+ *
+ * Os denominadores respeitam a regra do módulo: os valores da tipologia são POR
+ * UNIDADE, então área entra como `areaSf × quantidade`.
+ */
+export type BaseCalculoCusto = 'total' | 'por_unidade' | 'por_sf';
+
+/** Chaves estáveis: são o CHECK de `modelagem_custos.base_calculo`. */
+export const BASES_CALCULO_CUSTO: BaseCalculoCusto[] = ['total', 'por_unidade', 'por_sf'];
+
+export const ROTULO_BASE_CALCULO: Record<BaseCalculoCusto, string> = {
+  total: 'Valor total',
+  por_unidade: 'Por unidade',
+  por_sf: 'Por pé quadrado',
+};
+
+/** Sufixo do valor unitário, para a tela e a planilha lerem igual. */
+export const SUFIXO_BASE_CALCULO: Record<BaseCalculoCusto, string> = {
+  total: '',
+  por_unidade: '/unidade',
+  por_sf: '/sf',
+};
+
 export interface CustoAdicional {
   id?: number;
   label: string;
+  /**
+   * Total do custo — INPUT apenas quando `baseCalculo` é 'total'. Nas demais
+   * bases é derivado por `valorEfetivoCusto` e este campo guarda só o último
+   * total digitado; não leia daqui.
+   */
   valor: number;
   distribuicao: DistribuicaoCusto;
   /** Obrigatório quando distribuicao = 'single_month'; ignorado nos demais. */
   mesAncora?: number | null;
+  /**
+   * Agrupa a linha nos subtotais de `Agregados.custosPorCategoria`.
+   * 'outros' é o default do banco e reproduz o comportamento anterior à
+   * migration 1761200000.
+   */
+  categoria: CategoriaCusto;
+  /**
+   * Segundo nível: id da linha de custo que agrupa esta. Hierarquia VISUAL — o
+   * motor soma cada linha uma única vez, então pai e filho nunca entram em
+   * duplicidade. `null` = primeiro nível.
+   */
+  grupoPaiId?: number | null;
+  /** 'total' (default do banco) reproduz o comportamento anterior. */
+  baseCalculo: BaseCalculoCusto;
+  /** Custo por unidade ou por pé quadrado. Ignorado quando a base é 'total'. */
+  valorUnitario: number;
 }
 
 export type ModoSaque = 'equity_first' | 'cash_demand' | 'manual';
@@ -413,6 +506,17 @@ export interface Agregados {
   equityDisponivelObra: number;
   /** Σ das parcelas do plano de aportes. Comparar com `Apuracao.equityTotal`. */
   aportePlanejadoTotal: number;
+  /**
+   * Subtotal dos custos adicionais por categoria do orçamento.
+   *
+   * Sempre com TODAS as categorias presentes, inclusive as zeradas: quem lê não
+   * precisa distinguir "categoria sem lançamento" de "chave ausente".
+   *
+   * Σ das categorias = Σ dos custos adicionais lançados. NÃO é `Apuracao.custoOutros`:
+   * aquele é o que caiu dentro do prazo do cronograma, este é o orçamento inteiro
+   * como o usuário o declarou — um custo em mês fora do prazo aparece aqui e não lá.
+   */
+  custosPorCategoria: Record<CategoriaCusto, number>;
 }
 
 export interface ModelOutput {

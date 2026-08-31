@@ -10,9 +10,14 @@
  */
 import type { Alignment, Fill, Font, Workbook, Worksheet } from 'exceljs';
 import {
+  basesDeCalculo,
+  CATEGORIAS_CUSTO,
   gradeSensibilidade,
   pontosDeEquilibrio,
+  ROTULO_CATEGORIA,
   sensibilidadePrazo,
+  SUFIXO_BASE_CALCULO,
+  valorEfetivoCusto,
   VARIACOES_CUSTO,
   VARIACOES_PRECO,
 } from '@/lib/modelagem';
@@ -435,26 +440,67 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     });
     l += 1;
 
-    barraSecao(ws, l++, 2, ULT, 'Custos');
+    barraSecao(ws, l++, 2, ULT, 'Orçamento');
     const custos = input.custosAdicionais ?? [];
     if (custos.length === 0) {
       nota(ws, l++, 2, ULT, 'Nenhum custo adicional cadastrado.');
     } else {
       cabecalhoTabela(ws, l++, 2, [
-        { titulo: 'Custo adicional' }, { titulo: 'Valor', align: 'right' },
-        { titulo: 'Distribuição' }, { titulo: 'Mês âncora', align: 'right' },
+        { titulo: 'Custo adicional' }, { titulo: 'Categoria' }, { titulo: 'Base' },
+        { titulo: 'Valor', align: 'right' }, { titulo: 'Distribuição' },
+        { titulo: 'Mês âncora', align: 'right' },
       ]);
-      for (const c of custos) {
-        const linha = ws.getRow(l++);
-        const valores: (string | number)[] = [c.label, c.valor, c.distribuicao, c.mesAncora ?? '–'];
-        valores.forEach((v, k) => {
-          const cel = linha.getCell(2 + k);
-          cel.value = v;
-          cel.font = fonte({ color: { argb: T.entrada } });
-          cel.alignment = k === 0 || k === 2 ? esq : dir;
-          if (k === 1) cel.numFmt = MOEDA;
-        });
+      // Mesma função pura do motor: a planilha não tem conta própria.
+      const basesCusto = basesDeCalculo(input.unidades ?? []);
+      // Agrupado por categoria, e dentro dela na ordem em que o usuário cadastrou
+      // — a mesma leitura da aba Orçamento na tela.
+      //
+      // Os subtotais saem de `agregados.custosPorCategoria`: o motor é quem soma,
+      // aqui só se lê. Se a planilha divergir da tela, é bug de leitura.
+      for (const categoria of CATEGORIAS_CUSTO) {
+        const doGrupo = custos.filter((c) => c.categoria === categoria);
+        if (doGrupo.length === 0) continue;
+        for (const c of doGrupo) {
+          const linha = ws.getRow(l++);
+          const valores: (string | number)[] = [
+            // Filho de outra linha entra recuado, igual à indentação da tela.
+            (c.grupoPaiId != null ? '    ' : '') + c.label,
+            ROTULO_CATEGORIA[categoria],
+            // Numa base derivada, a coluna Valor traz o TOTAL efetivo e esta
+            // coluna mostra de onde ele veio. `c.valor` não é lido: com base
+            // <> 'total' ele guarda só o último total digitado.
+            c.baseCalculo === 'total'
+              ? 'Valor total'
+              : `${c.valorUnitario}${SUFIXO_BASE_CALCULO[c.baseCalculo]}`,
+            valorEfetivoCusto(c, basesCusto),
+            c.distribuicao,
+            c.mesAncora ?? '–',
+          ];
+          valores.forEach((v, k) => {
+            const cel = linha.getCell(2 + k);
+            cel.value = v;
+            cel.font = fonte({ color: { argb: T.entrada } });
+            cel.alignment = k === 0 || k === 1 || k === 2 || k === 4 ? esq : dir;
+            if (k === 3) cel.numFmt = MOEDA;
+          });
+        }
+        const subtotal = ws.getRow(l);
+        subtotal.getCell(2).value = `Subtotal — ${ROTULO_CATEGORIA[categoria]}`;
+        subtotal.getCell(2).alignment = esq;
+        subtotal.getCell(5).value = ag.custosPorCategoria[categoria];
+        subtotal.getCell(5).numFmt = MOEDA;
+        subtotal.getCell(5).alignment = dir;
+        bordaSuperior(ws, l, 2, 7);
+        l += 1;
       }
+      const total = ws.getRow(l);
+      total.getCell(2).value = 'Total do orçamento';
+      total.getCell(2).alignment = esq;
+      total.getCell(5).value = custos.reduce((a, c) => a + valorEfetivoCusto(c, basesCusto), 0);
+      total.getCell(5).numFmt = MOEDA;
+      total.getCell(5).alignment = dir;
+      estiloTotal(ws, l, 2, 7);
+      l += 1;
     }
     l += 1;
 
