@@ -201,7 +201,7 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[1180px]">
+        <table className="w-full min-w-[1420px]">
           <thead className="bg-slate-50">
             <tr>
               {[
@@ -212,9 +212,17 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
                 // seguintes decompõem — coberto por aporte, coberto por saque,
                 // descoberto. Com a bruta as três não fechariam com nada.
                 'Demanda',
+                // A amortização prevista é parcela da demanda, e nos meses de
+                // venda com release é a MAIOR delas: sem esta coluna a demanda
+                // aparece saltando sem explicação.
+                'Amortização prevista',
                 'Coberto por aporte',
                 'Coberto por saque',
                 'Descoberto',
+                // O que o teto ainda permite sacar no mês. É o número que fecha a
+                // leitura quando o descoberto é por teto e não por falta de
+                // aporte.
+                'Capacidade do mês',
                 // Lançado ≠ cobertura, e a distinção é o que esta tela existe
                 // para mostrar: o saque do modo equity_first pode passar da
                 // demanda (sobra em caixa) e o aporte do plano pode entrar num
@@ -244,6 +252,12 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
                   </td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-600">{d(m.caixaAbertura)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.demandaDimensionada)}</td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-600">
+                    {d(m.amortizacaoPrevista)}
+                    {m.amortizacaoRelease > 0.01 ? (
+                      <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-400">rel</span>
+                    ) : null}
+                  </td>
                   {/* Coberto por aporte é o RESTO da demanda depois do saque e do
                       descoberto: é o que faz as três colunas somarem exatamente a
                       demanda, em qualquer modo. O aporte que sobrar além da
@@ -260,6 +274,9 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
                     )}
                   >
                     {d(m.demandaDescoberta)}
+                  </td>
+                  <td className={cn('px-3 py-2 text-right text-sm tabular-nums', noTeto ? 'font-semibold text-red-600' : 'text-slate-600')}>
+                    {Number.isFinite(m.capacidadeSaque) ? d(m.capacidadeSaque) : 'sem teto'}
                   </td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.draw)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.equityCall)}</td>

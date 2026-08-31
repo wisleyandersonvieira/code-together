@@ -787,7 +787,10 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
       ['MOIC', ind.moic ?? '–', ind.moic == null ? undefined : FMT_MULT],
       ['ROI', ind.roi ?? '–', ind.roi == null ? undefined : FMT_PCT],
       ['Margem sobre VGV', ind.margemVgv ?? '–', ind.margemVgv == null ? undefined : FMT_PCT],
-      ['LTC', ind.ltc ?? '–', ind.ltc == null ? undefined : FMT_PCT],
+      // Dois LTC: por desembolso (total sacado) e de pico (maior saldo em
+      // aberto) — numa linha rotativa é o de pico que o contrato limita.
+      ['LTC por desembolso', ind.ltc ?? '–', ind.ltc == null ? undefined : FMT_PCT],
+      ['LTC de pico', ind.ltcPico ?? '–', ind.ltcPico == null ? undefined : FMT_PCT],
       ['Alavancagem', ind.alavancagem ?? '–', ind.alavancagem == null ? undefined : FMT_PCT],
       ['Custo total da dívida', ind.custoTotalDividaPct ?? '–', ind.custoTotalDividaPct == null ? undefined : FMT_PCT],
       ['TIR mensal', ind.tirMensal ?? '–', ind.tirMensal == null ? undefined : FMT_PCT2],
@@ -1081,7 +1084,14 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     par(ws, r0 + 4, 2, 'Custo financeiro', ap.custoFinanceiro, { numFmt: MOEDA });
     par(ws, r0 + 1, 5, 'Dívida amortizada', ap.dividaAmortizada, { numFmt: MOEDA });
     par(ws, r0 + 2, 5, 'Teto de dívida', ap.tetoDivida, { numFmt: MOEDA });
-    par(ws, r0 + 3, 5, 'LTC', ind.ltc ?? '–', { numFmt: ind.ltc == null ? undefined : FMT_PCT });
+    // Onde só cabe um: o de pico quando a linha é rotativa, porque é o que o
+    // teto cobra ali; o por desembolso no caso não rotativo.
+    par(
+      ws, r0 + 3, 5,
+      input.financiamento.linhaRotativa ? 'LTC de pico' : 'LTC por desembolso',
+      (input.financiamento.linhaRotativa ? ind.ltcPico : ind.ltc) ?? '–',
+      { numFmt: (input.financiamento.linhaRotativa ? ind.ltcPico : ind.ltc) == null ? undefined : FMT_PCT },
+    );
     par(ws, r0 + 4, 5, 'Custo total da dívida', ind.custoTotalDividaPct ?? '–', { numFmt: ind.custoTotalDividaPct == null ? undefined : FMT_PCT });
 
     nota(ws, r0 + 6, 2, ULT, input.financiamento.capitalizarJuros

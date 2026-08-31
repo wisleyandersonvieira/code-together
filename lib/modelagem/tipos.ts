@@ -397,6 +397,19 @@ export interface Financiamento {
   modoAmortizacao: ModoAmortizacao;
   capitalizarJuros: boolean;
   colchaoMinimoCaixa: number;
+  /**
+   * Linha de crédito ROTATIVA (migration 1763300000).
+   *
+   * TRUE: amortizar devolve limite, e a capacidade de saque do mês é
+   * `teto − saldo devedor de abertura`.
+   * FALSE (default, e toda modelagem já gravada): facilidade não rotativa — o
+   * teto vale para o TOTAL desembolsado ao longo da vida do empréstimo, e
+   * capacidade consumida não volta.
+   *
+   * Muda também o que `teto_divida` cobra: pico do saldo devedor na rotativa,
+   * total sacado na não rotativa.
+   */
+  linhaRotativa: boolean;
 
   // ─── Reserva de juros (migration 1762100000) ───────────────────────────────
   /**
@@ -761,7 +774,20 @@ export interface MesFluxo {
    * ou por aporte insuficiente. Zero quando o mês fecha.
    */
   demandaDescoberta: number;
-  /** Capacidade de saque restante no início do mês. */
+  /**
+   * Amortização PREVISTA que dimensionou o saque do mês: o release do mês mais,
+   * no mês da saída, o remanescente do saldo de abertura. Não é a amortização
+   * realizada (`amortization`), que pode ser maior no mês de saída porque o
+   * saque do próprio mês entra na base.
+   */
+  amortizacaoPrevista: number;
+  /** Quanto da `amortization` do mês foi release por unidade vendida. */
+  amortizacaoRelease: number;
+  /**
+   * Capacidade de saque restante no início do mês. Numa linha rotativa é
+   * `teto − saldo devedor de abertura`; numa não rotativa, `teto − total já
+   * desembolsado`.
+   */
   capacidadeSaque: number;
   /** Taxa ao ano efetivamente aplicada no mês. Com `tipoTaxa = 'fixa'` é constante. */
   taxaEfetivaAno: number;
@@ -794,6 +820,12 @@ export interface Apuracao {
   equityTotal: number;
   dividaSacada: number;
   dividaAmortizada: number;
+  /**
+   * Pico do saldo devedor ao longo dos meses — a grandeza que um contrato
+   * ROTATIVO limita. Numa linha não rotativa o que o teto limita é
+   * `dividaSacada`, o total desembolsado.
+   */
+  saldoDevedorMaximo: number;
   totalPagamentos: number;
   totalDistribuido: number;
   tetoDivida: number;
@@ -803,7 +835,13 @@ export interface Indicadores {
   moic: number | null;
   roi: number | null;
   margemVgv: number | null;
+  /** Total DESEMBOLSADO sobre o custo direto. Fórmula inalterada desde sempre. */
   ltc: number | null;
+  /**
+   * PICO do saldo devedor sobre o custo direto — o LTC que um covenant de linha
+   * rotativa cobra. Sem amortização antes do fim, coincide com `ltc`.
+   */
+  ltcPico: number | null;
   alavancagem: number | null;
   /** Custo acumulado da dívida sobre o principal sacado. NÃO é taxa a.a. */
   custoTotalDividaPct: number | null;

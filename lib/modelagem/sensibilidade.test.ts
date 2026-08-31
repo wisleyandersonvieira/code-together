@@ -32,7 +32,7 @@ const casoBase = (): ModelInput => ({
     taxaAnual: 0.095, feeEstruturacaoPct: 0.015, feeTiming: 'first_draw',
     mesInicioSaque: 13, mesFimSaque: 23, modoSaque: 'equity_first',
     maxLtcPct: null, valorContratado: null, custoFinanceiroNaDemanda: false,
-    modoAmortizacao: 'at_exit', capitalizarJuros: false, colchaoMinimoCaixa: 0,
+    modoAmortizacao: 'at_exit', capitalizarJuros: false, linhaRotativa: false, colchaoMinimoCaixa: 0,
     reservaJuros: 0, reservaJurosSacada: true, prazoMeses: null, carenciaMeses: 0,
     amortizacaoMeses: null, balloonNoVencimento: true, releasePrice: 0, releasePricePct: null,
     convencaoJuros: 'mensal_12', tipoTaxa: 'fixa', spread: 0, benchmarkNome: null,

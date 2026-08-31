@@ -385,6 +385,8 @@ interface ResultadoPasse {
   mesesNoTeto: number;
   /** Σ (demanda − saque) nesses meses: o que ficou sem cobertura. */
   descobertoPorTeto: number;
+  /** Σ do release que o teto do saldo de abertura cortou no projeto inteiro. */
+  releaseCortadoTotal: number;
 }
 
 export function calcular(input: ModelInput): ModelOutput {
@@ -893,24 +895,39 @@ export function calcular(input: ModelInput): ModelOutput {
   const reservaJuros = Math.max(0, fin.reservaJuros || 0);
   const reservaSacada = fin.reservaJurosSacada !== false;
 
-  // ─── Carência, prestação e balloon ─────────────────────────────────────────
-  const amortizaPorPrestacao = fin.modoAmortizacao === 'price' || fin.modoAmortizacao === 'sac';
-  const carenciaMeses = Math.max(0, Math.trunc(fin.carenciaMeses || 0));
-  const prazoDivida = fin.prazoMeses == null ? null : Math.max(1, Math.trunc(fin.prazoMeses));
-  // amortizacaoMeses nulo cai no prazo da dívida: sem balloon, quita no vencimento.
-  const amortizacaoMeses = Math.max(
-    1,
-    Math.trunc(fin.amortizacaoMeses ?? prazoDivida ?? prazoTotal ?? 1),
-  );
-  const mesVencimento = prazoDivida == null ? null : fin.mesInicioSaque + prazoDivida - 1;
-  const mesFimCarencia = fin.mesInicioSaque + carenciaMeses - 1;
+  // ─── Amortização: só release e quitação na saída ───────────────────────────
+  // ATENÇÃO — MUDANÇA DELIBERADA DE COMPORTAMENTO. Até aqui os modos 'price' e
+  // 'sac' (migration 1762200000) amortizavam por PRESTAÇÃO, com carência,
+  // vencimento e balloon. O passo 3 passou a ser, por decisão explícita do
+  // produto, apenas o release do mês mais a quitação do mês de saída. Nos modos
+  // 'price' e 'sac' isso significa: sem venda, sem amortização — e saldo devedor
+  // em aberto no fim, que `saldo_devedor_final` acusa em vermelho.
+  //
+  // `prazoMeses`, `carenciaMeses`, `amortizacaoMeses` e `balloonNoVencimento`
+  // continuam no input e no banco, e continuam alimentando as conferências e a
+  // prévia de prestação da interface — mas NÃO entram mais no fluxo. Quem for
+  // reintroduzir a prestação: é aqui e no passo 3, e a previsão do passo 1 tem
+  // de aprender a mesma conta, senão o saque volta a ser dimensionado a menos.
 
   // ─── Release price ─────────────────────────────────────────────────────────
-  // Valor fixo tem precedência sobre o percentual — ver o COMMENT da coluna.
+  // Valor fixo tem precedência sobre o percentual — ver o COMMENT da coluna. O
+  // percentual incide sobre o preço BRUTO das unidades que fecham no mês, não
+  // sobre a receita líquida: é assim que o contrato é escrito, e a comissão do
+  // corretor não reduz o que o banco leva.
+  //
+  // Alvo PRETENDIDO do mês, antes de qualquer teto. É a ÚNICA fonte do release:
+  // a previsão do passo 1, a amortização do passo 3 e o total que a conferência
+  // examina saem todos daqui, e por isso não têm como divergir. `vendasPorMes` é
+  // a mesma série que alimenta o gatilho de custo 'por_venda' e
+  // `MesFluxo.unidadesVendidas`.
   const releasePrice = Math.max(0, fin.releasePrice || 0);
   const releasePct = fin.releasePricePct ?? null;
-  const releaseDoMes = (m: number) => {
-    if (releasePrice > 0) return releasePrice * (vendasPorMes.get(m) ?? 0);
+  const releaseBrutoDoMes = (m: number, unidadesNoMes = vendasPorMes.get(m) ?? 0) => {
+    if (releasePrice > 0) return releasePrice * unidadesNoMes;
+    // Valor bruto REAL das unidades que fecham no mês, não o preço médio vezes a
+    // contagem: com tipologias de preços diferentes a média cobraria release a
+    // mais nas baratas e a menos nas caras. Num projeto de preço uniforme os
+    // dois são o mesmo número.
     if (releasePct != null) return releasePct * (valorVendidoPorMes.get(m) ?? 0);
     return 0;
   };
@@ -962,10 +979,10 @@ export function calcular(input: ModelInput): ModelOutput {
     let equityAcumulado = 0;
     let jaHouveSaque = false;
     let saldoReserva = 0;
-    // Prestação e principal constante são RECALCULADOS a cada saque novo (ver o
-    // passo 3). Guardados fora do laço porque valem dos meses seguintes em diante.
-    let prestacaoAtual = 0;
-    let amortizacaoConstante = 0;
+    // Release que o teto do saldo de abertura cortou, somado no passe inteiro.
+    // Alimenta `release_insuficiente`: é dívida que as vendas queriam quitar e
+    // não havia mais.
+    let releaseCortadoTotal = 0;
 
     for (let m = 1; m <= prazoTotal; m++) {
       const pagamentosOperacionais = land[m] + construction[m] + propertyTax[m] + otherCosts[m];
@@ -973,15 +990,71 @@ export function calcular(input: ModelInput): ModelOutput {
       const caixaAbertura = caixaAcumulado;
       obraAcumulada += construction[m];
 
-      const capacidade = Math.max(0, tetoDivida - sacadoAte);
+      // Capacidade de saque do mês.
+      //
+      // Linha ROTATIVA (migration 1763300000): amortizar devolve limite, então o
+      // que importa é a POSIÇÃO EM ABERTO, não o total já desembolsado na vida
+      // do empréstimo. Não rotativa (default, e toda modelagem já gravada): o
+      // teto vale para o total desembolsado, e capacidade consumida não volta.
+      //
+      // Nos dois casos a base é o saldo de ABERTURA, nunca o saldo depois do
+      // saque ou depois da amortização do próprio mês. Duas razões:
+      //   1. o saldo pós-saque depende do saque, e o saque dependeria do saldo —
+      //      é a mesma circularidade que o teto do release cria (ver abaixo), e
+      //      ela empurra o ponto fixo sem convergir para caixa fechado;
+      //   2. contratualmente o pedido de saque é avaliado contra a posição em
+      //      aberto NO MOMENTO DO PEDIDO, não contra a posição depois da
+      //      liquidação da venda do mesmo mês. É a leitura conservadora e a
+      //      única autoconsistente.
+      const capacidade = fin.linhaRotativa
+        ? Math.max(0, tetoDivida - saldoAbertura)
+        : Math.max(0, tetoDivida - sacadoAte);
       const dentroJanela = m >= fin.mesInicioSaque && m <= fin.mesFimSaque;
+
+      // Taxa e fator do mês, apurados ANTES do passo 1 porque o teto do release
+      // precisa dos juros previstos sobre o saldo de abertura. Dependem só de `m`
+      // e do contrato — não do saque —, então subi-los não muda número nenhum.
+      const taxaEfetivaAno = taxaEfetivaDoMes(m);
+      const fatorMes = fatorJurosDoMes(convencao, taxaEfetivaAno, somarMeses(input.dataInicio, m - 1));
+
+      // ─── Release do mês ────────────────────────────────────────────────────
+      // Unidades que fecham no mês — a mesma série que alimenta o gatilho de
+      // custo 'por_venda' e `MesFluxo.unidadesVendidas`. Uma fonte só, para as
+      // leituras não divergirem.
+      const unidadesNoMes = vendasPorMes.get(m) ?? 0;
+      const releaseBruto = releaseBrutoDoMes(m, unidadesNoMes);
+
+      // TETO PELO SALDO DE ABERTURA, não pelo saldo depois do saque do mês.
+      // Sem isto, cada dólar sacado libera um dólar a mais de amortização, o
+      // caixa nunca melhora e o ponto fixo empurra o saque para cima sem
+      // convergir para um caixa fechado. Ninguém toma emprestado hoje para
+      // amortizar hoje o mesmo empréstimo — e o motor não pode modelar isso.
+      const jurosPrevistosSobreAbertura = saldoAbertura * fatorMes;
+      const tetoRelease = saldoAbertura + (fin.capitalizarJuros ? jurosPrevistosSobreAbertura : 0);
+      const alvoRelease = clamp(releaseBruto, 0, tetoRelease);
+      // O que o teto cortou: a venda queria quitar mais do que ainda se devia.
+      releaseCortadoTotal += Math.max(0, releaseBruto - alvoRelease);
 
       // 1. SAQUE — vem antes da amortização, porque no modo at_exit a amortização
       //    precisa conhecer o saque do próprio mês. Para não fechar o círculo no
       //    cash_demand, o saque usa uma amortização PREVISTA (só o saldo de
       //    abertura), não a definitiva.
+      //
+      //    O release ENTRA na previsão: é saída de caixa do mês como qualquer
+      //    amortização, e deixá-lo de fora era o que fazia o saque ser
+      //    dimensionado a menos e o caixa fechar negativo justamente nos meses de
+      //    venda. `alvoRelease` é o mesmo número que o passo 3 vai amortizar —
+      //    previsão e realização não podem divergir, senão o dinheiro sacado não
+      //    chega inteiro ao caixa.
+      //
+      //    max(0, saldoAbertura − alvoRelease) evita a soma dupla: no mês da
+      //    saída, o que o release já amortiza não precisa ser pedido de novo. Sem
+      //    isso o motor pede o dobro e o saque sai inflado no último mês.
       const amortPrevista =
-        fin.modoAmortizacao === 'at_exit' && m === mesSaida ? saldoAbertura : 0;
+        alvoRelease +
+        (fin.modoAmortizacao === 'at_exit' && m === mesSaida
+          ? Math.max(0, saldoAbertura - alvoRelease)
+          : 0);
 
       // Demanda de caixa do mês, nas duas leituras que os modos usam. Calculadas
       // aqui em cima, fora do if, é o que garante que a tela mostre a MESMA conta
@@ -1080,8 +1153,7 @@ export function calcular(input: ModelInput): ModelOutput {
       sacadoAte += saqueReservaJuros;
 
       // 2. JUROS — dependem só do saldo já sacado, então já podem ser apurados.
-      const taxaEfetivaAno = taxaEfetivaDoMes(m);
-      const fatorMes = fatorJurosDoMes(convencao, taxaEfetivaAno, somarMeses(input.dataInicio, m - 1));
+      //    `fatorMes` foi apurado antes do passo 1, para o teto do release.
       const saldoAntes = saldoAbertura + draw + saqueReservaJuros;
       const juros = saldoAntes * fatorMes;
 
@@ -1097,54 +1169,35 @@ export function calcular(input: ModelInput): ModelOutput {
       // o saldo final do mês de saída ficaria com um mês de juros pendurado.
       const baseAmortizavel = saldoAntes + (fin.capitalizarJuros ? jurosAposReserva : 0);
 
-      // 3. AMORTIZAÇÃO — o clamp impede saldo devedor negativo mesmo com override abusivo.
+      // 3. AMORTIZAÇÃO — release do mês, mais a quitação no mês de saída.
       //
-      //    A prestação é RECALCULADA a cada saque novo, e essa é a decisão que
-      //    muda o número: num construction loan o principal cresce ao longo da
-      //    obra, então uma prestação fixada no primeiro saque amortizaria de
-      //    menos e deixaria um resíduo enorme para o balloon. Recalcular
-      //    re-amortiza o saldo corrente pelos `amortizacaoMeses` cheios, que é o
-      //    comportamento de uma linha revolvente reamortizada.
-      if (amortizaPorPrestacao && (draw > 0 || saqueReservaJuros > 0)) {
-        prestacaoAtual = prestacaoPrice(baseAmortizavel, fatorMes, amortizacaoMeses);
-        amortizacaoConstante = baseAmortizavel / amortizacaoMeses;
-      }
-
+      //    `alvoRelease` NÃO é recalculado aqui: é exatamente o número que o
+      //    passo 1 previu, já limitado pelo saldo de ABERTURA. Previsão e
+      //    realização usando o mesmo número é o que faz o saque dimensionado
+      //    chegar inteiro ao caixa — recalcular contra `baseAmortizavel` (que já
+      //    contém o saque do mês) reabriria a circularidade.
+      //
+      //    max(0, baseAmortizavel − alvoRelease) no mês da saída: o release já
+      //    amortizou uma parte, e o at_exit cobre só o remanescente.
+      //
+      //    O clamp final continua sendo a proteção contra saldo devedor negativo
+      //    por override abusivo.
       let alvoAmort: number;
       if (temOverride(m, 'amortization')) {
-        // Override vence tudo — inclusive balloon e release.
+        // Override vence tudo — inclusive o release.
         alvoAmort = valorOverride(m, 'amortization');
       } else {
-        if (fin.modoAmortizacao === 'at_exit') {
-          alvoAmort = m === mesSaida ? baseAmortizavel : 0;
-        } else if (amortizaPorPrestacao) {
-          if (m < fin.mesInicioSaque || m <= mesFimCarencia) {
-            // Carência: só juros.
-            alvoAmort = 0;
-          } else if (mesVencimento != null && m > mesVencimento) {
-            // Depois do vencimento não há mais prestação: ou o balloon quitou, ou
-            // o saldo ficou em aberto e `saldo_devedor_final` acusa em vermelho.
-            alvoAmort = 0;
-          } else if (fin.modoAmortizacao === 'price') {
-            // Price paga juros + principal; a amortização é o que sobra da
-            // prestação depois dos juros DO PRÓPRIO MÊS.
-            alvoAmort = Math.max(0, prestacaoAtual - jurosAposReserva);
-          } else {
-            alvoAmort = amortizacaoConstante;
-          }
-          // Balloon: no vencimento, tudo o que restar sai de uma vez.
-          if (mesVencimento != null && m === mesVencimento && fin.balloonNoVencimento) {
-            alvoAmort = baseAmortizavel;
-          }
-        } else {
-          alvoAmort = 0; // 'manual' → só overrides
-        }
-        // Release price SOMA à amortização do modo escolhido: cada unidade que
-        // fecha libera um valor para o banco, independente da curva contratada.
-        alvoAmort += releaseDoMes(m);
+        const parteExit =
+          fin.modoAmortizacao === 'at_exit' && m === mesSaida
+            ? Math.max(0, baseAmortizavel - alvoRelease)
+            : 0;
+        alvoAmort = alvoRelease + parteExit;
       }
       const amortization = clamp(alvoAmort, 0, baseAmortizavel);
       const saldoDevedor = baseAmortizavel - amortization;
+      // Quanto da amortização do mês foi release, para a grade do fluxo poder
+      // decompor "Release: X · Saída: Y" sem refazer a conta.
+      const amortizacaoRelease = Math.min(amortization, alvoRelease);
 
       // 4. FEE
       const mesDoFee =
@@ -1235,13 +1288,15 @@ export function calcular(input: ModelInput): ModelOutput {
         demandaDimensionada,
         demandaCoberta,
         demandaDescoberta,
+        amortizacaoPrevista: amortPrevista,
+        amortizacaoRelease,
         capacidadeSaque: capacidade,
         taxaEfetivaAno,
         unidadesVendidas: vendasPorMes.get(m) ?? 0,
         equityDisponivelAcumulado: equityDisponivelObraAte(m),
       });
     }
-    return { meses, mesesNoTeto, descobertoPorTeto };
+    return { meses, mesesNoTeto, descobertoPorTeto, releaseCortadoTotal };
   };
 
   // ─── Ponto fixo ────────────────────────────────────────────────────────────
@@ -1253,6 +1308,7 @@ export function calcular(input: ModelInput): ModelOutput {
   let meses: MesFluxo[] = [];
   let mesesNoTeto = 0;
   let descobertoPorTeto = 0;
+  let releaseCortadoTotal = 0;
   let iteracoes = 0;
   let convergiu = false;
 
@@ -1262,7 +1318,7 @@ export function calcular(input: ModelInput): ModelOutput {
     iteracoes = it + 1;
     // O corte pelo teto vale o da ÚLTIMA passada, como todo o resto: é a passada
     // convergida que vira resultado.
-    ({ meses, mesesNoTeto, descobertoPorTeto } = passe(estado));
+    ({ meses, mesesNoTeto, descobertoPorTeto, releaseCortadoTotal } = passe(estado));
 
     // Inclui o saque destinado à reserva de juros: é principal sacado do
     // empréstimo como qualquer outro, rende juros e volta pela amortização. Com
@@ -1301,7 +1357,7 @@ export function calcular(input: ModelInput): ModelOutput {
   // Release PRETENDIDO (antes do clamp pelo saldo): é ele que a conferência
   // compara com a dívida para dizer se os releases quitam o empréstimo.
   let releaseTotal = 0;
-  for (let m = 1; m <= prazoTotal; m++) releaseTotal += releaseDoMes(m);
+  for (let m = 1; m <= prazoTotal; m++) releaseTotal += releaseBrutoDoMes(m);
 
   // ─── Apuração ──────────────────────────────────────────────────────────────
   // Nunca calcule o lucro como "receita líquida − quitação da dívida − devolução
@@ -1328,6 +1384,10 @@ export function calcular(input: ModelInput): ModelOutput {
   // reserva 0 o termo some e o número é o de sempre.
   const dividaSacada = soma(meses.map((x) => x.draw + x.saqueReservaJuros));
   const dividaAmortizada = soma(meses.map((x) => x.amortization));
+  // Pico do saldo devedor: a grandeza que um contrato ROTATIVO limita. Numa
+  // linha não rotativa quem manda é o total desembolsado (`dividaSacada`), e os
+  // dois só coincidem quando nada é amortizado antes do fim.
+  const saldoDevedorMaximo = meses.length ? Math.max(...meses.map((x) => x.saldoDevedor)) : 0;
   const totalPagamentos = soma(meses.map((x) => x.pagamentos));
   const totalDistribuido = equityTotal + lucroInvestidores;
 
@@ -1350,6 +1410,7 @@ export function calcular(input: ModelInput): ModelOutput {
     equityTotal,
     dividaSacada,
     dividaAmortizada,
+    saldoDevedorMaximo,
     totalPagamentos,
     totalDistribuido,
     tetoDivida,
@@ -1365,7 +1426,14 @@ export function calcular(input: ModelInput): ModelOutput {
     moic: razao(totalDistribuido, equityTotal),
     roi: razao(lucroInvestidores, equityTotal),
     margemVgv: razao(lucroProjeto, vgv),
+    // LTC por DESEMBOLSO: total sacado sobre o custo direto. Fórmula intocada de
+    // propósito — mudar o significado de um indicador já em uso quebraria a
+    // comparação com toda modelagem antiga.
     ltc: razao(dividaSacada, terrenosTotal + obraTotal),
+    // LTC de PICO: o maior saldo devedor sobre o mesmo custo direto. É o que um
+    // covenant de linha rotativa cobra. Numa linha não rotativa sem amortização
+    // antecipada os dois coincidem.
+    ltcPico: razao(saldoDevedorMaximo, terrenosTotal + obraTotal),
     alavancagem: razao(dividaSacada, totalPagamentos),
     // Custo ACUMULADO da dívida sobre o principal sacado — não é taxa a.a.
     custoTotalDividaPct: razao(custoFinanceiro, dividaSacada),
@@ -1579,6 +1647,7 @@ export function calcular(input: ModelInput): ModelOutput {
     rateioSocios,
     mesesNoTeto,
     descobertoPorTeto,
+    releaseCortadoTotal,
   });
 
   return {

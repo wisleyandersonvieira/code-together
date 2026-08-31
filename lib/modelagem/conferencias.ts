@@ -75,6 +75,11 @@ interface Contexto {
   mesesNoTeto: number;
   /** Σ (demanda − saque) nesses meses: o que ficou sem cobertura nenhuma. */
   descobertoPorTeto: number;
+  /**
+   * Σ do release que o teto do saldo de abertura cortou. Vem do passe pelo mesmo
+   * motivo dos dois acima: é o número que a amortização de fato usou.
+   */
+  releaseCortadoTotal: number;
 }
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
@@ -299,38 +304,56 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
   //     o saque é dimensionado pela demanda: o que a capacidade cortou é
   //     exatamente o buraco de caixa do projeto, e o motor já o contou
   //     (`mesesNoTeto`/`descobertoPorTeto`, zerados em todos os outros modos).
+  //
+  // E duas grandezas diferentes contra o mesmo teto, conforme o tipo de linha:
+  //   NÃO ROTATIVA (default) — o teto vale para o TOTAL desembolsado na vida do
+  //     empréstimo. É `dividaSacada`, e é o que sempre foi cobrado aqui.
+  //   ROTATIVA — amortizar devolve limite, então o que o contrato limita é o
+  //     PICO do saldo devedor. Um projeto que saca $30M e amortiza a cada venda
+  //     pode nunca passar de $15M em aberto: reprovar isso contra o total
+  //     desembolsado seria cobrar um limite que o contrato não tem.
+  // O detalhe DIZ qual das duas está valendo — sem isso ninguém entende por que
+  // o mesmo projeto passa num modo e reprova no outro.
   const temTeto = Number.isFinite(apuracao.tetoDivida);
+  const rotativa = !!fin.linhaRotativa;
+  const medida = rotativa ? apuracao.saldoDevedorMaximo : apuracao.dividaSacada;
+  const leitura = rotativa
+    ? 'linha rotativa: o teto é cobrado contra o PICO do saldo devedor, porque amortizar devolve limite'
+    : 'linha não rotativa: o teto é cobrado contra o TOTAL desembolsado na vida do empréstimo';
   const cortadoPeloTeto = ctx.mesesNoTeto > 0 && ctx.descobertoPorTeto > TOLERANCIA;
   // Quanto o teto precisaria valer, em LTC, para caber a demanda que ficou de
   // fora. Custo direto zero devolve null e a frase simplesmente não menciona LTC
   // — nunca NaN nem Infinity na tela.
   const custoDireto = agregados.terrenosTotal + agregados.obraTotal;
   const ltcNecessario =
-    custoDireto > 0 ? (apuracao.dividaSacada + ctx.descobertoPorTeto) / custoDireto : null;
+    custoDireto > 0 ? (medida + ctx.descobertoPorTeto) / custoDireto : null;
   add(
     'teto_divida',
-    'Saque dentro do teto de dívida',
+    rotativa ? 'Saldo devedor dentro do teto (linha rotativa)' : 'Saque dentro do teto de dívida',
     cortadoPeloTeto
       ? 'vermelho'
       : !temTeto
         ? 'ambar'
-        : apuracao.dividaSacada <= apuracao.tetoDivida + TOLERANCIA
+        : medida <= apuracao.tetoDivida + TOLERANCIA
           ? 'verde'
           : 'vermelho',
-    temTeto
-      ? `${dinheiro(apuracao.dividaSacada)} de ${dinheiro(apuracao.tetoDivida)}`
-      : dinheiro(apuracao.dividaSacada),
+    temTeto ? `${dinheiro(medida)} de ${dinheiro(apuracao.tetoDivida)}` : dinheiro(medida),
     cortadoPeloTeto
       ? `O saque bateu no teto em ${ctx.mesesNoTeto} ${ctx.mesesNoTeto === 1 ? 'mês' : 'meses'}. ` +
         `Faltaram ${dinheiro(ctx.descobertoPorTeto)} de cobertura — seria preciso esse valor a mais de aporte` +
         (ltcNecessario == null
           ? '.'
-          : `, ou elevar o teto de dívida para ${pct(ltcNecessario)} do custo direto.`)
+          : `, ou elevar o teto de dívida para ${pct(ltcNecessario)} do custo direto.`) +
+        ` Leitura em uso — ${leitura}.`
       : !temTeto
         ? 'Nenhum teto definido: nem LTC máximo, nem valor contratado.'
-        : apuracao.dividaSacada <= apuracao.tetoDivida + TOLERANCIA
-          ? 'O total sacado respeita o teto.'
-          : 'O total sacado ultrapassa o teto — só acontece com override manual de saque.',
+        : medida <= apuracao.tetoDivida + TOLERANCIA
+          ? rotativa
+            ? `O pico do saldo devedor respeita o teto (${leitura}). O total desembolsado no projeto foi ${dinheiro(apuracao.dividaSacada)}.`
+            : 'O total sacado respeita o teto.'
+          : rotativa
+            ? `O pico do saldo devedor ultrapassa o teto (${leitura}).`
+            : 'O total sacado ultrapassa o teto — só acontece com override manual de saque.',
     cortadoPeloTeto
       ? 'Aumente o aporte, eleve o LTC máximo ou o valor contratado na aba Financiamento, ou reduza o colchão mínimo de caixa.'
       : 'Defina LTC máximo ou valor contratado na aba Financiamento, ou reverta os overrides de saque.',
@@ -985,11 +1008,20 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
     add(
       'release_insuficiente',
       'Releases quitam a dívida',
-      saldoFinalDivida > TOLERANCIA ? 'ambar' : 'verde',
+      // Âmbar também quando o teto do saldo de abertura cortou release: não é
+      // erro — é a dívida acabando antes das vendas —, mas o usuário precisa
+      // saber que parte do release contratado não teve o que amortizar.
+      saldoFinalDivida > TOLERANCIA || ctx.releaseCortadoTotal > TOLERANCIA ? 'ambar' : 'verde',
       dinheiro(saldoFinalDivida),
-      saldoFinalDivida > TOLERANCIA
+      (saldoFinalDivida > TOLERANCIA
         ? `Os releases somam ${dinheiro(ctx.releaseTotal)} contra ${dinheiro(apuracao.dividaSacada)} sacados, e sobram ${dinheiro(saldoFinalDivida)} de saldo devedor no fim.`
-        : `Os releases somam ${dinheiro(ctx.releaseTotal)} e a dívida é integralmente quitada.`,
+        : `Os releases somam ${dinheiro(ctx.releaseTotal)} e a dívida é integralmente quitada.`) +
+        // O corte pelo teto do saldo de ABERTURA não é erro: é a dívida acabando
+        // antes das vendas. Sem dizer o valor, o usuário vê o release somando
+        // mais do que a amortização e não entende para onde foi a diferença.
+        (ctx.releaseCortadoTotal > TOLERANCIA
+          ? ` ${dinheiro(ctx.releaseCortadoTotal)} de release não chegaram a ser amortizados: nesses meses o saldo devedor de abertura já era menor que o release da venda.`
+          : ''),
       'Aumente o release por unidade, ou conte com a amortização do modo escolhido para cobrir a diferença.',
     );
 

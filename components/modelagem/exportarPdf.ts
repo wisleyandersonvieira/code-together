@@ -572,7 +572,10 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
     { label: 'MOIC', value: ouTraco(multiplo(ind.moic)), tone: 'accent' },
     { label: 'ROI', value: ouTraco(percentual(ind.roi)), tone: 'accent' },
     { label: 'Margem sobre VGV', value: ouTraco(percentual(ind.margemVgv)), tone: 'default' },
-    { label: 'LTC', value: ouTraco(percentual(ind.ltc)), tone: 'default' },
+    // Dois LTC: por desembolso (total sacado) e de pico (maior saldo em aberto).
+    // Numa linha rotativa é o de pico que o contrato limita.
+    { label: 'LTC por desembolso', value: ouTraco(percentual(ind.ltc)), tone: 'default' },
+    { label: 'LTC de pico', value: ouTraco(percentual(ind.ltcPico)), tone: 'default' },
     { label: 'Alavancagem', value: ouTraco(percentual(ind.alavancagem)), tone: 'default' },
     { label: 'Custo total da dívida', value: ouTraco(percentual(ind.custoTotalDividaPct)), tone: 'default' },
     { label: 'TIR mensal', value: ouTraco(percentual(ind.tirMensal, 4)), tone: 'accent' },

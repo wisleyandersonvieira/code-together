@@ -57,6 +57,18 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
         : { modoSaque: modo },
     );
 
+  /**
+   * Menor capacidade de saque observada nos meses do projeto — o pior momento da
+   * linha. Sem teto declarado a capacidade é infinita em todo mês, e aí a leitura
+   * é "sem teto" em vez de um número que não existe.
+   */
+  const capacidadeMinima = (() => {
+    const meses = resultado.meses;
+    if (meses.length === 0) return '—';
+    const minimo = Math.min(...meses.map((m) => m.capacidadeSaque));
+    return Number.isFinite(minimo) ? dinheiro(minimo, rascunho.moeda) : 'sem teto';
+  })();
+
   const usaPrestacao = fin.modoAmortizacao === 'price' || fin.modoAmortizacao === 'sac';
   const curva = fin.benchmarkCurva ?? [];
   const prazoTotal = resultado.cronograma.prazoTotal;
@@ -234,6 +246,30 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
             />
           </div>
         </div>
+
+        <label className="mt-4 flex items-start gap-3 rounded-xl border border-slate-200 p-3">
+          <Switch
+            checked={fin.linhaRotativa}
+            onCheckedChange={(v) => mudar({ linhaRotativa: v })}
+          />
+          <span className="text-sm">
+            <span className="font-medium text-slate-800">Linha de crédito rotativa</span>
+            <span className="mt-0.5 block text-xs text-slate-500">
+              Amortizar devolve limite. A capacidade do mês passa a ser o teto menos o saldo devedor.
+            </span>
+            {/* Leitura, não entrada: os dois números que dizem se o teto aperta.
+                O pico é o que o contrato rotativo limita; a capacidade mínima
+                observada mostra o quanto faltou de folga no pior mês. */}
+            <span className="mt-2 block text-xs text-slate-600">
+              Pico do saldo devedor:{' '}
+              <strong className="font-semibold text-slate-800">
+                {dinheiro(resultado.apuracao.saldoDevedorMaximo, rascunho.moeda)}
+              </strong>{' '}
+              · capacidade mínima no projeto:{' '}
+              <strong className="font-semibold text-slate-800">{capacidadeMinima}</strong>
+            </span>
+          </span>
+        </label>
       </FinanceDetailSectionCard>
 
       <FinanceDetailSectionCard title="Amortização e juros" description="Como a dívida é quitada e como os juros são tratados.">

@@ -414,6 +414,9 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
         : 'at_exit') as ModelInput['financiamento']['modoAmortizacao'],
       capitalizarJuros: bool(fin.capitalizar_juros),
       colchaoMinimoCaixa: num(fin.colchao_minimo_caixa),
+      // Ausente = FALSE, o default da coluna (migration 1763300000): toda
+      // modelagem já gravada continua com a facilidade não rotativa.
+      linhaRotativa: bool(fin.linha_rotativa),
 
       // DECIMAL(15,2) chega como STRING; sem num(), a reserva viraria texto e a
       // comparação com os juros do mês daria resultado sem sentido.

@@ -146,7 +146,22 @@ export function AbaResultado({ rascunho, resultado }: Props) {
         <Indicador rotulo="MOIC" valor={multiplo(ind.moic)} nota={`ROI de ${percentual(ind.roi)}`} />
         <Indicador rotulo="TIR anual" valor={percentual(ind.tirAnual)} nota={`${percentual(ind.tirMensal, 4)} ao mês`} />
         <Indicador rotulo="Equity total" valor={d(ap.equityTotal)} nota={`Distribuído: ${d(ap.totalDistribuido)}`} />
-        <Indicador rotulo="Dívida sacada" valor={d(ap.dividaSacada)} nota={`LTC de ${percentual(ind.ltc)}`} />
+        {/* Os dois LTC lado a lado, porque medem coisas diferentes: por
+            desembolso é o total sacado na vida do empréstimo; de pico é o maior
+            saldo em aberto — o que um covenant de linha rotativa cobra. Sem
+            amortização antes do fim, coincidem. */}
+        <Indicador
+          rotulo="Dívida sacada"
+          valor={d(ap.dividaSacada)}
+          nota={`LTC por desembolso de ${percentual(ind.ltc)}`}
+        />
+        <Indicador
+          rotulo="Pico do saldo devedor"
+          valor={d(ap.saldoDevedorMaximo)}
+          nota={`LTC de pico de ${percentual(ind.ltcPico)}${
+            rascunho.financiamento.linhaRotativa ? ' — é o que o teto da linha rotativa limita' : ''
+          }`}
+        />
         <Indicador rotulo="Alavancagem" valor={percentual(ind.alavancagem)} nota="Dívida sobre o total de pagamentos" />
         <Indicador
           rotulo="Custo total da dívida"

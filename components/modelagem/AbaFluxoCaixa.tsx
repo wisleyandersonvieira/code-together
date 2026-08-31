@@ -33,6 +33,12 @@ interface DefinicaoLinha {
   subrotulo?: string;
   /** `title` do rótulo, para o que não cabe na célula. */
   dica?: string;
+  /**
+   * `title` da CÉLULA do mês: decomposição do número, quando ele é soma de
+   * parcelas de origens diferentes. Só entra quando a célula não tem override —
+   * ali o title já explica o valor manual, que é a informação mais urgente.
+   */
+  dicaDoMes?: (m: MesFluxo) => string;
   valor: (m: MesFluxo) => number;
   /** Linhas calculadas não recebem override: elas são consequência, não entrada. */
   linha?: LinhaFluxo;
@@ -59,7 +65,17 @@ const LINHAS: DefinicaoLinha[] = [
   { chave: 'pagamentos', rotulo: 'Total de pagamentos', valor: (m) => m.pagamentos, destaque: true },
   { chave: 'revenue', rotulo: 'Receita', valor: (m) => m.revenue, linha: 'revenue', separador: true },
   { chave: 'draw', rotulo: 'Saque', valor: (m) => m.draw, linha: 'draw' },
-  { chave: 'amortization', rotulo: 'Amortização', valor: (m) => m.amortization, linha: 'amortization' },
+  {
+    chave: 'amortization',
+    rotulo: 'Amortização',
+    // Decomposição do mês na dica: quanto saiu por release de unidade vendida e
+    // quanto por quitação na saída. Os dois somam a amortização do mês, e sem
+    // isso o degrau de um mês de venda parece vir do nada.
+    dicaDoMes: (m) =>
+      `Release: ${dinheiroCurto(m.amortizacaoRelease)} · Saída: ${dinheiroCurto(m.amortization - m.amortizacaoRelease)}`,
+    valor: (m) => m.amortization,
+    linha: 'amortization',
+  },
   { chave: 'equity_call', rotulo: 'Aporte de equity', valor: (m) => m.equityCall, linha: 'equity_call', destaque: true },
   { chave: 'distribution', rotulo: 'Distribuição', valor: (m) => m.distribution, linha: 'distribution' },
   { chave: 'saldo', rotulo: 'Saldo devedor', valor: (m) => m.saldoDevedor, separador: true, somavel: false },
@@ -464,11 +480,13 @@ export function AbaFluxoCaixa({
                             ? AVISO_APORTE_POR_SOCIO
                             : marcado
                             ? `Manual. Valor automático: ${dinheiroCurto(automatico)}. Duplo clique reverte.`
-                            : !editavel
-                              ? 'Linha calculada — não recebe override'
-                              : planoLigado && def.linha === 'equity_call'
-                                ? 'Editando aqui você altera a parcela do plano de aportes deste mês. Duplo clique remove a parcela.'
-                                : 'Clique para lançar um valor manual'
+                            : def.dicaDoMes
+                              ? `${def.dicaDoMes(m)}${editavel ? ' · Clique para lançar um valor manual' : ''}`
+                              : !editavel
+                                ? 'Linha calculada — não recebe override'
+                                : planoLigado && def.linha === 'equity_call'
+                                  ? 'Editando aqui você altera a parcela do plano de aportes deste mês. Duplo clique remove a parcela.'
+                                  : 'Clique para lançar um valor manual'
                         }
                         className={cn(
                           'relative border-b border-slate-100 px-2 py-1.5 text-right tabular-nums',

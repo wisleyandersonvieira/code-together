@@ -25,7 +25,7 @@ import {
 import { apuracaoAnual, totalAnual } from './anual';
 import { mapearAportes, mapearCustos, mapearModelInput, mapearSocios } from './mapear';
 import { CATEGORIAS_CUSTO } from './tipos';
-import type { CustoAdicional, ModelInput, Override, RegraRateioCapital, Socio } from './tipos';
+import type { CustoAdicional, ModelInput, Override, RegraRateioCapital, Socio, Takedown } from './tipos';
 
 const DOLAR = 1.0;
 const RATIO = 0.0001;
@@ -72,7 +72,7 @@ const casoBase = (): ModelInput => ({
     valorContratado: null,
     custoFinanceiroNaDemanda: false,
     modoAmortizacao: 'at_exit',
-    capitalizarJuros: false,
+    capitalizarJuros: false, linhaRotativa: false,
     colchaoMinimoCaixa: 0,
     reservaJuros: 0,
     reservaJurosSacada: true,
@@ -102,6 +102,10 @@ const casoBase = (): ModelInput => ({
   },
   overrides: [],
 });
+
+/** Mesma formatação de `dinheiro` das conferências, para casar o texto. */
+const dinheiroUsd = (v: number) =>
+  v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 
 const semaforo = (out: ReturnType<typeof calcular>, chave: string) =>
   out.conferencias.find((c) => c.chave === chave)?.semaforo;
@@ -2300,9 +2304,11 @@ describe('17 — reserva de juros', () => {
   });
 });
 
-describe('18 — carência, prestação e balloon', () => {
-  // Teste de NÃO-REGRESSÃO da migration 1762200000: 'price' e 'sac' são modos
-  // NOVOS, e nenhuma modelagem já salva os tem.
+describe('18 — amortização: só release e quitação na saída', () => {
+  // MUDANÇA DELIBERADA DE COMPORTAMENTO. Até aqui 'price' e 'sac' (migration
+  // 1762200000) amortizavam por PRESTAÇÃO, com carência, vencimento e balloon. O
+  // passo 3 passou a ser apenas o release do mês mais a quitação do mês de saída.
+  // Estes testes fixam o contrato NOVO — e o de 'at_exit', que não mudou.
   const referencia = calcular(casoBase());
 
   it("at_exit produz o resultado idêntico ao de hoje, com os campos novos preenchidos", () => {
@@ -2319,83 +2325,71 @@ describe('18 — carência, prestação e balloon', () => {
     expect(out.conferencias.map((c) => c.chave)).toEqual(referencia.conferencias.map((c) => c.chave));
   });
 
-  it('price com prazo 20, carência 20 e amortização 300 joga tudo no balloon', () => {
-    // A verificação do item: a carência cobre o prazo inteiro, então não há
-    // prestação nenhuma e o principal sai todo no vencimento.
-    const out = calcular(
-      comFin({
-        // cash_demand para haver dívida já nos primeiros meses: com equity_first
-        // não há saque antes da obra, e sem dívida não há o que amortizar.
+  it('price e sac não amortizam mais por prestação — sem release, não há amortização', () => {
+    for (const modo of ['price', 'sac'] as const) {
+      const out = calcular(
+        comFin({
+          modoSaque: 'cash_demand',
+          modoAmortizacao: modo,
+          mesInicioSaque: 1,
+          mesFimSaque: 10,
+          prazoMeses: 20,
+          carenciaMeses: 2,
+          amortizacaoMeses: 23,
+          balloonNoVencimento: true,
+        }),
+      );
+      // Nenhum mês amortiza: não há release configurado e o modo não é at_exit.
+      expect(out.meses.every((m) => m.amortization === 0)).toBe(true);
+      // E o saldo fica em aberto no fim — a conferência acusa em vermelho, que é
+      // como o motor mostra o que não fecha em vez de esconder.
+      expect(out.meses[out.meses.length - 1].saldoDevedor).toBeGreaterThan(0);
+      expect(semaforo(out, 'saldo_devedor_final')).toBe('vermelho');
+    }
+  });
+
+  it('em price e sac o release passa a ser a única amortização automática', () => {
+    const out = calcular({
+      ...comFin({
         modoSaque: 'cash_demand',
         modoAmortizacao: 'price',
         mesInicioSaque: 1,
         mesFimSaque: 10,
         prazoMeses: 20,
-        carenciaMeses: 20,
-        amortizacaoMeses: 300,
-        balloonNoVencimento: true,
-      }),
-    );
-    const mesVencimento = 1 + 20 - 1; // mesInicioSaque + prazoMeses − 1
-    const comAmort = out.meses.filter((m) => m.amortization > 0);
-    expect(comAmort).toHaveLength(1);
-    expect(comAmort[0].mes).toBe(mesVencimento);
-    // Todo o saldo cai de uma vez e a dívida zera.
-    expect(out.meses[mesVencimento - 1].saldoDevedor).toBeCloseTo(0, 2);
-    expect(semaforo(out, 'saldo_devedor_final')).toBe('verde');
-  });
-
-  it('a carência é interest-only e a prestação começa depois dela', () => {
-    const out = calcular(
-      comFin({
-        modoSaque: 'cash_demand',
-        modoAmortizacao: 'price',
-        mesInicioSaque: 1,
-        mesFimSaque: 3,
-        prazoMeses: 23,
-        carenciaMeses: 5,
         amortizacaoMeses: 23,
+        releasePrice: 200_000,
       }),
-    );
-    for (let m = 1; m <= 5; m++) {
-      expect(out.meses[m - 1].amortization).toBe(0);
-      // Mas os juros correm.
-      if (out.meses[m - 1].saldoDevedor > 0) expect(out.meses[m - 1].juros).toBeGreaterThan(0);
+      receita: {
+        ...casoBase().receita,
+        modoVenda: 'per_unit',
+        vendasPorUnidade: [
+          { unidadeIndex: 0, mesVenda: 19 },
+          { unidadeIndex: 1, mesVenda: 20 },
+          { unidadeIndex: 2, mesVenda: 21 },
+          { unidadeIndex: 3, mesVenda: 22 },
+        ],
+      },
+    });
+    // Só os meses de venda amortizam — e só enquanto há dívida: nos meses 21 e
+    // 22 o saldo de abertura já é zero e o release não tem o que amortizar.
+    const comAmort = out.meses.filter((m) => m.amortization > 0).map((m) => m.mes);
+    expect(comAmort).toEqual([19, 20]);
+    expect(out.meses[20].saldoDevedor).toBe(0);
+    // Toda a amortização é release, e nenhuma passa do saldo de abertura.
+    for (const m of out.meses) {
+      expect(m.amortizacaoRelease).toBeCloseTo(m.amortization, 6);
+      expect(m.amortization).toBeLessThanOrEqual(m.saldoDevedor + m.amortization + DOLAR);
     }
-    expect(out.meses[5].amortization).toBeGreaterThan(0);
+    // O release cortado é informado, em âmbar: não é erro, é a dívida acabando
+    // antes das vendas.
+    const conf = out.conferencias.find((c) => c.chave === 'release_insuficiente')!;
+    expect(conf.semaforo).toBe('ambar');
+    expect(conf.detalhe).toMatch(/de release não chegaram a ser amortizados/);
   });
 
-  it('sac amortiza principal constante fora da carência', () => {
-    const out = calcular(
-      comFin({
-        modoSaque: 'cash_demand',
-        modoAmortizacao: 'sac',
-        mesInicioSaque: 1,
-        mesFimSaque: 1,
-        prazoMeses: 23,
-        carenciaMeses: 0,
-        amortizacaoMeses: 23,
-        balloonNoVencimento: false,
-      }),
-    );
-    // Com saque num mês só, a prestação é calculada uma vez e não muda.
-    const amorts = out.meses.filter((m) => m.amortization > 0).map((m) => m.amortization);
-    expect(amorts.length).toBeGreaterThan(1);
-    for (const a of amorts.slice(0, -1)) expect(a).toBeCloseTo(amorts[0], 6);
-  });
-
-  it('recalcula a prestação a cada saque novo', () => {
-    // Com saques em vários meses, o principal cresce — e a prestação tem de
-    // acompanhar, senão o balloon herdaria um resíduo enorme.
-    const varios = calcular(
-      comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'sac', mesInicioSaque: 1, mesFimSaque: 12, prazoMeses: 23, amortizacaoMeses: 23 }),
-    );
-    const amorts = varios.meses.filter((m) => m.amortization > 0).map((m) => m.amortization);
-    // A amortização MUDA ao longo dos meses de saque: é o recálculo acontecendo.
-    expect(new Set(amorts.map((a) => a.toFixed(2))).size).toBeGreaterThan(1);
-  });
-
-  it('acusa vencimento além do prazo do projeto e balloon sem caixa', () => {
+  it('acusa vencimento além do prazo do projeto', () => {
+    // `prazoMeses` continua no input e continua alimentando as conferências,
+    // mesmo sem entrar mais no fluxo.
     const alem = calcular(
       comFin({ modoAmortizacao: 'price', mesInicioSaque: 13, prazoMeses: 60, amortizacaoMeses: 300 }),
     );
@@ -2407,47 +2401,15 @@ describe('18 — carência, prestação e balloon', () => {
       comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 }),
     );
     expect(semaforo(dentro, 'amortizacao_alem_do_prazo')).toBe('verde');
-    // Verde aqui, e isso é correto: no modo de aporte 'demanda' a chamada de
-    // capital é o RESÍDUO do caixa, então o equity sempre tampa o balloon. A
-    // conferência só tem o que acusar quando o equity está preso a um plano.
-    expect(semaforo(dentro, 'balloon_sem_caixa')).toBe('verde');
   });
 
-  it('acusa o balloon que derruba o caixa quando o equity está num plano', () => {
-    // Saque e aporte fixos: o balloon do mês 20 chega antes da venda do mês 23 e
-    // não há resíduo de equity para cobri-lo.
-    const base = comFin({
-      modoSaque: 'manual',
-      modoAmortizacao: 'price',
-      mesInicioSaque: 1,
-      prazoMeses: 20,
-      amortizacaoMeses: 300,
-      balloonNoVencimento: true,
-    });
-    base.aportes = { modoAporte: 'plano', aporteBaseTotal: 0, valorTotalAlvo: 0, regraRateioCapital: 'participacao', parcelas: [{ mes: 1, valor: 1_800_000 }] };
-    base.overrides = [{ mes: 1, linha: 'draw', valor: 1_500_000 }];
-    const out = calcular(base);
-
-    const balloon = out.meses[19];
-    expect(balloon.mes).toBe(20);
-    // O saldo inteiro sai de uma vez e a dívida zera.
-    expect(balloon.amortization).toBeGreaterThan(1_400_000);
-    expect(balloon.saldoDevedor).toBeCloseTo(0, 2);
-    // E o caixa não aguenta.
-    expect(balloon.caixaAcumulado).toBeLessThan(0);
-    expect(semaforo(out, 'balloon_sem_caixa')).toBe('ambar');
-    expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
-  });
-
-  it('override de amortização vence balloon e prestação', () => {
-    const out = calcular(
-      comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 }),
-    );
+  it('override de amortização continua vencendo tudo', () => {
     const base = comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 });
     base.overrides = [{ mes: 20, linha: 'amortization', valor: 1_000 }];
     const comOverride = calcular(base);
-    expect(out.meses[19].amortization).toBeGreaterThan(1_000);
     expect(comOverride.meses[19].amortization).toBe(1_000);
+    // Sem o override o mês não amortizaria nada.
+    expect(calcular(comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 })).meses[19].amortization).toBe(0);
   });
 });
 
@@ -2708,12 +2670,14 @@ describe('22 — indicadores por unidade e por pé quadrado', () => {
 
   it('não muda nenhum número que já existia', () => {
     // Os indicadores antigos seguem idênticos; só há campos novos.
-    const { custoPorUnidade, custoPorSf, precoMedioPorUnidade, receitaPorSf, margemPorUnidade, ...antigos } =
+    // `ltcPico` é campo NOVO (migration 1763300000), como os cinco por-unidade.
+    const { custoPorUnidade, custoPorSf, precoMedioPorUnidade, receitaPorSf, margemPorUnidade, ltcPico, ...antigos } =
       referencia.indicadores;
     expect(Object.keys(antigos)).toEqual([
       'moic', 'roi', 'margemVgv', 'ltc', 'alavancagem', 'custoTotalDividaPct',
       'tirMensal', 'tirAnual', 'xirr',
     ]);
+    expect(ltcPico).not.toBeNull();
     expect(custoPorUnidade).not.toBeNull();
     expect(precoMedioPorUnidade).not.toBeNull();
     expect(margemPorUnidade).not.toBeNull();
@@ -3845,8 +3809,8 @@ describe('modo de saque equity_first_demanda', () => {
         regraRateioCapital: 'cronograma_socio' as const,
       },
       socios: [
-        { nome: 'S1', participacaoPct: 0.5, cotaDisponivel: false, aportes: [{ mes: 1, valor: 300_000 }] },
-        { nome: 'S2', participacaoPct: 0.5, cotaDisponivel: false, aportes: [{ mes: 1, valor: 200_000 }] },
+        { nome: 'S1', participacaoPct: 0.5, cotaDisponivel: false, aportes: [{ ordem: 0, mes: 1, valor: 300_000 }] },
+        { nome: 'S2', participacaoPct: 0.5, cotaDisponivel: false, aportes: [{ ordem: 0, mes: 1, valor: 200_000 }] },
       ],
     });
     // Mês 1: 500.000 de aporte contra 240.000 de terreno — nada a sacar.
@@ -3998,5 +3962,235 @@ describe('modo de saque equity_first_demanda', () => {
       financiamento: { ...b.financiamento, modoSaque: 'manual' as const },
     });
     expect(manual.apuracao.dividaSacada).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Release na demanda de caixa e linha rotativa (migration 1763300000)
+//
+// Três falhas corrigidas de uma vez:
+//   1. a amortização por unidade vendida não entrava na demanda que dimensiona
+//      o saque — o caixa fechava negativo nos meses de venda;
+//   2. o teto dessa amortização incluía o saque do PRÓPRIO mês, o que fazia cada
+//      dólar sacado liberar um dólar a mais de amortização;
+//   3. a capacidade de saque nunca se recompunha quando a dívida era amortizada.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('release na demanda e linha rotativa', () => {
+  const COLCHAO = 100_000;
+
+// 45 unidades a $875.000, takedowns de 3 a 4 unidades a partir do mês 14.
+const takedowns: Takedown[] = [];
+let restam = 45;
+let mes = 14;
+let ordem = 0;
+while (restam > 0) {
+  const q = Math.min(restam, ordem % 2 === 0 ? 4 : 3);
+  takedowns.push({ unidadeIndex: 0, ordem: ordem++, mes, quantidade: q, precoUnitario: 0 });
+  restam -= q;
+  mes += 1;
+}
+
+const cenarioRelease = (patch: Partial<ModelInput['financiamento']> = {}): ModelInput => ({
+  nome: 'Release 70%', dataInicio: '2025-01-01',
+  mesesAprovacao: 6, mesesConstrucao: 12, mesesPosObra: 8, horizonteMaximo: 60,
+  unidades: [
+    { nome: 'Lote', quantidade: 45, custoTerreno: 55_000, custoObra: 430_000, precoVenda: 875_000, propertyTaxAno: 3_000 },
+  ],
+  custosAdicionais: [],
+  aportes: { modoAporte: 'demanda', aporteBaseTotal: 3_000_000, valorTotalAlvo: 0, regraRateioCapital: 'participacao' },
+  financiamento: {
+    taxaAnual: 0.095, feeEstruturacaoPct: 0.01, feeTiming: 'first_draw',
+    mesInicioSaque: 1, mesFimSaque: 26, modoSaque: 'cash_demand',
+    maxLtcPct: null, valorContratado: null, custoFinanceiroNaDemanda: true,
+    modoAmortizacao: 'at_exit', capitalizarJuros: false, colchaoMinimoCaixa: 100_000,
+    linhaRotativa: false,
+    reservaJuros: 0, reservaJurosSacada: true, prazoMeses: null, carenciaMeses: 0,
+    amortizacaoMeses: null, balloonNoVencimento: true,
+    releasePrice: 0, releasePricePct: 0.7,
+    convencaoJuros: 'mensal_12', tipoTaxa: 'fixa', spread: 0, benchmarkNome: null, benchmarkPadrao: 0,
+    ...patch,
+  },
+  socios: [{ nome: 'S', participacaoPct: 1, cotaDisponivel: false, aportes: [] }],
+  receita: {
+    comissaoPct: 0.05, custoCartorioPct: 0.01, modoVenda: 'takedown', mesSaida: 26,
+    lucroInvestidoresPct: 0.8, lucroSponsorPct: 0.2, takedowns,
+  },
+  overrides: [],
+});
+
+
+  /** Aporte por PLANO: sem isso o aporte é resíduo de caixa e tampa o buraco. */
+  const comPlanoDeAportes = (entrada: ModelInput): ModelInput => ({
+    ...entrada,
+    aportes: {
+      modoAporte: 'plano', aporteBaseTotal: 3_000_000, valorTotalAlvo: 0,
+      regraRateioCapital: 'participacao', parcelas: [{ mes: 1, valor: 3_000_000 }],
+    },
+  });
+
+  it('sem release e sem linha rotativa, nada muda', () => {
+    const referencia = calcular(casoBase());
+    const out = calcular(comFin({ releasePrice: 0, releasePricePct: null, linhaRotativa: false }));
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+    expect(JSON.stringify(out.conferencias)).toBe(JSON.stringify(referencia.conferencias));
+  });
+
+  it('o release entra na demanda: o mês da venda fecha no colchão, não negativo', () => {
+    const out = calcular(comPlanoDeAportes(cenarioRelease()));
+    // Mês 14 é o primeiro takedown: 4 unidades × $875.000 × 70% = $2.450.000 de
+    // release. Antes desta correção o saque era ZERO neste mês e o caixa fechava
+    // negativo; agora o saque cobre o release e o caixa fecha no colchão.
+    const m14 = out.meses[13];
+    expect(m14.amortizacaoRelease).toBeCloseTo(2_450_000, 0);
+    expect(m14.amortizacaoPrevista).toBeCloseTo(2_450_000, 0);
+    expect(m14.draw).toBeGreaterThan(0);
+    expect(m14.caixaAcumulado).toBeCloseTo(COLCHAO, 0);
+
+    // A regra geral: todo mês com saque fecha EXATAMENTE no colchão. Sobrar
+    // caixa num mês com saque seria dimensionamento inflado; faltar seria algo
+    // ainda fora da demanda.
+    for (const m of out.meses) {
+      // Mês com aporte do plano fica de fora: o 'cash_demand' ignora o aporte do
+      // próprio mês (é a diferença dele para o 'equity_first_demanda'), então o
+      // caixa fecha acima do colchão pelo aporte, não por saque a mais.
+      if (m.draw > 0.01 && m.equityCall <= 0.01) {
+        expect(m.caixaAcumulado).toBeCloseTo(COLCHAO, 0);
+      }
+      expect(m.caixaAcumulado).toBeGreaterThan(COLCHAO - DOLAR);
+    }
+    expect(semaforo(out, 'caixa_minimo')).toBe('verde');
+    expect(out.convergiu).toBe(true);
+  });
+
+  it('previsão e realização do release são o MESMO número', () => {
+    const out = calcular(comPlanoDeAportes(cenarioRelease()));
+    for (const m of out.meses) {
+      // Fora do mês de saída, a amortização prevista É o release realizado.
+      if (m.mes !== 26) expect(m.amortizacaoPrevista).toBeCloseTo(m.amortizacaoRelease, 6);
+      expect(m.amortizacaoRelease).toBeLessThanOrEqual(m.amortization + DOLAR);
+    }
+  });
+
+  it('o teto do release é o saldo de ABERTURA, e o saque não infla por isso', () => {
+    // Janela de saque curta: a dívida acaba antes das vendas, e o release dos
+    // últimos meses não tem o que amortizar.
+    const out = calcular(comPlanoDeAportes(cenarioRelease({ mesFimSaque: 15 })));
+    const cortados = out.meses.filter(
+      (m) => m.unidadesVendidas > 0 && m.amortizacaoRelease < 0.7 * 875_000 * m.unidadesVendidas - DOLAR,
+    );
+    expect(cortados.length).toBeGreaterThan(0);
+    for (const m of cortados) {
+      // Amortizou exatamente o saldo de abertura — nunca mais que ele — e o mês
+      // não sacou nada para amortizar mais.
+      expect(m.saldoDevedor).toBeCloseTo(0, 2);
+      expect(m.draw).toBe(0);
+    }
+    // E a conferência conta o que ficou de fora.
+    const conf = out.conferencias.find((c) => c.chave === 'release_insuficiente')!;
+    expect(conf.semaforo).toBe('ambar');
+    expect(conf.detalhe).toMatch(/de release não chegaram a ser amortizados/);
+  });
+
+  it('com juros capitalizados o teto do release inclui os juros do saldo de abertura', () => {
+    const out = calcular(comPlanoDeAportes(cenarioRelease({ mesFimSaque: 15, capitalizarJuros: true })));
+    const cortado = out.meses.find((m) => m.unidadesVendidas > 0 && m.saldoDevedor === 0 && m.amortization > 0)!;
+    expect(cortado).toBeTruthy();
+    // Saldo de abertura + juros capitalizados do próprio mês, e nada além disso.
+    const abertura = out.meses[cortado.mes - 2].saldoDevedor;
+    expect(cortado.amortization).toBeCloseTo(abertura + cortado.juros, 2);
+  });
+
+  it('no mês da saída o at_exit não soma o release em dobro', () => {
+    // Venda única no mês de saída com release: a previsão é release + o
+    // remanescente do saldo de abertura, nunca os dois cheios.
+    const base = comFin({ releasePricePct: 0.7, modoSaque: 'cash_demand', mesInicioSaque: 1, colchaoMinimoCaixa: 0 });
+    const out = calcular(base);
+    const saida = out.meses[out.meses.length - 1];
+    const abertura = out.meses[out.meses.length - 2].saldoDevedor;
+    expect(saida.amortizacaoPrevista).toBeCloseTo(Math.max(abertura, saida.amortizacaoRelease), 2);
+    expect(saida.amortizacaoPrevista).toBeLessThan(abertura + saida.amortizacaoRelease);
+    expect(saida.saldoDevedor).toBeCloseTo(0, 2);
+    expect(semaforo(out, 'saldo_devedor_final')).toBe('verde');
+  });
+
+  it('a capacidade rotativa é teto − saldo de abertura, e se recompõe', () => {
+    const teto = 0.7 * (45 * 55_000 + 45 * 430_000);
+    const out = calcular(comPlanoDeAportes(cenarioRelease({ linhaRotativa: true, maxLtcPct: 0.7 })));
+    for (let i = 0; i < out.meses.length; i++) {
+      const abertura = i === 0 ? 0 : out.meses[i - 1].saldoDevedor;
+      expect(out.meses[i].capacidadeSaque).toBeCloseTo(Math.max(0, teto - abertura), 2);
+    }
+    // Depois de um mês de release grande, a capacidade VOLTA a subir — é o que
+    // "rotativa" quer dizer.
+    const depoisDaVenda = out.meses[14].capacidadeSaque;
+    expect(depoisDaVenda).toBeGreaterThan(out.meses[13].capacidadeSaque);
+  });
+
+  it('rotativa e não rotativa dão o mesmo resultado com teto folgado', () => {
+    const nao = calcular(comPlanoDeAportes(cenarioRelease({ linhaRotativa: false })));
+    const rot = calcular(comPlanoDeAportes(cenarioRelease({ linhaRotativa: true })));
+    // Sem teto, `capacidadeSaque` é infinita nos dois e nada mais muda.
+    expect(JSON.stringify(nao.meses)).toBe(JSON.stringify(rot.meses));
+    expect(nao.apuracao.dividaSacada).toBeCloseTo(rot.apuracao.dividaSacada, 2);
+  });
+
+  it('com teto apertado, a não rotativa corta o saque e a rotativa fecha o caixa', () => {
+    const nao = calcular(comPlanoDeAportes(cenarioRelease({ linhaRotativa: false, maxLtcPct: 0.7 })));
+    const rot = calcular(comPlanoDeAportes(cenarioRelease({ linhaRotativa: true, maxLtcPct: 0.7 })));
+
+    // Não rotativa: o teto vale para o total desembolsado, a capacidade acaba e
+    // o caixa fica negativo.
+    expect(Math.min(...nao.meses.map((m) => m.caixaAcumulado))).toBeLessThan(0);
+    expect(semaforo(nao, 'caixa_minimo')).toBe('vermelho');
+
+    // Rotativa: amortizar devolveu limite, e o caixa fecha no colchão.
+    expect(Math.min(...rot.meses.map((m) => m.caixaAcumulado))).toBeCloseTo(COLCHAO, 0);
+    expect(semaforo(rot, 'caixa_minimo')).toBe('verde');
+    expect(rot.apuracao.dividaSacada).toBeGreaterThan(nao.apuracao.dividaSacada);
+    expect(rot.convergiu).toBe(true);
+  });
+
+  it('teto_divida cobra o PICO do saldo na rotativa e o total sacado na não rotativa', () => {
+    const nao = calcular(comPlanoDeAportes(cenarioRelease({ linhaRotativa: false, maxLtcPct: 0.7 })));
+    const rot = calcular(comPlanoDeAportes(cenarioRelease({ linhaRotativa: true, maxLtcPct: 0.7 })));
+
+    const confNao = nao.conferencias.find((c) => c.chave === 'teto_divida')!;
+    const confRot = rot.conferencias.find((c) => c.chave === 'teto_divida')!;
+
+    // O pico é menor que o total desembolsado justamente porque houve release.
+    expect(rot.apuracao.saldoDevedorMaximo).toBeLessThan(rot.apuracao.dividaSacada);
+    expect(confRot.semaforo).toBe('verde');
+    expect(confRot.detalhe).toContain('PICO do saldo devedor');
+    expect(confRot.detalhe).toContain('total desembolsado');
+    expect(confNao.detalhe).not.toContain('PICO do saldo devedor');
+    // O valor mostrado muda de grandeza junto com a leitura.
+    expect(confRot.valor.startsWith(dinheiroUsd(rot.apuracao.saldoDevedorMaximo))).toBe(true);
+    expect(confNao.valor.startsWith(dinheiroUsd(nao.apuracao.dividaSacada))).toBe(true);
+  });
+
+  it('saldoDevedorMaximo e ltcPico saem do mesmo fluxo', () => {
+    const out = calcular(comPlanoDeAportes(cenarioRelease()));
+    expect(out.apuracao.saldoDevedorMaximo).toBeCloseTo(
+      Math.max(...out.meses.map((m) => m.saldoDevedor)),
+      6,
+    );
+    const custoDireto = 45 * 55_000 + 45 * 430_000;
+    expect(out.indicadores.ltcPico).toBeCloseTo(out.apuracao.saldoDevedorMaximo / custoDireto, 9);
+    // O LTC por desembolso continua sendo o de sempre, e é MAIOR aqui.
+    expect(out.indicadores.ltc).toBeCloseTo(out.apuracao.dividaSacada / custoDireto, 9);
+    expect(out.indicadores.ltc!).toBeGreaterThan(out.indicadores.ltcPico!);
+    // A dívida é integralmente quitada.
+    expect(out.meses[out.meses.length - 1].saldoDevedor).toBeCloseTo(0, 2);
+    expect(semaforo(out, 'saldo_devedor_final')).toBe('verde');
+  });
+
+  it('release acima do preço líquido acende vermelho com os dois números', () => {
+    // 95% de release contra 94% de preço líquido: cada venda consome caixa.
+    const out = calcular(cenarioRelease({ releasePricePct: 0.95 }));
+    const conf = out.conferencias.find((c) => c.chave === 'release_acima_da_receita')!;
+    expect(conf.semaforo).toBe('vermelho');
+    expect(conf.detalhe).toContain('release de');
+    expect(conf.detalhe).toContain('de preço líquido');
   });
 });
