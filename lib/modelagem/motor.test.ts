@@ -10,6 +10,7 @@ import { bloqueiaSalvamento } from './conferencias';
 import { indiceMes, tirMensal, somarMeses } from './indicadores';
 import { comParcelaNoMes, curvaComoParcelas, editaPlanoDeAportes, semParcelaNoMes } from './aportes';
 import { mapearModelInput } from './mapear';
+import { CATEGORIAS_CUSTO } from './tipos';
 import type { ModelInput, Override } from './tipos';
 
 const DOLAR = 1.0;
@@ -29,7 +30,10 @@ const casoBase = (): ModelInput => ({
     { nome: 'B2', quantidade: 1, custoTerreno: 95_000, custoObra: 460_000, precoVenda: 825_000, propertyTaxAno: 1_800 },
   ],
   custosAdicionais: [
-    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction' },
+    // `categoria: 'outros'` é o DEFAULT da coluna criada pela migration 1761200000
+    // e é justamente o que toda linha já gravada recebe. O caso base continua
+    // sendo, portanto, o mesmo caso base de antes da categorização.
+    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros' },
   ],
   // Antes da migration 1761000000 esta premissa era a SOMA de
   // modelagem_unidades.aporte_base: 100.250 × 2 + 266.139 × 2 = 732.778. É
@@ -1157,5 +1161,131 @@ describe('15 — a modelagem que já existia, carregada depois da migration', ()
       calcular(casoBase()).conferencias.map((c) => c.chave),
     );
     expect(bloqueiaSalvamento(doBanco.conferencias)).toHaveLength(0);
+  });
+});
+
+describe('11 — orçamento por categoria', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1761200000.
+  //
+  // Categoria é agrupamento de SAÍDA, não regra de lançamento. A prova é dupla:
+  //   (a) uma modelagem toda em 'outros' — o default da coluna, e portanto o
+  //       estado de toda linha já gravada — produz o ModelOutput de antes;
+  //   (b) redistribuir as MESMAS linhas por categorias diferentes não move um
+  //       único mês do fluxo. Se algum dia a categoria vazar para o loop mensal,
+  //       é (b) que quebra.
+  const semCategoria = (): ModelInput => {
+    const base = casoBase();
+    // Exatamente o que o mapeador entrega para uma linha gravada antes da
+    // migration: `categoria` ausente no banco vira 'outros'.
+    base.custosAdicionais = [
+      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros' },
+    ];
+    return base;
+  };
+
+  const referencia = calcular(semCategoria());
+
+  it('mantém o fluxo, a apuração e os indicadores do caso base', () => {
+    const out = calcular(casoBase());
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+    expect(JSON.stringify(out.indicadores)).toBe(JSON.stringify(referencia.indicadores));
+    expect(JSON.stringify(out.resultadoUnidades)).toBe(JSON.stringify(referencia.resultadoUnidades));
+  });
+
+  it('só acrescenta custosPorCategoria aos agregados', () => {
+    const { custosPorCategoria, ...resto } = referencia.agregados;
+    // O que já existia continua idêntico ao caso base de antes da categorização.
+    expect(resto).toEqual({
+      terrenosTotal: 240_000,
+      obraTotal: 1_340_000,
+      unidadesTotal: 4,
+      vgv: 2_290_000,
+      taxAnoTotal: 5_300,
+      propertyTaxTotal: (5_300 / 12) * 23,
+      equityDisponivelObra: 492_778,
+      aportePlanejadoTotal: 0,
+    });
+    // Toda linha antiga cai em 'outros'; nenhum outro bucket ganha valor.
+    expect(custosPorCategoria.outros).toBeCloseTo(56_000, 6);
+    expect(Object.values(custosPorCategoria).reduce((a, b) => a + b, 0)).toBeCloseTo(56_000, 6);
+  });
+
+  it('devolve TODAS as categorias, inclusive as zeradas', () => {
+    expect(Object.keys(referencia.agregados.custosPorCategoria)).toEqual(CATEGORIAS_CUSTO);
+  });
+
+  it('não acrescenta conferência nem bloqueio de salvamento', () => {
+    expect(referencia.conferencias.map((c) => c.chave)).toEqual(
+      calcular(casoBase()).conferencias.map((c) => c.chave),
+    );
+    expect(bloqueiaSalvamento(referencia.conferencias)).toHaveLength(0);
+  });
+
+  it('subtotaliza por categoria sem mover o fluxo', () => {
+    const base = casoBase();
+    // O MESMO orçamento de 56.000, agora quebrado em cinco linhas espalhadas por
+    // quatro categorias. A distribuição no tempo de cada linha é a mesma da
+    // linha única original, então o fluxo tem de sair idêntico.
+    base.custosAdicionais = [
+      { label: 'Sitework', valor: 20_000, distribuicao: 'linear_construction', categoria: 'sitework' },
+      { label: 'Mobilização', valor: 6_000, distribuicao: 'linear_construction', categoria: 'sitework', grupoPaiId: 1 },
+      { label: 'Amenidades', valor: 10_000, distribuicao: 'linear_construction', categoria: 'amenidades' },
+      { label: 'Projeto', valor: 12_000, distribuicao: 'linear_construction', categoria: 'soft' },
+      { label: 'Contingência', valor: 8_000, distribuicao: 'linear_construction', categoria: 'contingencia' },
+    ];
+    const out = calcular(base);
+
+    // (b): nenhum mês se move.
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+
+    const cat = out.agregados.custosPorCategoria;
+    // Pai e filho somam UMA vez cada dentro da categoria: grupoPaiId é hierarquia
+    // visual, e somar o pai de novo daria 26.000 + 6.000.
+    expect(cat.sitework).toBeCloseTo(26_000, 6);
+    expect(cat.amenidades).toBeCloseTo(10_000, 6);
+    expect(cat.soft).toBeCloseTo(12_000, 6);
+    expect(cat.contingencia).toBeCloseTo(8_000, 6);
+    expect(cat.outros).toBe(0);
+    expect(Object.values(cat).reduce((a, b) => a + b, 0)).toBeCloseTo(56_000, 6);
+  });
+
+  it('joga categoria desconhecida em outros, sem lançar exceção', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      // Input inconsistente vira resultado, nunca erro — e nunca chave nova.
+      { label: 'Ruído', valor: 9_000, distribuicao: 'linear_total', categoria: 'inexistente' as never },
+    ];
+    const out = calcular(base);
+    expect(Object.keys(out.agregados.custosPorCategoria)).toEqual(CATEGORIAS_CUSTO);
+    expect(out.agregados.custosPorCategoria.outros).toBeCloseTo(9_000, 6);
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+  });
+
+  it('mapeia categoria e grupo_pai do banco, com o default para linha antiga', () => {
+    const custos = mapearModelInput({
+      id: 7,
+      data_inicio: '2025-12-01',
+      custos: [
+        // Linha gravada ANTES da migration: sem as colunas novas.
+        { id: 1, ordem: 0, label: 'Antiga', valor: '56000.00', distribuicao: 'linear_construction', mes_ancora: null },
+        // Linha nova, com categoria e pai. `grupo_pai` chega como INTEGER e
+        // `valor` como STRING — as duas passam pela coerção de mapear.ts.
+        { id: 2, ordem: 1, label: 'Filha', valor: '6000.00', distribuicao: 'linear_construction', mes_ancora: null, categoria: 'sitework', grupo_pai: 1 },
+        // Categoria fora do CHECK não deveria existir no banco, mas o mapeador
+        // não pode confiar nisso.
+        { id: 3, ordem: 2, label: 'Torta', valor: '1000.00', distribuicao: 'manual', mes_ancora: null, categoria: 'zzz', grupo_pai: null },
+      ],
+    } as never).custosAdicionais!;
+
+    expect(custos[0].categoria).toBe('outros');
+    expect(custos[0].grupoPaiId).toBeNull();
+    expect(custos[1].categoria).toBe('sitework');
+    expect(custos[1].grupoPaiId).toBe(1);
+    expect(custos[2].categoria).toBe('outros');
+    // A coerção de mapear.ts continua obrigatória: DECIMAL vem como string e
+    // sem num() a soma viraria concatenação.
+    expect(custos.reduce((a, c) => a + c.valor, 0)).toBe(63_000);
   });
 });

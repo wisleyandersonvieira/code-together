@@ -10,8 +10,10 @@
  */
 import type { Alignment, Fill, Font, Workbook, Worksheet } from 'exceljs';
 import {
+  CATEGORIAS_CUSTO,
   gradeSensibilidade,
   pontosDeEquilibrio,
+  ROTULO_CATEGORIA,
   sensibilidadePrazo,
   VARIACOES_CUSTO,
   VARIACOES_PRECO,
@@ -435,26 +437,58 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     });
     l += 1;
 
-    barraSecao(ws, l++, 2, ULT, 'Custos');
+    barraSecao(ws, l++, 2, ULT, 'Orçamento');
     const custos = input.custosAdicionais ?? [];
     if (custos.length === 0) {
       nota(ws, l++, 2, ULT, 'Nenhum custo adicional cadastrado.');
     } else {
       cabecalhoTabela(ws, l++, 2, [
-        { titulo: 'Custo adicional' }, { titulo: 'Valor', align: 'right' },
+        { titulo: 'Custo adicional' }, { titulo: 'Categoria' }, { titulo: 'Valor', align: 'right' },
         { titulo: 'Distribuição' }, { titulo: 'Mês âncora', align: 'right' },
       ]);
-      for (const c of custos) {
-        const linha = ws.getRow(l++);
-        const valores: (string | number)[] = [c.label, c.valor, c.distribuicao, c.mesAncora ?? '–'];
-        valores.forEach((v, k) => {
-          const cel = linha.getCell(2 + k);
-          cel.value = v;
-          cel.font = fonte({ color: { argb: T.entrada } });
-          cel.alignment = k === 0 || k === 2 ? esq : dir;
-          if (k === 1) cel.numFmt = MOEDA;
-        });
+      // Agrupado por categoria, e dentro dela na ordem em que o usuário cadastrou
+      // — a mesma leitura da aba Orçamento na tela.
+      //
+      // Os subtotais saem de `agregados.custosPorCategoria`: o motor é quem soma,
+      // aqui só se lê. Se a planilha divergir da tela, é bug de leitura.
+      for (const categoria of CATEGORIAS_CUSTO) {
+        const doGrupo = custos.filter((c) => c.categoria === categoria);
+        if (doGrupo.length === 0) continue;
+        for (const c of doGrupo) {
+          const linha = ws.getRow(l++);
+          const valores: (string | number)[] = [
+            // Filho de outra linha entra recuado, igual à indentação da tela.
+            (c.grupoPaiId != null ? '    ' : '') + c.label,
+            ROTULO_CATEGORIA[categoria],
+            c.valor,
+            c.distribuicao,
+            c.mesAncora ?? '–',
+          ];
+          valores.forEach((v, k) => {
+            const cel = linha.getCell(2 + k);
+            cel.value = v;
+            cel.font = fonte({ color: { argb: T.entrada } });
+            cel.alignment = k === 0 || k === 1 || k === 3 ? esq : dir;
+            if (k === 2) cel.numFmt = MOEDA;
+          });
+        }
+        const subtotal = ws.getRow(l);
+        subtotal.getCell(2).value = `Subtotal — ${ROTULO_CATEGORIA[categoria]}`;
+        subtotal.getCell(2).alignment = esq;
+        subtotal.getCell(4).value = ag.custosPorCategoria[categoria];
+        subtotal.getCell(4).numFmt = MOEDA;
+        subtotal.getCell(4).alignment = dir;
+        bordaSuperior(ws, l, 2, 6);
+        l += 1;
       }
+      const total = ws.getRow(l);
+      total.getCell(2).value = 'Total do orçamento';
+      total.getCell(2).alignment = esq;
+      total.getCell(4).value = custos.reduce((a, c) => a + (c.valor || 0), 0);
+      total.getCell(4).numFmt = MOEDA;
+      total.getCell(4).alignment = dir;
+      estiloTotal(ws, l, 2, 6);
+      l += 1;
     }
     l += 1;
 

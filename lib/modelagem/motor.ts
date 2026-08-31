@@ -22,6 +22,7 @@
 import type {
   Agregados,
   Apuracao,
+  CategoriaCusto,
   Conferencia,
   Cronograma,
   FaseCronograma,
@@ -35,6 +36,7 @@ import type {
   ResultadoUnidade,
   Unidade,
 } from './tipos';
+import { CATEGORIAS_CUSTO } from './tipos';
 import { montarConferencias } from './conferencias';
 import { anualizar, indiceMes, razao, somarMeses, tirMensal, xirr } from './indicadores';
 
@@ -197,6 +199,26 @@ export function calcular(input: ModelInput): ModelOutput {
       ? Math.max(0, (parcelasAcumuladas[m] ?? 0) - terrenosTotal)
       : equityDisponivelObra;
 
+  // ─── Subtotais do orçamento por categoria ──────────────────────────────────
+  // Agregado de SAÍDA, não regra de lançamento: nada aqui toca o loop mensal, e
+  // trocar a categoria de uma linha não move um único mês do fluxo. É o que
+  // garante que uma modelagem existente — toda ela em 'outros', o default da
+  // migration 1761200000 — produza exatamente o mesmo ModelOutput de antes.
+  //
+  // Cada linha é somada UMA vez, no seu próprio bucket. `grupoPaiId` é hierarquia
+  // visual e não participa da soma: se o pai também fosse somado, um custo
+  // aninhado entraria em duplicidade.
+  //
+  // Categoria desconhecida cai em 'outros' em vez de criar chave nova ou estourar
+  // — input inconsistente vira resultado, nunca exceção.
+  const custosPorCategoria = Object.fromEntries(
+    CATEGORIAS_CUSTO.map((c) => [c, 0]),
+  ) as Record<CategoriaCusto, number>;
+  for (const c of custosAdicionais) {
+    const cat: CategoriaCusto = CATEGORIAS_CUSTO.includes(c.categoria) ? c.categoria : 'outros';
+    custosPorCategoria[cat] += c.valor || 0;
+  }
+
   const agregados: Agregados = {
     terrenosTotal,
     obraTotal,
@@ -206,6 +228,7 @@ export function calcular(input: ModelInput): ModelOutput {
     propertyTaxTotal,
     equityDisponivelObra,
     aportePlanejadoTotal,
+    custosPorCategoria,
   };
 
   // ─── Overrides ─────────────────────────────────────────────────────────────
