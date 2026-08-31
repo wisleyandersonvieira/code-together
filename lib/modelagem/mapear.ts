@@ -8,6 +8,8 @@
 import type {
   AlocacaoFase,
   AporteParcela,
+  ConvencaoJuros,
+  PontoBenchmark,
   BaseCalculoCusto,
   CategoriaCusto,
   CustoAdicional,
@@ -20,7 +22,14 @@ import type {
   Takedown,
   Unidade,
 } from './tipos';
-import { BASES_CALCULO_CUSTO, CATEGORIAS_CUSTO, GATILHOS_CUSTO, LINHAS_FLUXO } from './tipos';
+import {
+  BASES_CALCULO_CUSTO,
+  CATEGORIAS_CUSTO,
+  CONVENCOES_JUROS,
+  GATILHOS_CUSTO,
+  LINHAS_FLUXO,
+  MODOS_AMORTIZACAO,
+} from './tipos';
 
 /** Número tolerante: string do Postgres, null, undefined ou '' viram `padrao`. */
 export const num = (v: unknown, padrao = 0): number => {
@@ -230,6 +239,25 @@ export function mapearTakedowns(
     .sort((a, b) => a.ordem - b.ordem || a.mes - b.mes);
 }
 
+/**
+ * Curva do benchmark (`modelagem_benchmark_curva`), sempre ordenada por mês.
+ *
+ * Mês AUSENTE não é benchmark zero — cai em `benchmarkPadrao` no motor. Uma linha
+ * com valor 0 declara benchmark zero naquele mês; é a mesma distinção entre
+ * "vazio" e "zero" que vale para os overrides.
+ */
+export function mapearBenchmarkCurva(linhas: unknown): PontoBenchmark[] {
+  return lista(linhas)
+    .map((p) => ({
+      id: num(p.id) || undefined,
+      mes: Math.max(1, Math.trunc(num(p.mes, 1))),
+      // DECIMAL(9,6) chega como STRING. Sem num(), "0.045000" + spread seria
+      // concatenação de texto e a taxa sairia absurda sem erro nenhum.
+      valor: num(p.valor),
+    }))
+    .sort((a, b) => a.mes - b.mes);
+}
+
 export function mapearSocios(linhas: unknown): Socio[] {
   return lista(linhas).map((s) => ({
     id: num(s.id) || undefined,
@@ -308,9 +336,36 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
       maxLtcPct: numeroOuNulo(fin.max_ltc_pct),
       valorContratado: numeroOuNulo(fin.valor_contratado),
       custoFinanceiroNaDemanda: bool(fin.custo_financeiro_na_demanda),
-      modoAmortizacao: (fin.modo_amortizacao ?? 'at_exit') as 'at_exit' | 'manual',
+      modoAmortizacao: (MODOS_AMORTIZACAO.includes(fin.modo_amortizacao)
+        ? fin.modo_amortizacao
+        : 'at_exit') as ModelInput['financiamento']['modoAmortizacao'],
       capitalizarJuros: bool(fin.capitalizar_juros),
       colchaoMinimoCaixa: num(fin.colchao_minimo_caixa),
+
+      // DECIMAL(15,2) chega como STRING; sem num(), a reserva viraria texto e a
+      // comparação com os juros do mês daria resultado sem sentido.
+      reservaJuros: num(fin.reserva_juros),
+      // Ausente = TRUE, o default da coluna (migration 1762100000).
+      reservaJurosSacada: bool(fin.reserva_juros_sacada, true),
+
+      prazoMeses: inteiroOuNulo(fin.prazo_meses),
+      carenciaMeses: Math.max(0, Math.trunc(num(fin.carencia_meses))),
+      amortizacaoMeses: inteiroOuNulo(fin.amortizacao_meses),
+      balloonNoVencimento: bool(fin.balloon_no_vencimento, true),
+
+      releasePrice: num(fin.release_price),
+      // Nulo é diferente de zero aqui: nulo é "não usar", zero seria 0% de release.
+      releasePricePct: numeroOuNulo(fin.release_price_pct),
+
+      convencaoJuros: (CONVENCOES_JUROS.includes(fin.convencao_juros as ConvencaoJuros)
+        ? fin.convencao_juros
+        : 'mensal_12') as ConvencaoJuros,
+      tipoTaxa: fin.tipo_taxa === 'variavel' ? 'variavel' : 'fixa',
+      // DECIMAL(9,6) — mesma coerção de taxa_anual e comissao_pct.
+      spread: num(fin.spread),
+      benchmarkNome: fin.benchmark_nome == null ? null : String(fin.benchmark_nome),
+      benchmarkPadrao: num(fin.benchmark_padrao),
+      benchmarkCurva: mapearBenchmarkCurva(linha.benchmark_curva),
     },
     socios: mapearSocios(linha.socios),
     receita: {

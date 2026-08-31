@@ -5,7 +5,13 @@
  * 0,0001 nos indicadores adimensionais.
  */
 import { describe, expect, it } from 'vitest';
-import { basesDeCalculo, calcular, resolverCustos, valorEfetivoCusto } from './motor';
+import {
+  basesDeCalculo,
+  calcular,
+  fatorJurosDoMes,
+  resolverCustos,
+  valorEfetivoCusto,
+} from './motor';
 import { bloqueiaSalvamento } from './conferencias';
 import { indiceMes, tirMensal, somarMeses } from './indicadores';
 import { comParcelaNoMes, curvaComoParcelas, editaPlanoDeAportes, semParcelaNoMes } from './aportes';
@@ -59,6 +65,19 @@ const casoBase = (): ModelInput => ({
     modoAmortizacao: 'at_exit',
     capitalizarJuros: false,
     colchaoMinimoCaixa: 0,
+    reservaJuros: 0,
+    reservaJurosSacada: true,
+    prazoMeses: null,
+    carenciaMeses: 0,
+    amortizacaoMeses: null,
+    balloonNoVencimento: true,
+    releasePrice: 0,
+    releasePricePct: null,
+    convencaoJuros: 'mensal_12',
+    tipoTaxa: 'fixa',
+    spread: 0,
+    benchmarkNome: null,
+    benchmarkPadrao: 0,
   },
   socios: [
     { nome: 'Sócio 1', participacaoPct: 0.5, cotaDisponivel: false },
@@ -2157,5 +2176,510 @@ describe('16 — takedown schedule', () => {
     const out = calcular(input);
     expect(out.meses[11].revenue).toBeCloseTo(1_750_000, 2);
     expect(out.meses[12].revenue).toBeCloseTo(2_700_000, 2);
+  });
+});
+
+/** Caso base com o financiamento ajustado — os defaults novos vêm de `casoBase`. */
+const comFin = (patch: Partial<ModelInput['financiamento']>): ModelInput => {
+  const base = casoBase();
+  base.financiamento = { ...base.financiamento, ...patch };
+  return base;
+};
+
+describe('17 — reserva de juros', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1762100000: com reserva 0 não há saldo
+  // para absorver juro nenhum, e cada mês cai exatamente no caminho de hoje.
+  const referencia = calcular(casoBase());
+
+  it('reserva 0 produz o resultado idêntico ao de hoje', () => {
+    // reservaJurosSacada preenchido é INERTE sem valor de reserva.
+    const out = calcular(comFin({ reservaJuros: 0, reservaJurosSacada: false }));
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+    expect(JSON.stringify(out.indicadores)).toBe(JSON.stringify(referencia.indicadores));
+    expect(out.conferencias.map((c) => c.chave)).toEqual(referencia.conferencias.map((c) => c.chave));
+    // Os campos novos existem e ficam neutros.
+    expect(out.meses.every((m) => m.jurosPagosPelaReserva === 0)).toBe(true);
+    expect(out.meses.every((m) => m.saldoReservaJuros === 0)).toBe(true);
+    expect(out.meses.every((m) => m.saqueReservaJuros === 0)).toBe(true);
+  });
+
+  it('reserva igual ao juro total zera o custo financeiro de caixa', () => {
+    // A verificação do item. A reserva orçamentária é usada porque a sacada
+    // aumenta o principal e, com ele, o próprio juro — o ponto fixo não fecharia
+    // num número redondo.
+    const jurosDeReferencia = referencia.apuracao.jurosTotais;
+    const out = calcular(
+      comFin({ reservaJuros: jurosDeReferencia, reservaJurosSacada: false }),
+    );
+    // Os juros incorridos não mudam: a reserva paga, não elimina.
+    expect(out.apuracao.jurosTotais).toBeCloseTo(jurosDeReferencia, 2);
+    // Mas nenhum centavo de juro sai do caixa — só sobra o fee.
+    for (const m of out.meses) {
+      expect(m.custoFinanceiroCaixa).toBeCloseTo(m.fee, 6);
+    }
+    expect(soma(out.meses.map((m) => m.jurosPagosPelaReserva))).toBeCloseTo(jurosDeReferencia, 2);
+  });
+
+  it('a reserva sacada soma ao principal e não passa pelo caixa', () => {
+    const out = calcular(comFin({ reservaJuros: 100_000, reservaJurosSacada: true }));
+    const mesConstituicao = out.meses.find((m) => m.saqueReservaJuros > 0)!;
+    // Constituída no PRIMEIRO saque, uma única vez.
+    expect(out.meses.filter((m) => m.saqueReservaJuros > 0)).toHaveLength(1);
+    expect(mesConstituicao.saqueReservaJuros).toBe(100_000);
+    expect(mesConstituicao.mes).toBe(out.meses.find((m) => m.draw > 0)!.mes);
+    // Entra na dívida sacada...
+    expect(out.apuracao.dividaSacada).toBeCloseTo(
+      soma(out.meses.map((m) => m.draw)) + 100_000,
+      2,
+    );
+    // ...mas NÃO no caixa: o caixa do mês ignora o saque da reserva.
+    expect(mesConstituicao.caixaMes).toBeCloseTo(
+      mesConstituicao.equityCall +
+        mesConstituicao.draw +
+        mesConstituicao.revenue -
+        mesConstituicao.pagamentos -
+        mesConstituicao.amortization -
+        mesConstituicao.distribution,
+      6,
+    );
+    // E a dívida continua quitada no fim.
+    expect(semaforo(out, 'saldo_devedor_final')).toBe('verde');
+  });
+
+  it('a reserva orçamentária não mexe na dívida nem na chamada de capital', () => {
+    const out = calcular(comFin({ reservaJuros: 100_000, reservaJurosSacada: false }));
+    expect(out.meses.every((m) => m.saqueReservaJuros === 0)).toBe(true);
+    expect(out.apuracao.dividaSacada).toBeCloseTo(soma(out.meses.map((m) => m.draw)), 2);
+    // O efeito é só o juro deixar de sair do caixa — e por isso o equity total
+    // fica MENOR que o do caso sem reserva.
+    expect(out.apuracao.equityTotal).toBeLessThan(referencia.apuracao.equityTotal);
+  });
+
+  it('reserva primeiro, capitalização depois — nessa ordem', () => {
+    // Com a ordem invertida o juro viraria principal antes de a reserva ter
+    // chance de absorvê-lo, e a reserva nunca esvaziaria.
+    const out = calcular(
+      comFin({ reservaJuros: 50_000, reservaJurosSacada: false, capitalizarJuros: true }),
+    );
+    const primeiroComJuros = out.meses.find((m) => m.juros > 0)!;
+    expect(primeiroComJuros.jurosPagosPelaReserva).toBeGreaterThan(0);
+    // A reserva de fato drena.
+    expect(out.meses[out.meses.length - 1].saldoReservaJuros).toBeLessThan(50_000);
+  });
+
+  it('acende âmbar no mês em que a reserva acaba e quando sobra', () => {
+    const esgota = calcular(comFin({ reservaJuros: 20_000, reservaJurosSacada: false }));
+    const conf = esgota.conferencias.find((c) => c.chave === 'reserva_juros_esgotada');
+    expect(conf?.semaforo).toBe('ambar');
+    expect(conf?.valor).toMatch(/^mês \d+$/);
+    expect(semaforo(esgota, 'reserva_juros_sobrando')).toBe('verde');
+
+    const sobra = calcular(comFin({ reservaJuros: 5_000_000, reservaJurosSacada: false }));
+    expect(semaforo(sobra, 'reserva_juros_esgotada')).toBe('verde');
+    expect(semaforo(sobra, 'reserva_juros_sobrando')).toBe('ambar');
+    expect(bloqueiaSalvamento(sobra.conferencias)).toHaveLength(0);
+  });
+});
+
+describe('18 — carência, prestação e balloon', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1762200000: 'price' e 'sac' são modos
+  // NOVOS, e nenhuma modelagem já salva os tem.
+  const referencia = calcular(casoBase());
+
+  it("at_exit produz o resultado idêntico ao de hoje, com os campos novos preenchidos", () => {
+    const out = calcular(
+      comFin({
+        modoAmortizacao: 'at_exit',
+        prazoMeses: 20,
+        carenciaMeses: 20,
+        amortizacaoMeses: 300,
+        balloonNoVencimento: true,
+      }),
+    );
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(out.conferencias.map((c) => c.chave)).toEqual(referencia.conferencias.map((c) => c.chave));
+  });
+
+  it('price com prazo 20, carência 20 e amortização 300 joga tudo no balloon', () => {
+    // A verificação do item: a carência cobre o prazo inteiro, então não há
+    // prestação nenhuma e o principal sai todo no vencimento.
+    const out = calcular(
+      comFin({
+        // cash_demand para haver dívida já nos primeiros meses: com equity_first
+        // não há saque antes da obra, e sem dívida não há o que amortizar.
+        modoSaque: 'cash_demand',
+        modoAmortizacao: 'price',
+        mesInicioSaque: 1,
+        mesFimSaque: 10,
+        prazoMeses: 20,
+        carenciaMeses: 20,
+        amortizacaoMeses: 300,
+        balloonNoVencimento: true,
+      }),
+    );
+    const mesVencimento = 1 + 20 - 1; // mesInicioSaque + prazoMeses − 1
+    const comAmort = out.meses.filter((m) => m.amortization > 0);
+    expect(comAmort).toHaveLength(1);
+    expect(comAmort[0].mes).toBe(mesVencimento);
+    // Todo o saldo cai de uma vez e a dívida zera.
+    expect(out.meses[mesVencimento - 1].saldoDevedor).toBeCloseTo(0, 2);
+    expect(semaforo(out, 'saldo_devedor_final')).toBe('verde');
+  });
+
+  it('a carência é interest-only e a prestação começa depois dela', () => {
+    const out = calcular(
+      comFin({
+        modoSaque: 'cash_demand',
+        modoAmortizacao: 'price',
+        mesInicioSaque: 1,
+        mesFimSaque: 3,
+        prazoMeses: 23,
+        carenciaMeses: 5,
+        amortizacaoMeses: 23,
+      }),
+    );
+    for (let m = 1; m <= 5; m++) {
+      expect(out.meses[m - 1].amortization).toBe(0);
+      // Mas os juros correm.
+      if (out.meses[m - 1].saldoDevedor > 0) expect(out.meses[m - 1].juros).toBeGreaterThan(0);
+    }
+    expect(out.meses[5].amortization).toBeGreaterThan(0);
+  });
+
+  it('sac amortiza principal constante fora da carência', () => {
+    const out = calcular(
+      comFin({
+        modoSaque: 'cash_demand',
+        modoAmortizacao: 'sac',
+        mesInicioSaque: 1,
+        mesFimSaque: 1,
+        prazoMeses: 23,
+        carenciaMeses: 0,
+        amortizacaoMeses: 23,
+        balloonNoVencimento: false,
+      }),
+    );
+    // Com saque num mês só, a prestação é calculada uma vez e não muda.
+    const amorts = out.meses.filter((m) => m.amortization > 0).map((m) => m.amortization);
+    expect(amorts.length).toBeGreaterThan(1);
+    for (const a of amorts.slice(0, -1)) expect(a).toBeCloseTo(amorts[0], 6);
+  });
+
+  it('recalcula a prestação a cada saque novo', () => {
+    // Com saques em vários meses, o principal cresce — e a prestação tem de
+    // acompanhar, senão o balloon herdaria um resíduo enorme.
+    const varios = calcular(
+      comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'sac', mesInicioSaque: 1, mesFimSaque: 12, prazoMeses: 23, amortizacaoMeses: 23 }),
+    );
+    const amorts = varios.meses.filter((m) => m.amortization > 0).map((m) => m.amortization);
+    // A amortização MUDA ao longo dos meses de saque: é o recálculo acontecendo.
+    expect(new Set(amorts.map((a) => a.toFixed(2))).size).toBeGreaterThan(1);
+  });
+
+  it('acusa vencimento além do prazo do projeto e balloon sem caixa', () => {
+    const alem = calcular(
+      comFin({ modoAmortizacao: 'price', mesInicioSaque: 13, prazoMeses: 60, amortizacaoMeses: 300 }),
+    );
+    expect(semaforo(alem, 'amortizacao_alem_do_prazo')).toBe('vermelho');
+    // Vermelho que NÃO bloqueia salvamento.
+    expect(bloqueiaSalvamento(alem.conferencias)).toHaveLength(0);
+
+    const dentro = calcular(
+      comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 }),
+    );
+    expect(semaforo(dentro, 'amortizacao_alem_do_prazo')).toBe('verde');
+    // Verde aqui, e isso é correto: no modo de aporte 'demanda' a chamada de
+    // capital é o RESÍDUO do caixa, então o equity sempre tampa o balloon. A
+    // conferência só tem o que acusar quando o equity está preso a um plano.
+    expect(semaforo(dentro, 'balloon_sem_caixa')).toBe('verde');
+  });
+
+  it('acusa o balloon que derruba o caixa quando o equity está num plano', () => {
+    // Saque e aporte fixos: o balloon do mês 20 chega antes da venda do mês 23 e
+    // não há resíduo de equity para cobri-lo.
+    const base = comFin({
+      modoSaque: 'manual',
+      modoAmortizacao: 'price',
+      mesInicioSaque: 1,
+      prazoMeses: 20,
+      amortizacaoMeses: 300,
+      balloonNoVencimento: true,
+    });
+    base.aportes = { modoAporte: 'plano', aporteBaseTotal: 0, valorTotalAlvo: 0, parcelas: [{ mes: 1, valor: 1_800_000 }] };
+    base.overrides = [{ mes: 1, linha: 'draw', valor: 1_500_000 }];
+    const out = calcular(base);
+
+    const balloon = out.meses[19];
+    expect(balloon.mes).toBe(20);
+    // O saldo inteiro sai de uma vez e a dívida zera.
+    expect(balloon.amortization).toBeGreaterThan(1_400_000);
+    expect(balloon.saldoDevedor).toBeCloseTo(0, 2);
+    // E o caixa não aguenta.
+    expect(balloon.caixaAcumulado).toBeLessThan(0);
+    expect(semaforo(out, 'balloon_sem_caixa')).toBe('ambar');
+    expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
+  });
+
+  it('override de amortização vence balloon e prestação', () => {
+    const out = calcular(
+      comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 }),
+    );
+    const base = comFin({ modoSaque: 'cash_demand', modoAmortizacao: 'price', mesInicioSaque: 1, mesFimSaque: 10, prazoMeses: 20, amortizacaoMeses: 300 });
+    base.overrides = [{ mes: 20, linha: 'amortization', valor: 1_000 }];
+    const comOverride = calcular(base);
+    expect(out.meses[19].amortization).toBeGreaterThan(1_000);
+    expect(comOverride.meses[19].amortization).toBe(1_000);
+  });
+});
+
+describe('19 — release price por unidade vendida', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1762300000.
+  const referencia = calcular(casoBase());
+
+  it('sem release o resultado é idêntico ao de hoje', () => {
+    const out = calcular(comFin({ releasePrice: 0, releasePricePct: null }));
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(out.conferencias.map((c) => c.chave)).toEqual(referencia.conferencias.map((c) => c.chave));
+  });
+
+  /** 45 unidades a $875.000 em 12 takedowns, com release de $43.500. */
+  const comTakedown = (patch: Partial<ModelInput['financiamento']>): ModelInput => {
+    const base = comFin({ modoSaque: 'cash_demand', mesInicioSaque: 1, mesFimSaque: 11, ...patch });
+    base.unidades = [
+      { nome: 'Casa', quantidade: 45, custoTerreno: 10_000, custoObra: 400_000, precoVenda: 875_000, propertyTaxAno: 0 },
+    ];
+    base.receita.modoVenda = 'takedown';
+    const levas = [4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3];
+    base.receita.takedowns = levas.map((quantidade, k) => ({
+      unidadeIndex: 0, faseIndex: null, ordem: k, mes: 12 + k, quantidade, precoUnitario: 0,
+    }));
+    return base;
+  };
+
+  it('45 unidades com release de $43.500 amortizam $1.957.500 em degraus', () => {
+    const out = calcular(comTakedown({ releasePrice: 43_500 }));
+    // 45 × 43.500 = 1.957.500.
+    expect(soma(out.unidadesVendidasPorMes)).toBe(45);
+    // A amortização acontece exatamente nos meses de takedown, em degraus.
+    const mesesComAmort = out.meses.filter((m) => m.amortization > 0).map((m) => m.mes);
+    expect(mesesComAmort).toEqual([12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
+    // Mês de 4 unidades amortiza o dobro… do de 2, e 4/3 do de 3.
+    expect(out.meses[11].amortization).toBeCloseTo(4 * 43_500, 2);
+    expect(out.meses[20].amortization).toBeCloseTo(3 * 43_500, 2);
+    // O saldo devedor cai em degraus, nunca sobe depois do último saque.
+    for (let k = 12; k < out.meses.length; k++) {
+      expect(out.meses[k].saldoDevedor).toBeLessThanOrEqual(out.meses[k - 1].saldoDevedor + 1e-6);
+    }
+  });
+
+  it('o percentual é lido só quando o valor fixo é zero', () => {
+    const fixo = calcular(comTakedown({ releasePrice: 43_500, releasePricePct: 0.9 }));
+    const soPct = calcular(comTakedown({ releasePrice: 0, releasePricePct: 43_500 / 875_000 }));
+    // Com os dois preenchidos vale o FIXO — logo os dois casos batem.
+    expect(fixo.meses[11].amortization).toBeCloseTo(soPct.meses[11].amortization, 2);
+    expect(fixo.meses[11].amortization).toBeCloseTo(4 * 43_500, 2);
+  });
+
+  it('acusa release que não quita a dívida e release acima do preço líquido', () => {
+    // Amortização manual: sem ela, o at_exit quitaria o resto no mês da saída e
+    // nunca sobraria saldo para a conferência acusar.
+    const pouco = calcular(comTakedown({ releasePrice: 1_000, modoAmortizacao: 'manual' }));
+    expect(semaforo(pouco, 'release_insuficiente')).toBe('ambar');
+
+    // Preço líquido = 875.000 × (1 − 0,06 − 0,02) = 805.000.
+    const demais = calcular(comTakedown({ releasePrice: 900_000 }));
+    expect(semaforo(demais, 'release_acima_da_receita')).toBe('vermelho');
+    expect(bloqueiaSalvamento(demais.conferencias)).toHaveLength(0);
+    expect(Number.isFinite(demais.apuracao.lucroProjeto)).toBe(true);
+  });
+
+  it('o release soma à amortização do modo escolhido', () => {
+    const base = comTakedown({ releasePrice: 10_000, modoAmortizacao: 'at_exit' });
+    const out = calcular(base);
+    // No mês da saída convivem o release do próprio mês e a quitação do at_exit.
+    const mesSaida = out.cronograma.mesSaida;
+    expect(out.meses[mesSaida - 1].amortization).toBeGreaterThan(3 * 10_000);
+    expect(out.meses[mesSaida - 1].saldoDevedor).toBeCloseTo(0, 2);
+  });
+});
+
+describe('20 — convenção de juros por dias corridos', () => {
+  const referencia = calcular(casoBase());
+
+  it('mensal_12 produz exatamente os números de hoje', () => {
+    const out = calcular(comFin({ convencaoJuros: 'mensal_12' }));
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+  });
+
+  it('30/360 é aritmeticamente igual a mensal_12', () => {
+    // 30/360 = 1/12 exato. Existe para o usuário declarar a convenção do
+    // contrato, não para mudar o resultado.
+    const out = calcular(comFin({ convencaoJuros: '30_360' }));
+    expect(out.apuracao.jurosTotais).toBeCloseTo(referencia.apuracao.jurosTotais, 6);
+  });
+
+  it('actual_360 cobra ~1,39% a mais que mensal_12 num ano de 365 dias', () => {
+    // Projeto de 12 meses cheios, começando em janeiro de um ano não bissexto.
+    const base = comFin({
+      convencaoJuros: 'actual_360',
+      modoSaque: 'manual',
+      mesInicioSaque: 1,
+      mesFimSaque: 1,
+      modoAmortizacao: 'manual',
+    });
+    base.dataInicio = '2025-01-01';
+    base.mesesAprovacao = 12;
+    base.mesesConstrucao = 0;
+    base.mesesPosObra = 0;
+    base.receita.mesSaida = 12;
+    // Saldo constante de 1.000.000 o ano inteiro, por override.
+    base.overrides = [{ mes: 1, linha: 'draw', valor: 1_000_000 }];
+
+    const atual360 = calcular(base);
+    const mensal = calcular({ ...base, financiamento: { ...base.financiamento, convencaoJuros: 'mensal_12' } });
+    const razaoJuros = atual360.apuracao.jurosTotais / mensal.apuracao.jurosTotais;
+    // 365 / 360 = 1,013888…
+    expect(razaoJuros).toBeCloseTo(365 / 360, 6);
+    expect(razaoJuros).toBeGreaterThan(1.0138);
+
+    const atual365 = calcular({ ...base, financiamento: { ...base.financiamento, convencaoJuros: 'actual_365' } });
+    // Base 365 sobre um ano de 365 dias dá exatamente a taxa anual.
+    expect(atual365.apuracao.jurosTotais / mensal.apuracao.jurosTotais).toBeCloseTo(1, 6);
+  });
+
+  it('fatorJurosDoMes é puro e conta os dias reais do mês', () => {
+    expect(fatorJurosDoMes('mensal_12', 0.12, '2025-02-01')).toBeCloseTo(0.01, 12);
+    expect(fatorJurosDoMes('30_360', 0.12, '2025-02-01')).toBeCloseTo(0.01, 12);
+    // Fevereiro comum tem 28 dias; bissexto, 29.
+    expect(fatorJurosDoMes('actual_360', 0.12, '2025-02-01')).toBeCloseTo((0.12 * 28) / 360, 12);
+    expect(fatorJurosDoMes('actual_360', 0.12, '2024-02-01')).toBeCloseTo((0.12 * 29) / 360, 12);
+    expect(fatorJurosDoMes('actual_365', 0.12, '2025-01-01')).toBeCloseTo((0.12 * 31) / 365, 12);
+    // Duas chamadas iguais dão o mesmo: nada de relógio.
+    expect(fatorJurosDoMes('actual_360', 0.095, '2025-07-01')).toBe(
+      fatorJurosDoMes('actual_360', 0.095, '2025-07-01'),
+    );
+  });
+});
+
+describe('21 — taxa variável: benchmark mais spread', () => {
+  const referencia = calcular(casoBase());
+
+  it("tipo_taxa = 'fixa' reproduz o resultado atual", () => {
+    // Spread e benchmark preenchidos são INERTES no modo fixo.
+    const out = calcular(comFin({ tipoTaxa: 'fixa', spread: 0.5, benchmarkPadrao: 0.9 }));
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(out.conferencias.map((c) => c.chave)).toEqual(referencia.conferencias.map((c) => c.chave));
+    expect(out.meses.every((m) => m.taxaEfetivaAno === 0.095)).toBe(true);
+  });
+
+  it('curva constante igual à taxa fixa menos o spread dá o mesmo juro', () => {
+    // A verificação do item.
+    const spread = 0.02;
+    const base = comFin({
+      tipoTaxa: 'variavel',
+      spread,
+      benchmarkPadrao: 0.095 - spread,
+      benchmarkCurva: Array.from({ length: 23 }, (_, k) => ({ mes: k + 1, valor: 0.095 - spread })),
+    });
+    const out = calcular(base);
+    expect(out.apuracao.jurosTotais).toBeCloseTo(referencia.apuracao.jurosTotais, 6);
+    expect(out.meses.every((m) => Math.abs(m.taxaEfetivaAno - 0.095) < 1e-12)).toBe(true);
+    expect(semaforo(out, 'benchmark_incompleto')).toBe('verde');
+  });
+
+  it('mês sem ponto na curva usa o padrão, e a conferência diz quantos', () => {
+    const base = comFin({
+      tipoTaxa: 'variavel',
+      spread: 0.02,
+      benchmarkPadrao: 0.075,
+      // Só três meses declarados, dos 23.
+      benchmarkCurva: [
+        { mes: 1, valor: 0.05 },
+        { mes: 2, valor: 0.06 },
+        // Ponto com valor ZERO: declara benchmark zero, e é diferente de ausente.
+        { mes: 3, valor: 0 },
+      ],
+    });
+    const out = calcular(base);
+    expect(out.meses[0].taxaEfetivaAno).toBeCloseTo(0.07, 12); // 0,05 + 0,02
+    expect(out.meses[2].taxaEfetivaAno).toBeCloseTo(0.02, 12); // 0 + 0,02, não o padrão
+    expect(out.meses[3].taxaEfetivaAno).toBeCloseTo(0.095, 12); // padrão 0,075 + 0,02
+    const conf = out.conferencias.find((c) => c.chave === 'benchmark_incompleto');
+    expect(conf?.semaforo).toBe('ambar');
+    expect(conf?.valor).toBe('20');
+    expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
+  });
+
+  it('a taxa variável alimenta a convenção de juros do item anterior', () => {
+    // Os dois recursos compõem: a convenção conta os dias, a curva dá a taxa.
+    const base = comFin({
+      tipoTaxa: 'variavel',
+      convencaoJuros: 'actual_360',
+      spread: 0.02,
+      benchmarkPadrao: 0.075,
+    });
+    const out = calcular(base);
+    const m = out.meses.find((x) => x.saldoDevedor > 0 && x.juros > 0)!;
+    expect(m.taxaEfetivaAno).toBeCloseTo(0.095, 12);
+    expect(m.juros / (m.saldoDevedor + m.amortization)).toBeCloseTo(
+      fatorJurosDoMes('actual_360', 0.095, m.data),
+      9,
+    );
+  });
+
+  it('mapeia o financiamento novo do banco, com os defaults para linha antiga', () => {
+    const input = mapearModelInput({
+      id: 7,
+      data_inicio: '2025-12-01',
+      meses_aprovacao: 10, meses_construcao: 8, meses_pos_obra: 5,
+      // Linha gravada ANTES das migrations 1762100000..1762500000.
+      financiamento: {
+        taxa_anual: '0.0950', fee_estruturacao_pct: '0.0150', fee_timing: 'first_draw',
+        mes_inicio_saque: 13, mes_fim_saque: 23, modo_saque: 'equity_first',
+        modo_amortizacao: 'at_exit', colchao_minimo_caixa: '0.00',
+      },
+    } as never);
+    const f = input.financiamento;
+    expect(f.reservaJuros).toBe(0);
+    expect(f.reservaJurosSacada).toBe(true); // DEFAULT TRUE da coluna
+    expect(f.prazoMeses).toBeNull();
+    expect(f.carenciaMeses).toBe(0);
+    expect(f.balloonNoVencimento).toBe(true);
+    expect(f.releasePrice).toBe(0);
+    expect(f.releasePricePct).toBeNull(); // nulo ≠ zero: "não usar"
+    expect(f.convencaoJuros).toBe('mensal_12');
+    expect(f.tipoTaxa).toBe('fixa');
+    expect(f.benchmarkCurva).toEqual([]);
+
+    // E os DECIMAL que chegam como STRING passam por num().
+    const comCurva = mapearModelInput({
+      id: 7,
+      data_inicio: '2025-12-01',
+      financiamento: {
+        taxa_anual: '0.0950', tipo_taxa: 'variavel', spread: '0.020000',
+        benchmark_padrao: '0.075000', reserva_juros: '100000.00',
+        reserva_juros_sacada: false, convencao_juros: 'actual_360',
+        modo_amortizacao: 'price', prazo_meses: 20, carencia_meses: 6,
+        amortizacao_meses: 300, release_price: '43500.00', release_price_pct: '0.300000',
+      },
+      benchmark_curva: [
+        { id: 1, mes: 2, valor: '0.060000' },
+        { id: 2, mes: 1, valor: '0.050000' },
+      ],
+    } as never).financiamento;
+    expect(comCurva.spread).toBe(0.02);
+    expect(comCurva.reservaJuros).toBe(100_000);
+    expect(comCurva.reservaJurosSacada).toBe(false);
+    expect(comCurva.convencaoJuros).toBe('actual_360');
+    expect(comCurva.modoAmortizacao).toBe('price');
+    expect(comCurva.releasePrice).toBe(43_500);
+    expect(comCurva.releasePricePct).toBe(0.3);
+    // Ordenada por mês, e os valores viraram número de verdade.
+    expect(comCurva.benchmarkCurva).toEqual([
+      { id: 2, mes: 1, valor: 0.05 },
+      { id: 1, mes: 2, valor: 0.06 },
+    ]);
   });
 });

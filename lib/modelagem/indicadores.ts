@@ -46,6 +46,19 @@ export function indiceMes(dataInicio: string, data: string): number {
   return (ano - anoI) * 12 + (mes - mesI) + 1;
 }
 
+/**
+ * Quantos dias tem o mês de uma data ISO 'YYYY-MM-DD'.
+ *
+ * Puro: `Date.UTC` com argumentos explícitos é determinístico e não lê relógio.
+ * `Date.UTC(ano, mes, 0)` é o dia 0 do mês SEGUINTE, ou seja, o último dia do mês
+ * pedido — e por isso ano bissexto sai certo sem tabela nenhuma.
+ */
+export function diasDoMes(dataIso: string): number {
+  const [ano, mes] = String(dataIso).split('-').map(Number);
+  if (!ano || !mes || mes < 1 || mes > 12) return 30;
+  return new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+}
+
 /** Dias corridos entre duas datas ISO, em UTC. */
 export function diasEntre(inicioIso: string, fimIso: string): number {
   const ms = Date.parse(`${fimIso}T00:00:00Z`) - Date.parse(`${inicioIso}T00:00:00Z`);

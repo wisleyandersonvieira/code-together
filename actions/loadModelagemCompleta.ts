@@ -41,6 +41,10 @@ function loadModelagemCompleta() {
           SELECT row_to_json(f) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id
         ) AS financiamento,
         (
+          SELECT json_agg(bc ORDER BY bc.mes)
+          FROM modelagem_benchmark_curva bc WHERE bc.modelagem_id = m.id
+        ) AS benchmark_curva,
+        (
           SELECT json_agg(s ORDER BY s.ordem, s.id)
           FROM modelagem_socios s WHERE s.modelagem_id = m.id
         ) AS socios,

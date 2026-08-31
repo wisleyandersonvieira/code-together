@@ -55,6 +55,8 @@ interface Contexto {
   lancadoPorCusto: number[];
   /** Unidades que fecham em cada mês, já derivadas do modo de venda. */
   vendasPorMes: Map<number, number>;
+  /** Release PRETENDIDO no projeto inteiro, antes do clamp pelo saldo devedor. */
+  releaseTotal: number;
 }
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
@@ -634,6 +636,144 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
             .join('; ')}. Vender antes de a fase concluir é possível — venda na planta —, mas a receita entra antes de a obra terminar.`
         : 'Nenhum lote vende antes de a fase dele concluir.',
       'Se a venda na planta é intencional, ignore. Senão, mova o lote para depois do fim da fase ou corrija a fase do lote.',
+    );
+  }
+
+  // ─── Reserva de juros ──────────────────────────────────────────────────────
+  // Restritas a reservaJuros > 0 DE PROPÓSITO: com o DEFAULT 0 da migration
+  // 1762100000 estas conferências são inalcançáveis, então nenhuma modelagem já
+  // salva ganha item novo no painel.
+  if ((fin.reservaJuros || 0) > 0) {
+    const saldoFinalReserva = meses.length ? meses[meses.length - 1].saldoReservaJuros : 0;
+    // O mês em que a reserva acabou é a transição de saldo positivo para zero.
+    const mesEsgotou = meses.find(
+      (m, i) => i > 0 && m.saldoReservaJuros <= TOLERANCIA && meses[i - 1].saldoReservaJuros > TOLERANCIA,
+    )?.mes;
+    const pagoPelaReserva = meses.reduce((a, m) => a + m.jurosPagosPelaReserva, 0);
+
+    add(
+      'reserva_juros_esgotada',
+      'Reserva de juros esgotada',
+      mesEsgotou ? 'ambar' : 'verde',
+      mesEsgotou ? `mês ${mesEsgotou}` : 'não esgotou',
+      mesEsgotou
+        ? `A reserva de ${dinheiro(fin.reservaJuros)} pagou ${dinheiro(pagoPelaReserva)} de juros e acabou no mês ${mesEsgotou}. A partir dali os juros voltam a sair do caixa.`
+        : `A reserva de ${dinheiro(fin.reservaJuros)} cobre os juros até o fim do projeto.`,
+      'Não é erro: é o momento em que a linha vira "interest after reserve". Confira se o caixa a partir desse mês comporta o juro.',
+    );
+
+    add(
+      'reserva_juros_sobrando',
+      'Sobra de reserva de juros',
+      saldoFinalReserva > TOLERANCIA ? 'ambar' : 'verde',
+      dinheiro(saldoFinalReserva),
+      saldoFinalReserva > TOLERANCIA
+        ? `Sobram ${dinheiro(saldoFinalReserva)} de reserva no fim do projeto. É dinheiro parado${fin.reservaJurosSacada !== false ? ' — e, sacado do empréstimo, pagando juros sobre si mesmo' : ''}.`
+        : 'A reserva foi integralmente consumida.',
+      `Dimensione a reserva mais perto dos ${dinheiro(pagoPelaReserva)} de juros que ela de fato pagou.`,
+    );
+  }
+
+  // ─── Carência, prestação e balloon ─────────────────────────────────────────
+  // Restritas aos modos NOVOS 'price' e 'sac': 'at_exit' e 'manual' seguem com as
+  // conferências de sempre.
+  if (fin.modoAmortizacao === 'price' || fin.modoAmortizacao === 'sac') {
+    const prazoDivida = fin.prazoMeses == null ? null : Math.max(1, Math.trunc(fin.prazoMeses));
+    const mesVencimento = prazoDivida == null ? null : fin.mesInicioSaque + prazoDivida - 1;
+
+    add(
+      'amortizacao_alem_do_prazo',
+      'Vencimento da dívida dentro do projeto',
+      mesVencimento != null && mesVencimento > cronograma.prazoTotal ? 'vermelho' : 'verde',
+      mesVencimento == null ? 'sem vencimento' : `mês ${mesVencimento}`,
+      mesVencimento == null
+        ? 'Nenhum prazo de dívida declarado: não há vencimento nem balloon, e a amortização segue até o fim do cronograma.'
+        : mesVencimento > cronograma.prazoTotal
+          ? `A dívida vence no mês ${mesVencimento}, depois dos ${cronograma.prazoTotal} meses do projeto. O balloon nunca é lançado e o saldo fica em aberto.`
+          : `A dívida vence no mês ${mesVencimento}, dentro dos ${cronograma.prazoTotal} meses do projeto.`,
+      'Encurte o prazo da dívida, aumente o cronograma do projeto, ou aceite que a dívida sobrevive ao modelo — mas então o saldo final não fecha.',
+    );
+
+    // Balloon que derruba o caixa: o mês do vencimento é o único que interessa,
+    // porque é ali que o saldo remanescente sai de uma vez.
+    const mesDoBalloon =
+      mesVencimento != null && fin.balloonNoVencimento
+        ? meses.find((m) => m.mes === mesVencimento)
+        : undefined;
+    if (mesDoBalloon) {
+      add(
+        'balloon_sem_caixa',
+        'Caixa no mês do balloon',
+        mesDoBalloon.caixaAcumulado < -TOLERANCIA ? 'ambar' : 'verde',
+        dinheiro(mesDoBalloon.caixaAcumulado),
+        mesDoBalloon.caixaAcumulado < -TOLERANCIA
+          ? `O balloon de ${dinheiro(mesDoBalloon.amortization)} no mês ${mesDoBalloon.mes} derruba o caixa acumulado para ${dinheiro(mesDoBalloon.caixaAcumulado)}.`
+          : `O caixa comporta o balloon de ${dinheiro(mesDoBalloon.amortization)} no mês ${mesDoBalloon.mes}.`,
+        'Antecipe receita para antes do vencimento, alongue o prazo da dívida, ou programe um aporte no mês do balloon.',
+      );
+    }
+  }
+
+  // ─── Release price ─────────────────────────────────────────────────────────
+  // Restritas a quem de fato configurou release: com releasePrice = 0 e
+  // releasePricePct nulo — os defaults da migration 1762300000 — são inalcançáveis.
+  const usaRelease = (fin.releasePrice || 0) > 0 || fin.releasePricePct != null;
+  if (usaRelease) {
+    const saldoFinalDivida = meses.length ? meses[meses.length - 1].saldoDevedor : 0;
+    add(
+      'release_insuficiente',
+      'Releases quitam a dívida',
+      saldoFinalDivida > TOLERANCIA ? 'ambar' : 'verde',
+      dinheiro(saldoFinalDivida),
+      saldoFinalDivida > TOLERANCIA
+        ? `Os releases somam ${dinheiro(ctx.releaseTotal)} contra ${dinheiro(apuracao.dividaSacada)} sacados, e sobram ${dinheiro(saldoFinalDivida)} de saldo devedor no fim.`
+        : `Os releases somam ${dinheiro(ctx.releaseTotal)} e a dívida é integralmente quitada.`,
+      'Aumente o release por unidade, ou conte com a amortização do modo escolhido para cobrir a diferença.',
+    );
+
+    // Release maior que o preço LÍQUIDO da unidade significa que a venda não
+    // sobra caixa nenhum para o projeto — o banco leva tudo e ainda falta.
+    const fatorLiquido = 1 - (rec.comissaoPct || 0) - (rec.custoCartorioPct || 0);
+    const acimaDaReceita = (input.unidades ?? [])
+      .map((u, i) => ({
+        nome: u.nome || `Tipologia ${i + 1}`,
+        liquido: (u.precoVenda || 0) * fatorLiquido,
+        release:
+          (fin.releasePrice || 0) > 0
+            ? fin.releasePrice
+            : (fin.releasePricePct ?? 0) * (u.precoVenda || 0),
+      }))
+      .filter((x) => x.release > x.liquido + TOLERANCIA);
+    add(
+      'release_acima_da_receita',
+      'Release dentro do preço líquido',
+      acimaDaReceita.length > 0 ? 'vermelho' : 'verde',
+      `${acimaDaReceita.length}`,
+      acimaDaReceita.length === 0
+        ? 'Toda venda sobra caixa para o projeto depois do release.'
+        : `${acimaDaReceita
+            .map((x) => `${x.nome}: release de ${dinheiro(x.release)} contra ${dinheiro(x.liquido)} de preço líquido`)
+            .join('; ')}. Nessas tipologias a venda não gera caixa nenhum para o projeto — o banco leva mais do que entra.`,
+      'Reduza o release por unidade, ou reveja o preço de venda e as comissões da tipologia.',
+    );
+  }
+
+  // ─── Curva do benchmark ────────────────────────────────────────────────────
+  // Restrita a tipoTaxa = 'variavel': com o DEFAULT 'fixa' da migration
+  // 1762500000 a conferência é inalcançável.
+  if (fin.tipoTaxa === 'variavel') {
+    const naCurva = new Set((fin.benchmarkCurva ?? []).map((p) => Math.trunc(p.mes)));
+    const semPonto: number[] = [];
+    for (let m = 1; m <= cronograma.prazoTotal; m++) if (!naCurva.has(m)) semPonto.push(m);
+    add(
+      'benchmark_incompleto',
+      'Curva do benchmark completa',
+      semPonto.length > 0 ? 'ambar' : 'verde',
+      `${semPonto.length}`,
+      semPonto.length > 0
+        ? `${semPonto.length} de ${cronograma.prazoTotal} meses não têm ponto na curva e usam o padrão de ${pct(fin.benchmarkPadrao || 0)}. Mês SEM linha não é benchmark zero — cai no padrão.`
+        : `Todos os ${cronograma.prazoTotal} meses têm ponto na curva.`,
+      'Use "preencher tudo com o padrão" na aba Financiamento e ajuste os meses que divergirem.',
     );
   }
 

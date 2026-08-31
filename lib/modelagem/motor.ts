@@ -23,6 +23,7 @@ import type {
   Agregados,
   Apuracao,
   CategoriaCusto,
+  ConvencaoJuros,
   Conferencia,
   CustoAdicional,
   Cronograma,
@@ -39,7 +40,7 @@ import type {
 } from './tipos';
 import { CATEGORIAS_CUSTO } from './tipos';
 import { montarConferencias } from './conferencias';
-import { anualizar, indiceMes, razao, somarMeses, tirMensal, xirr } from './indicadores';
+import { anualizar, diasDoMes, indiceMes, razao, somarMeses, tirMensal, xirr } from './indicadores';
 
 const MAX_ITERACOES = 50;
 const TOL_CONVERGENCIA = 0.01;
@@ -263,6 +264,50 @@ export function resolverCustos(
   for (const cat of CATEGORIAS_CUSTO) somaCategoria(cat);
 
   return { valores, circulares, referencias };
+}
+
+/**
+ * Fator de juros de UM mês. Puro: recebe a data, não lê relógio.
+ *
+ * 'mensal_12' e '30_360' devolvem o MESMO número — 30/360 é 1/12 exato. Os dois
+ * existem porque o contrato declara uma convenção ou a outra, e o usuário precisa
+ * poder registrar a dele; a diferença de verdade está nas bases 'actual', que
+ * contam os dias reais do mês (28, 29, 30 ou 31).
+ *
+ * Sobre base 360, um ano de 365 dias cobra 365/360 = 1,39% a mais de juros que a
+ * conta mensal — em dezenas de milhões de saque, é dinheiro que o banco cobra e o
+ * modelo precisa prever.
+ */
+export function fatorJurosDoMes(
+  convencao: ConvencaoJuros,
+  taxaAnual: number,
+  dataDoMes: string,
+): number {
+  const taxa = taxaAnual || 0;
+  switch (convencao) {
+    case '30_360':
+      return (taxa * 30) / 360;
+    case 'actual_360':
+      return (taxa * diasDoMes(dataDoMes)) / 360;
+    case 'actual_365':
+      return (taxa * diasDoMes(dataDoMes)) / 365;
+    default:
+      // 'mensal_12' — o default do banco e a conta anterior à migration 1762400000.
+      return taxa / 12;
+  }
+}
+
+/**
+ * Prestação constante (sistema Price) de `principal` em `n` meses à taxa `i`.
+ *
+ * Puro e total: nunca lança. Taxa zero ou negativa vira amortização linear, que é
+ * o limite matemático da fórmula quando i → 0; sem essa cláusula a divisão por
+ * `1 - (1+0)^-n` = 0 devolveria Infinity e contaminaria o fluxo inteiro.
+ */
+export function prestacaoPrice(principal: number, i: number, n: number): number {
+  if (n <= 0) return principal;
+  if (i <= 0) return principal / n;
+  return (principal * i) / (1 - Math.pow(1 + i, -n));
 }
 
 interface EstadoPonto {
@@ -524,17 +569,22 @@ export function calcular(input: ModelInput): ModelOutput {
   // a tipologia inteira fecha de uma vez. Quando o takedown chegar, é ESTE mapa
   // que passa a ser montado a partir dele; nada mais abaixo precisa mudar.
   const vendasPorMes = new Map<number, number>();
-  const venderNoMes = (mes: number, n: number) => {
+  // Preço BRUTO das unidades que fecham no mês. Só o release price percentual lê
+  // isto; a contagem de unidades acima serve ao gatilho de custo e ao release fixo.
+  const valorVendidoPorMes = new Map<number, number>();
+  const venderNoMes = (mes: number, n: number, precoUnitario: number) => {
     if (!Number.isInteger(mes) || mes < 1 || mes > prazoTotal || n <= 0) return;
     vendasPorMes.set(mes, (vendasPorMes.get(mes) ?? 0) + n);
+    valorVendidoPorMes.set(mes, (valorVendidoPorMes.get(mes) ?? 0) + precoUnitario * n);
   };
   if (rec.modoVenda === 'single_exit') {
-    // Saída única: todas as unidades fecham no mês da venda do projeto.
-    venderNoMes(mesSaida, unidadesTotal);
+    // Saída única: todas as unidades fecham no mês da venda do projeto. O preço
+    // médio é o único disponível aqui — o VGV dividido pelas unidades.
+    venderNoMes(mesSaida, unidadesTotal, unidadesTotal > 0 ? vgv / unidadesTotal : 0);
   } else if (rec.modoVenda === 'per_unit') {
     for (const venda of rec.vendasPorUnidade ?? []) {
       const u = unidades[venda.unidadeIndex];
-      if (u) venderNoMes(venda.mesVenda, qtd(u));
+      if (u) venderNoMes(venda.mesVenda, qtd(u), u.precoVenda || 0);
     }
   } else if (rec.modoVenda === 'takedown') {
     // Aqui o takedown deixa de ser hipótese e vira a fonte: cada lote fecha N
@@ -542,7 +592,9 @@ export function calcular(input: ModelInput): ModelOutput {
     // conferência `takedown_incompleto` acusa a unidade que sobrou.
     for (const t of rec.takedowns ?? []) {
       const u = unidades[t.unidadeIndex];
-      if (u) venderNoMes(t.mes, Math.max(0, Math.trunc(t.quantidade || 0)));
+      if (!u) continue;
+      const preco = (t.precoUnitario || 0) > 0 ? t.precoUnitario : u.precoVenda || 0;
+      venderNoMes(t.mes, Math.max(0, Math.trunc(t.quantidade || 0)), preco);
     }
   }
   // 'manual' → o usuário não declarou cronograma de venda nenhum. O motor NÃO
@@ -660,8 +712,48 @@ export function calcular(input: ModelInput): ModelOutput {
         ? fin.maxLtcPct * (terrenosTotal + obraTotal)
         : Number.POSITIVE_INFINITY;
 
-  const taxaMensal = (fin.taxaAnual || 0) / 12;
   const colchao = fin.colchaoMinimoCaixa || 0;
+
+  // ─── Taxa efetiva do mês ───────────────────────────────────────────────────
+  // Com taxa fixa é `taxaAnual`, constante, e o resultado é o de sempre. Com taxa
+  // variável é (curva do benchmark naquele mês, ou o padrão) + spread — e mês sem
+  // ponto na curva NÃO é benchmark zero: cai no padrão, e a conferência
+  // `benchmark_incompleto` diz quantos meses caíram nele.
+  const convencao: ConvencaoJuros = fin.convencaoJuros ?? 'mensal_12';
+  const curvaBenchmark = new Map<number, number>();
+  for (const p of fin.benchmarkCurva ?? []) {
+    if (Number.isInteger(p.mes) && p.mes >= 1) curvaBenchmark.set(p.mes, p.valor || 0);
+  }
+  const taxaEfetivaDoMes = (m: number) =>
+    fin.tipoTaxa === 'variavel'
+      ? (curvaBenchmark.get(m) ?? fin.benchmarkPadrao ?? 0) + (fin.spread || 0)
+      : fin.taxaAnual || 0;
+
+  // ─── Reserva de juros ──────────────────────────────────────────────────────
+  const reservaJuros = Math.max(0, fin.reservaJuros || 0);
+  const reservaSacada = fin.reservaJurosSacada !== false;
+
+  // ─── Carência, prestação e balloon ─────────────────────────────────────────
+  const amortizaPorPrestacao = fin.modoAmortizacao === 'price' || fin.modoAmortizacao === 'sac';
+  const carenciaMeses = Math.max(0, Math.trunc(fin.carenciaMeses || 0));
+  const prazoDivida = fin.prazoMeses == null ? null : Math.max(1, Math.trunc(fin.prazoMeses));
+  // amortizacaoMeses nulo cai no prazo da dívida: sem balloon, quita no vencimento.
+  const amortizacaoMeses = Math.max(
+    1,
+    Math.trunc(fin.amortizacaoMeses ?? prazoDivida ?? prazoTotal ?? 1),
+  );
+  const mesVencimento = prazoDivida == null ? null : fin.mesInicioSaque + prazoDivida - 1;
+  const mesFimCarencia = fin.mesInicioSaque + carenciaMeses - 1;
+
+  // ─── Release price ─────────────────────────────────────────────────────────
+  // Valor fixo tem precedência sobre o percentual — ver o COMMENT da coluna.
+  const releasePrice = Math.max(0, fin.releasePrice || 0);
+  const releasePct = fin.releasePricePct ?? null;
+  const releaseDoMes = (m: number) => {
+    if (releasePrice > 0) return releasePrice * (vendasPorMes.get(m) ?? 0);
+    if (releasePct != null) return releasePct * (valorVendidoPorMes.get(m) ?? 0);
+    return 0;
+  };
 
   // ─── Uma passada do loop mensal ────────────────────────────────────────────
   const passe = (estado: EstadoPonto): MesFluxo[] => {
@@ -672,6 +764,11 @@ export function calcular(input: ModelInput): ModelOutput {
     let sacadoAte = 0;
     let equityAcumulado = 0;
     let jaHouveSaque = false;
+    let saldoReserva = 0;
+    // Prestação e principal constante são RECALCULADOS a cada saque novo (ver o
+    // passo 3). Guardados fora do laço porque valem dos meses seguintes em diante.
+    let prestacaoAtual = 0;
+    let amortizacaoConstante = 0;
 
     for (let m = 1; m <= prazoTotal; m++) {
       const pagamentosOperacionais = land[m] + construction[m] + propertyTax[m] + otherCosts[m];
@@ -711,31 +808,94 @@ export function calcular(input: ModelInput): ModelOutput {
       }
       sacadoAte += draw;
 
+      // 1b. RESERVA DE JUROS — constituída no PRIMEIRO SAQUE, um único mês.
+      //     Sacada: sai do próprio empréstimo, soma ao principal e rende juros
+      //     como qualquer principal, mas NÃO passa pelo caixa do projeto (o
+      //     dinheiro vai direto para a conta da reserva). Orçamentária: só abre o
+      //     saldo, sem mexer em dívida nem em chamada de capital.
+      const ehPrimeiroSaque = !jaHouveSaque && draw > 0;
+      if (ehPrimeiroSaque) jaHouveSaque = true;
+      const constituiReserva = ehPrimeiroSaque && reservaJuros > 0;
+      const saqueReservaJuros = constituiReserva && reservaSacada ? reservaJuros : 0;
+      if (constituiReserva) saldoReserva = reservaJuros;
+      sacadoAte += saqueReservaJuros;
+
       // 2. JUROS — dependem só do saldo já sacado, então já podem ser apurados.
-      const saldoAntes = saldoAbertura + draw;
-      const juros = saldoAntes * taxaMensal;
-      // Com capitalização, os juros viram principal ANTES da amortização; senão
+      const taxaEfetivaAno = taxaEfetivaDoMes(m);
+      const fatorMes = fatorJurosDoMes(convencao, taxaEfetivaAno, somarMeses(input.dataInicio, m - 1));
+      const saldoAntes = saldoAbertura + draw + saqueReservaJuros;
+      const juros = saldoAntes * fatorMes;
+
+      // 2b. A reserva paga PRIMEIRO, a capitalização vem DEPOIS. A ordem importa:
+      //     invertida, o juro viraria principal antes de a reserva ter chance de
+      //     absorvê-lo, e a reserva nunca esvaziaria. Os dois recursos coexistem —
+      //     a reserva não substitui `capitalizarJuros`.
+      const jurosPagosPelaReserva = Math.min(juros, saldoReserva);
+      saldoReserva -= jurosPagosPelaReserva;
+      const jurosAposReserva = juros - jurosPagosPelaReserva;
+
+      // Com capitalização, o que sobrou vira principal ANTES da amortização; senão
       // o saldo final do mês de saída ficaria com um mês de juros pendurado.
-      const baseAmortizavel = saldoAntes + (fin.capitalizarJuros ? juros : 0);
+      const baseAmortizavel = saldoAntes + (fin.capitalizarJuros ? jurosAposReserva : 0);
 
       // 3. AMORTIZAÇÃO — o clamp impede saldo devedor negativo mesmo com override abusivo.
+      //
+      //    A prestação é RECALCULADA a cada saque novo, e essa é a decisão que
+      //    muda o número: num construction loan o principal cresce ao longo da
+      //    obra, então uma prestação fixada no primeiro saque amortizaria de
+      //    menos e deixaria um resíduo enorme para o balloon. Recalcular
+      //    re-amortiza o saldo corrente pelos `amortizacaoMeses` cheios, que é o
+      //    comportamento de uma linha revolvente reamortizada.
+      if (amortizaPorPrestacao && (draw > 0 || saqueReservaJuros > 0)) {
+        prestacaoAtual = prestacaoPrice(baseAmortizavel, fatorMes, amortizacaoMeses);
+        amortizacaoConstante = baseAmortizavel / amortizacaoMeses;
+      }
+
       let alvoAmort: number;
-      if (temOverride(m, 'amortization')) alvoAmort = valorOverride(m, 'amortization');
-      else if (fin.modoAmortizacao === 'at_exit') alvoAmort = m === mesSaida ? baseAmortizavel : 0;
-      else alvoAmort = 0;
+      if (temOverride(m, 'amortization')) {
+        // Override vence tudo — inclusive balloon e release.
+        alvoAmort = valorOverride(m, 'amortization');
+      } else {
+        if (fin.modoAmortizacao === 'at_exit') {
+          alvoAmort = m === mesSaida ? baseAmortizavel : 0;
+        } else if (amortizaPorPrestacao) {
+          if (m < fin.mesInicioSaque || m <= mesFimCarencia) {
+            // Carência: só juros.
+            alvoAmort = 0;
+          } else if (mesVencimento != null && m > mesVencimento) {
+            // Depois do vencimento não há mais prestação: ou o balloon quitou, ou
+            // o saldo ficou em aberto e `saldo_devedor_final` acusa em vermelho.
+            alvoAmort = 0;
+          } else if (fin.modoAmortizacao === 'price') {
+            // Price paga juros + principal; a amortização é o que sobra da
+            // prestação depois dos juros DO PRÓPRIO MÊS.
+            alvoAmort = Math.max(0, prestacaoAtual - jurosAposReserva);
+          } else {
+            alvoAmort = amortizacaoConstante;
+          }
+          // Balloon: no vencimento, tudo o que restar sai de uma vez.
+          if (mesVencimento != null && m === mesVencimento && fin.balloonNoVencimento) {
+            alvoAmort = baseAmortizavel;
+          }
+        } else {
+          alvoAmort = 0; // 'manual' → só overrides
+        }
+        // Release price SOMA à amortização do modo escolhido: cada unidade que
+        // fecha libera um valor para o banco, independente da curva contratada.
+        alvoAmort += releaseDoMes(m);
+      }
       const amortization = clamp(alvoAmort, 0, baseAmortizavel);
       const saldoDevedor = baseAmortizavel - amortization;
 
       // 4. FEE
-      const ehPrimeiroSaque = !jaHouveSaque && draw > 0;
-      if (ehPrimeiroSaque) jaHouveSaque = true;
       const mesDoFee =
         fin.feeTiming === 'first_draw' ? ehPrimeiroSaque : m === fin.feeMes;
       const fee = mesDoFee ? estado.feeTotal : 0;
 
       // Juros capitalizados não saem do caixa (viram principal), mas continuam
-      // na apuração de resultado como custo financeiro incorrido.
-      const custoFinanceiroCaixa = (fin.capitalizarJuros ? 0 : juros) + fee;
+      // na apuração de resultado como custo financeiro incorrido. O que a reserva
+      // pagou também não sai do caixa — é isso que ela existe para fazer.
+      const custoFinanceiroCaixa = (fin.capitalizarJuros ? 0 : jurosAposReserva) + fee;
       const pagamentos = pagamentosOperacionais + custoFinanceiroCaixa;
 
       // 5. APORTE DE EQUITY — a receita do mês cobre os custos do próprio mês.
@@ -767,6 +927,9 @@ export function calcular(input: ModelInput): ModelOutput {
 
       // 7. CAIXA — com override de equity_call o caixa absorve a diferença,
       //    inclusive ficando negativo (a conferência acusa).
+      // `saqueReservaJuros` fica DE FORA de propósito: o dinheiro vai direto para
+      // a conta da reserva e nunca passa pelo caixa do projeto. Ele já está no
+      // principal (saldoAntes) e volta pela amortização, como qualquer dívida.
       const caixaMes =
         equityCall + draw + revenue[m] - pagamentos - amortization - distribution;
       caixaAcumulado += caixaMes;
@@ -781,11 +944,14 @@ export function calcular(input: ModelInput): ModelOutput {
         otherCosts: otherCosts[m],
         pagamentosOperacionais,
         juros,
+        jurosPagosPelaReserva,
+        saldoReservaJuros: saldoReserva,
         fee,
         custoFinanceiroCaixa,
         pagamentos,
         revenue: revenue[m],
         draw,
+        saqueReservaJuros,
         amortization,
         equityCall,
         distribution,
@@ -796,6 +962,8 @@ export function calcular(input: ModelInput): ModelOutput {
         caixaAcumulado,
         demandaBruta: pagamentos + amortization - revenue[m],
         capacidadeSaque: capacidade,
+        taxaEfetivaAno,
+        unidadesVendidas: vendasPorMes.get(m) ?? 0,
         equityDisponivelAcumulado: equityDisponivelObraAte(m),
       });
     }
@@ -818,7 +986,10 @@ export function calcular(input: ModelInput): ModelOutput {
     iteracoes = it + 1;
     meses = passe(estado);
 
-    const dividaSacada = soma(meses.map((x) => x.draw));
+    // Inclui o saque destinado à reserva de juros: é principal sacado do
+    // empréstimo como qualquer outro, rende juros e volta pela amortização. Com
+    // reserva 0 o termo some e o número é o de sempre.
+    const dividaSacada = soma(meses.map((x) => x.draw + x.saqueReservaJuros));
     const equityTotal = soma(meses.map((x) => x.equityCall));
     const jurosTotais = soma(meses.map((x) => x.juros));
     const feeLancado = soma(meses.map((x) => x.fee));
@@ -849,6 +1020,11 @@ export function calcular(input: ModelInput): ModelOutput {
     }
   }
 
+  // Release PRETENDIDO (antes do clamp pelo saldo): é ele que a conferência
+  // compara com a dívida para dizer se os releases quitam o empréstimo.
+  let releaseTotal = 0;
+  for (let m = 1; m <= prazoTotal; m++) releaseTotal += releaseDoMes(m);
+
   // ─── Apuração ──────────────────────────────────────────────────────────────
   // Nunca calcule o lucro como "receita líquida − quitação da dívida − devolução
   // do equity": isso só fecha quando fontes e usos batem exatamente, e quebra no
@@ -869,7 +1045,10 @@ export function calcular(input: ModelInput): ModelOutput {
   const lucroInvestidores = lucroProjeto * (rec.lucroInvestidoresPct || 0);
   const lucroSponsor = lucroProjeto * (rec.lucroSponsorPct || 0);
   const equityTotal = soma(meses.map((x) => x.equityCall));
-  const dividaSacada = soma(meses.map((x) => x.draw));
+  // Inclui o saque destinado à reserva de juros: é principal sacado do
+  // empréstimo como qualquer outro, rende juros e volta pela amortização. Com
+  // reserva 0 o termo some e o número é o de sempre.
+  const dividaSacada = soma(meses.map((x) => x.draw + x.saqueReservaJuros));
   const dividaAmortizada = soma(meses.map((x) => x.amortization));
   const totalPagamentos = soma(meses.map((x) => x.pagamentos));
   const totalDistribuido = equityTotal + lucroInvestidores;
@@ -900,9 +1079,9 @@ export function calcular(input: ModelInput): ModelOutput {
 
   // ─── Indicadores ───────────────────────────────────────────────────────────
   const fluxoInvestidor = meses.map((x) => x.distribution - x.equityCall);
-  // Mesmo mapa que alimenta o gatilho de custo 'por_venda': as duas leituras
-  // saem daqui, então não têm como divergir.
-  const unidadesVendidasPorMes = meses.map((x) => vendasPorMes.get(x.mes) ?? 0);
+  // Mesmo mapa que alimenta o gatilho de custo 'por_venda' e o release price: as
+  // três leituras saem daqui, então não têm como divergir.
+  const unidadesVendidasPorMes = meses.map((x) => x.unidadesVendidas);
   const tir = tirMensal(fluxoInvestidor);
   const indicadores: Indicadores = {
     moic: razao(totalDistribuido, equityTotal),
@@ -984,6 +1163,7 @@ export function calcular(input: ModelInput): ModelOutput {
     resolucao,
     lancadoPorCusto,
     vendasPorMes,
+    releaseTotal,
   });
 
   return {

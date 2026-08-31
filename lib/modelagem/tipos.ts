@@ -239,8 +239,50 @@ export interface CustoAdicional {
 }
 
 export type ModoSaque = 'equity_first' | 'cash_demand' | 'manual';
-export type ModoAmortizacao = 'at_exit' | 'manual';
+
+/**
+ * 'at_exit' e 'manual' são os modos de sempre. 'price' (prestação constante) e
+ * 'sac' (principal constante) são modos NOVOS da migration 1762200000 — nenhuma
+ * modelagem já salva os tem, então o caminho novo é inalcançável para ela.
+ */
+export type ModoAmortizacao = 'at_exit' | 'manual' | 'price' | 'sac';
+
+export const MODOS_AMORTIZACAO: ModoAmortizacao[] = ['at_exit', 'manual', 'price', 'sac'];
+
 export type MomentoFee = 'first_draw' | 'contract_month';
+
+/**
+ * Como o juro do mês é contado.
+ *
+ * 'mensal_12' é o default do banco e a conta anterior à migration 1762400000.
+ * '30_360' dá aritmeticamente o MESMO número — existe para o usuário declarar a
+ * convenção do contrato, não para mudar o resultado.
+ */
+export type ConvencaoJuros = 'mensal_12' | '30_360' | 'actual_360' | 'actual_365';
+
+export const CONVENCOES_JUROS: ConvencaoJuros[] = [
+  'mensal_12',
+  '30_360',
+  'actual_360',
+  'actual_365',
+];
+
+export const ROTULO_CONVENCAO_JUROS: Record<ConvencaoJuros, string> = {
+  mensal_12: 'Mensal (taxa ÷ 12)',
+  '30_360': '30/360',
+  actual_360: 'Dias corridos / 360',
+  actual_365: 'Dias corridos / 365',
+};
+
+export type TipoTaxa = 'fixa' | 'variavel';
+
+/** Um ponto da curva projetada do benchmark. `mes` é índice, não data. */
+export interface PontoBenchmark {
+  id?: number;
+  mes: number;
+  /** Fração ao ano: 0.045 = 4,5%. */
+  valor: number;
+}
 
 export interface Financiamento {
   /** Taxa nominal ao ano. 0.095 = 9,5% a.a. */
@@ -265,6 +307,50 @@ export interface Financiamento {
   modoAmortizacao: ModoAmortizacao;
   capitalizarJuros: boolean;
   colchaoMinimoCaixa: number;
+
+  // ─── Reserva de juros (migration 1762100000) ───────────────────────────────
+  /**
+   * Saldo que paga os juros até acabar. 0 (default) = sem reserva, e cada mês cai
+   * exatamente no caminho anterior à migration.
+   *
+   * NÃO substitui `capitalizarJuros`: os dois coexistem, e a ordem é reserva
+   * primeiro, capitalização depois.
+   */
+  reservaJuros: number;
+  /**
+   * true (default): constituída no primeiro saque e sacada do próprio empréstimo
+   * — soma ao principal e rende juros, sem passar pelo caixa do projeto.
+   * false: bancada pelo equity e apenas ORÇAMENTÁRIA — não aumenta a dívida nem
+   * gera chamada de capital própria; os juros só deixam de sair do caixa.
+   */
+  reservaJurosSacada: boolean;
+
+  // ─── Carência, prestação e balloon (migration 1762200000) ──────────────────
+  /** Prazo da dívida a partir de `mesInicioSaque`. Nulo = sem vencimento. */
+  prazoMeses?: number | null;
+  /** Meses de interest-only contados de `mesInicioSaque`. */
+  carenciaMeses: number;
+  /** Prazo de amortização. Maior que `prazoMeses` é o que gera o balloon. */
+  amortizacaoMeses?: number | null;
+  /** No vencimento, amortiza todo o saldo remanescente de uma vez. */
+  balloonNoVencimento: boolean;
+
+  // ─── Release price (migration 1762300000) ──────────────────────────────────
+  /** Valor fixo liberado ao banco por unidade vendida. Vence `releasePricePct`. */
+  releasePrice: number;
+  /** Fração do preço de venda das unidades do mês. Só lido com `releasePrice` = 0. */
+  releasePricePct?: number | null;
+
+  // ─── Convenção e indexação (migrations 1762400000 e 1762500000) ────────────
+  convencaoJuros: ConvencaoJuros;
+  tipoTaxa: TipoTaxa;
+  /** Fração ao ano somada ao benchmark. Só lido com `tipoTaxa = 'variavel'`. */
+  spread: number;
+  benchmarkNome?: string | null;
+  /** Usado nos meses sem ponto na curva — mês ausente não é benchmark zero. */
+  benchmarkPadrao: number;
+  /** Curva projetada do benchmark, mês a mês. */
+  benchmarkCurva?: PontoBenchmark[];
 }
 
 export interface Socio {
@@ -459,11 +545,22 @@ export interface MesFluxo {
   /** Juros incorridos no mês (entram na apuração mesmo quando capitalizados). */
   juros: number;
   fee: number;
+  /** Parte dos `juros` do mês absorvida pela reserva. Não toca o caixa. */
+  jurosPagosPelaReserva: number;
+  /** Saldo da reserva de juros no FIM do mês. */
+  saldoReservaJuros: number;
   /** Saída de caixa por conta do financiamento: juros pagos (0 se capitalizados) + fee. */
   custoFinanceiroCaixa: number;
   pagamentos: number;
   revenue: number;
   draw: number;
+  /**
+   * Saque destinado à reserva de juros. Soma ao principal e à `dividaSacada`, mas
+   * NÃO entra no caixa: o dinheiro vai direto para a conta da reserva. Zero fora
+   * do mês em que a reserva é constituída, e sempre zero quando a reserva é
+   * apenas orçamentária (`reservaJurosSacada = false`).
+   */
+  saqueReservaJuros: number;
   amortization: number;
   equityCall: number;
   distribution: number;
@@ -476,6 +573,10 @@ export interface MesFluxo {
   demandaBruta: number;
   /** Capacidade de saque restante no início do mês. */
   capacidadeSaque: number;
+  /** Taxa ao ano efetivamente aplicada no mês. Com `tipoTaxa = 'fixa'` é constante. */
+  taxaEfetivaAno: number;
+  /** Unidades que fecham no mês. Explica o degrau da amortização por release. */
+  unidadesVendidas: number;
   /**
    * Equity que o plano de aportes já colocou no projeto até este mês, descontado
    * o terreno — é o que o modo equity_first compara com a obra acumulada. No modo
@@ -636,6 +737,10 @@ export interface ModelOutput {
    *
    * É a mesma grandeza que o gatilho de custo 'por_venda' usa para ratear impact
    * fees — as duas leituras saem daqui, e por isso não podem divergir.
+   *
+   * É exatamente `meses.map((m) => m.unidadesVendidas)`: existe como array solto
+   * porque quem consome a série inteira (gráficos, release price) não quer varrer
+   * `MesFluxo`. Uma fonte só, duas formas.
    */
   unidadesVendidasPorMes: number[];
   /** Quantas passadas o ponto fixo consumiu e se convergiu. */

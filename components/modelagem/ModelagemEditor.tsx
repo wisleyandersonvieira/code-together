@@ -53,6 +53,8 @@ import deleteModelagemFaseAction from '@/actions/deleteModelagemFase';
 import saveModelagemUnidadeFaseAction from '@/actions/saveModelagemUnidadeFase';
 import deleteModelagemUnidadeFaseAction from '@/actions/deleteModelagemUnidadeFase';
 import saveModelagemFinanciamentoAction from '@/actions/saveModelagemFinanciamento';
+import saveModelagemBenchmarkPontoAction from '@/actions/saveModelagemBenchmarkPonto';
+import deleteModelagemBenchmarkPontoAction from '@/actions/deleteModelagemBenchmarkPonto';
 import saveModelagemReceitaAction from '@/actions/saveModelagemReceita';
 import saveModelagemVendaUnidadeAction from '@/actions/saveModelagemVendaUnidade';
 import createModelagemTakedownAction from '@/actions/createModelagemTakedown';
@@ -128,6 +130,8 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [salvarAlocacao] = useMutateAction(saveModelagemUnidadeFaseAction);
   const [removerAlocacao] = useMutateAction(deleteModelagemUnidadeFaseAction);
   const [salvarFinanciamento] = useMutateAction(saveModelagemFinanciamentoAction);
+  const [salvarBenchmark] = useMutateAction(saveModelagemBenchmarkPontoAction);
+  const [apagarBenchmark] = useMutateAction(deleteModelagemBenchmarkPontoAction);
   const [salvarReceita] = useMutateAction(saveModelagemReceitaAction);
   const [salvarVenda] = useMutateAction(saveModelagemVendaUnidadeAction);
   const [criarTakedown] = useMutateAction(createModelagemTakedownAction);
@@ -458,6 +462,22 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       }
 
       await salvarFinanciamento({ modelagemId, ...rascunho.financiamento });
+
+      // Curva do benchmark. Gravada pelo MÊS, que é a chave natural — o ponto não
+      // tem identidade própria na tela, e o banco tem UNIQUE (financiamento, mês).
+      //
+      // Apagar um ponto é diferente de gravá-lo com zero: sem linha, o motor usa
+      // `benchmarkPadrao`. Por isso o que sumiu da tela é DELETE, não UPDATE 0.
+      const curvaAtual = rascunho.financiamento.benchmarkCurva ?? [];
+      const mesesAtuais = new Set(curvaAtual.map((p) => Math.trunc(p.mes)));
+      for (const antigo of original.financiamento.benchmarkCurva ?? []) {
+        if (!mesesAtuais.has(Math.trunc(antigo.mes))) {
+          await apagarBenchmark({ modelagemId, mes: antigo.mes });
+        }
+      }
+      for (const p of curvaAtual) {
+        await salvarBenchmark({ modelagemId, mes: p.mes, valor: p.valor });
+      }
       await salvarReceita({ modelagemId, ...rascunho.receita });
 
       for (const venda of rascunho.receita.vendasPorUnidade ?? []) {

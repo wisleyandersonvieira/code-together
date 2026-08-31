@@ -43,6 +43,12 @@ const LINHAS: DefinicaoLinha[] = [
   { chave: 'equity_call', rotulo: 'Aporte de equity', valor: (m) => m.equityCall, linha: 'equity_call', destaque: true },
   { chave: 'distribution', rotulo: 'Distribuição', valor: (m) => m.distribution, linha: 'distribution' },
   { chave: 'saldo', rotulo: 'Saldo devedor', valor: (m) => m.saldoDevedor, separador: true, somavel: false },
+  // Linhas de LEITURA das migrations 1762100000 a 1762500000: explicam degraus
+  // que, sem elas, pareceriam vir do nada. Nenhuma aceita override — são
+  // consequência, não entrada. Com os defaults, todas ficam zeradas ou constantes.
+  { chave: 'reserva_juros', rotulo: 'Saldo da reserva de juros', valor: (m) => m.saldoReservaJuros, somavel: false },
+  { chave: 'unidades_vendidas', rotulo: 'Unidades vendidas no mês', valor: (m) => m.unidadesVendidas },
+  { chave: 'taxa_efetiva', rotulo: 'Taxa efetiva (a.a.)', valor: (m) => m.taxaEfetivaAno, somavel: false },
   { chave: 'equity_ac', rotulo: 'Equity acumulado', valor: (m) => m.equityAcumulado, somavel: false },
   { chave: 'caixa_mes', rotulo: 'Caixa do mês', valor: (m) => m.caixaMes },
   { chave: 'caixa_ac', rotulo: 'Caixa acumulado', valor: (m) => m.caixaAcumulado, destaque: true, somavel: false },
