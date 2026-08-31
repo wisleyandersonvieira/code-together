@@ -31,6 +31,17 @@ export const financeDetailTabsListClassName =
 export const financeDetailTabsTriggerClassName =
   'min-h-[46px] rounded-xl border border-slate-700/70 bg-slate-700 px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:border-slate-800 hover:bg-slate-800 hover:text-white data-[state=active]:border-slate-900 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-[0_12px_30px_-18px_rgba(15,23,42,0.7)]';
 
+/**
+ * Mesma aparência da versão acima, com menos volume: para telas com muitas abas,
+ * onde a altura de 46px empurra o conteúdo para fora da dobra.
+ *
+ * É uma constante SEPARADA de propósito. `financeDetailTabsTriggerClassName` é
+ * compartilhada com as demais telas financeiras, e encolher lá mudaria todas de
+ * uma vez — a decisão de densidade é de cada tela, não do design system.
+ */
+export const financeDetailTabsTriggerCompactClassName =
+  'min-h-[38px] rounded-lg border border-slate-700/70 bg-slate-700 px-3 py-2 text-[13px] font-semibold text-white transition-all duration-200 hover:border-slate-800 hover:bg-slate-800 hover:text-white data-[state=active]:border-slate-900 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-[0_12px_30px_-18px_rgba(15,23,42,0.7)]';
+
 interface FinanceDetailHeaderProps {
   title: string;
   subtitle: string;

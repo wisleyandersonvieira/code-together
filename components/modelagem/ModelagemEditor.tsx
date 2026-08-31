@@ -11,7 +11,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FinanceDetailHeader, financeDetailTabsTriggerClassName } from '@/components/finance/detail-ui';
+import {
+  FinanceDetailHeader,
+  financeDetailTabsTriggerCompactClassName,
+} from '@/components/finance/detail-ui';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrentUser } from '@/lib/userContext';
 import { cn } from '@/lib/utils';
@@ -579,9 +582,64 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
           ))}
         </div>
         <div className="flex gap-2">
+          <Button type="button" onClick={salvar} disabled={salvando || bloqueios.length > 0}>
+            {salvando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Salvar
+          </Button>
+        </div>
+      </div>
+
+      {/* Notificação de uma linha, e nada quando está tudo verde. `bloqueios`
+          entra porque o motivo de o Salvar estar desabilitado precisa aparecer
+          ANTES de o usuário tentar salvar, não só no toast depois da tentativa. */}
+      <PainelConferencias conferencias={resultado.conferencias} compacto bloqueios={bloqueios} />
+
+      {/* Controlado (e não `defaultValue`) porque a aba Linha do tempo navega:
+          clicar numa fase leva a Premissas, clicar num takedown leva a Receita. */}
+      <Tabs value={aba} onValueChange={setAba} className="w-full">
+        {/*
+          Duas linhas de seis, com o Exportar ocupando a 12ª célula.
+
+          `className="contents"` no TabsList remove a CAIXA do elemento sem mexer
+          no aninhamento do DOM: os triggers continuam sendo filhos do
+          role="tablist", então a semântica ARIA fica correta e o botão Exportar
+          continua FORA da tablist — um botão que não é aba não pode ser filho de
+          uma tablist. A navegação por setas do Radix não depende de layout: o
+          roving focus resolve o próximo item por uma coleção de refs registradas
+          (ver react-roving-focus), com o keydown em cada trigger.
+
+          O risco conhecido de `display: contents` é a árvore de acessibilidade —
+          navegadores antigos removiam o elemento dela junto com a caixa, e o
+          role="tablist" sumia. Corrigido no Chrome 89+, Firefox e Safari 15.4+.
+          Se aparecer regressão de leitor de tela, o fallback é TabsList normal
+          com xl:grid-cols-6 e o Exportar de volta ao bloco de ações do header.
+
+          A moldura que era do TabsList passou para o wrapper, senão ela sumiria
+          junto com a caixa.
+        */}
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50/85 p-2 shadow-sm sm:grid-cols-3 xl:grid-cols-6">
+          <TabsList className="contents">
+            {ABAS.map((a) => (
+              <TabsTrigger
+                key={a.valor}
+                value={a.valor}
+                className={cn(financeDetailTabsTriggerCompactClassName, 'text-xs md:text-[13px]')}
+              >
+                {a.rotulo}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {/* 12ª célula. Mesma altura e raio dos triggers, mas `outline`: é ação,
+              não aba, e precisa parecer diferente. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" disabled={exportando !== null}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={exportando !== null}
+                className="min-h-[38px] rounded-lg px-3 py-2 text-[13px]"
+              >
                 {exportando ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -606,25 +664,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button type="button" onClick={salvar} disabled={salvando || bloqueios.length > 0}>
-            {salvando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Salvar
-          </Button>
         </div>
-      </div>
-
-      <PainelConferencias conferencias={resultado.conferencias} compacto />
-
-      {/* Controlado (e não `defaultValue`) porque a aba Linha do tempo navega:
-          clicar numa fase leva a Premissas, clicar num takedown leva a Receita. */}
-      <Tabs value={aba} onValueChange={setAba} className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50/85 p-2 shadow-sm md:grid-cols-5">
-          {ABAS.map((a) => (
-            <TabsTrigger key={a.valor} value={a.valor} className={cn(financeDetailTabsTriggerClassName, 'text-xs md:text-sm')}>
-              {a.rotulo}
-            </TabsTrigger>
-          ))}
-        </TabsList>
 
         <div className="mt-6">
           <TabsContent value="premissas">
@@ -684,10 +724,9 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         </div>
       </Tabs>
 
-      <div>
-        <p className="mb-3 text-sm font-semibold text-slate-900">Painel de validação</p>
-        <PainelConferencias conferencias={resultado.conferencias} />
-      </div>
+      {/* Sem título acima: a barra já traz as contagens e o problema mais grave,
+          e um cabeçalho gastaria a linha que este item veio recuperar. */}
+      <PainelConferencias conferencias={resultado.conferencias} />
     </div>
   );
 }
