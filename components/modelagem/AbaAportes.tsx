@@ -8,7 +8,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { financeDetailFieldClassName, FinanceDetailSectionCard } from '@/components/finance/detail-ui';
 import { cn } from '@/lib/utils';
-import { curvaComoParcelas, PLANO_NEUTRO, somarMeses } from '@/lib/modelagem';
+import {
+  curvaComoParcelas,
+  EXPLICACAO_REGRA_CAPITAL,
+  PLANO_NEUTRO,
+  REGRAS_RATEIO_CAPITAL,
+  ROTULO_REGRA_CAPITAL,
+  somarMeses,
+} from '@/lib/modelagem';
 import type {
   AporteParcela,
   LinhaFluxo,
@@ -16,6 +23,7 @@ import type {
   ModelOutput,
   ModoAporte,
   PlanoAportes,
+  RegraRateioCapital,
 } from '@/lib/modelagem';
 import { dinheiro, mesAno, percentual } from './formato';
 
@@ -74,6 +82,16 @@ export function AbaAportes({ rascunho, alterar, resultado, substituirParcelas, r
   const chamado = resultado.apuracao.equityTotal;
 
   const dataDoMes = (mes: number) => mesAno(somarMeses(rascunho.dataInicio, Math.max(1, mes) - 1));
+
+  /**
+   * Com cronograma por sócio, a curva do projeto é CONSEQUÊNCIA da aba Sócios: o
+   * aporte do mês é a soma dos aportes declarados lá. O bloco de parcelas do
+   * projeto vira leitura — editar aqui criaria uma segunda fonte para o mesmo
+   * número, que é exatamente o que este módulo não faz.
+   */
+  const porSocio = plano.regraRateioCapital === 'cronograma_socio';
+  /** A curva resultante: o que o motor de fato chamou, mês a mês. */
+  const curvaResultante = resultado.meses.filter((m) => Math.abs(m.equityCall) > 0.005);
 
   const gravarParcelas = (novas: AporteParcela[]) =>
     mudarPlano({ parcelas: [...novas].sort((a, b) => a.mes - b.mes) });
@@ -252,6 +270,32 @@ export function AbaAportes({ rascunho, alterar, resultado, substituirParcelas, r
             <p className="text-xs leading-5 text-slate-500">{EXPLICACAO_MODO[plano.modoAporte]}</p>
           </div>
 
+          {/* Rateio do CAPITAL — grandeza diferente da participação, que governa
+              o LUCRO. Um sócio pode ter 30% da sociedade e ter posto 40% do
+              dinheiro; é para isso que esta escolha existe. */}
+          <div className="space-y-2">
+            <Label>Rateio do capital</Label>
+            <Select
+              value={plano.regraRateioCapital}
+              onValueChange={(v) => mudarPlano({ regraRateioCapital: v as RegraRateioCapital })}
+            >
+              <SelectTrigger className={financeDetailFieldClassName}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REGRAS_RATEIO_CAPITAL.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {ROTULO_REGRA_CAPITAL[r]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs leading-5 text-slate-500">
+              {EXPLICACAO_REGRA_CAPITAL[plano.regraRateioCapital]} Os valores e as datas de cada
+              sócio ficam na aba <em>Sócios</em>.
+            </p>
+          </div>
+
           {plano.modoAporte === 'demanda' ? (
             <>
               <div className="space-y-2">
@@ -310,7 +354,57 @@ export function AbaAportes({ rascunho, alterar, resultado, substituirParcelas, r
         </div>
       </FinanceDetailSectionCard>
 
-      {plano.modoAporte === 'plano' ? (
+      {porSocio ? (
+        <FinanceDetailSectionCard
+          title="Curva do projeto"
+          description="Somente leitura: com o cronograma por sócio, a curva do projeto é a soma do que cada sócio declarou. Quem edita valores e meses é a aba Sócios."
+        >
+          {curvaResultante.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500">
+              Nenhum aporte lançado ainda. Cadastre os aportes de cada sócio na aba Sócios.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className={`${cabecalho} text-left`}>Mês</th>
+                    <th className={`${cabecalho} text-right`}>Aporte do mês</th>
+                    <th className={`${cabecalho} bg-slate-50 text-right`}>Acumulado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {curvaResultante.map((m, i) => (
+                    <tr key={m.mes} className="border-b border-slate-100 last:border-0">
+                      <td className="px-2 py-1.5 text-sm tabular-nums text-slate-600">
+                        {m.mes} · {mesAno(m.data)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-sm tabular-nums text-slate-800">
+                        {dinheiro(m.equityCall, moeda)}
+                      </td>
+                      <td className={lido}>
+                        {dinheiro(
+                          curvaResultante.slice(0, i + 1).reduce((a, x) => a + x.equityCall, 0),
+                          moeda,
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold text-slate-900">
+                    <td className="px-2 py-2 text-sm">Total chamado</td>
+                    <td className="px-2 py-2 text-right text-sm tabular-nums">{dinheiro(chamado, moeda)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </FinanceDetailSectionCard>
+      ) : null}
+
+      {plano.modoAporte === 'plano' && !porSocio ? (
         <FinanceDetailSectionCard
           title="Gerador de parcelas"
           description="Divide um total em parcelas iguais a partir de um mês. O resíduo do arredondamento vai na última parcela, para a soma fechar no centavo."
@@ -372,6 +466,7 @@ export function AbaAportes({ rascunho, alterar, resultado, substituirParcelas, r
         </FinanceDetailSectionCard>
       ) : null}
 
+      {porSocio ? null : (
       <FinanceDetailSectionCard
         title="Parcelas"
         description="O mês é índice do cronograma, não data — a data abaixo é derivada do início do projeto."
@@ -476,6 +571,7 @@ export function AbaAportes({ rascunho, alterar, resultado, substituirParcelas, r
           </table>
         </div>
       </FinanceDetailSectionCard>
+      )}
 
       <FinanceDetailSectionCard
         title="Curva"

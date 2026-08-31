@@ -1,8 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { FinanceDetailSectionCard } from '@/components/finance/detail-ui';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import type { ApuracaoAnual, ModelInput, ModelOutput } from '@/lib/modelagem';
+import type { ApuracaoAnual, ModelInput, ModelOutput, RateioSocio } from '@/lib/modelagem';
 import { apuracaoAnual, LINHAS_ANUAL, totalAnual } from '@/lib/modelagem';
 import { dinheiro, mesAno, multiplo, numero, percentual } from './formato';
 
@@ -22,10 +25,64 @@ function Indicador({ rotulo, valor, nota }: { rotulo: string; valor: string; not
   );
 }
 
+/**
+ * Fluxo líquido mês a mês, em SVG à mão — sem biblioteca.
+ *
+ * Barras para cima em verde (recebeu), para baixo em rosa (pôs), e a linha do
+ * zero sempre visível: sem ela o gráfico mentiria sobre o sinal. A escala é
+ * simétrica em torno do zero, então a altura de duas barras é comparável.
+ */
+function GraficoFluxo({ fluxo, moeda }: { fluxo: number[]; moeda: string }) {
+  const n = fluxo.length;
+  if (n === 0) return null;
+  const L = 640;
+  const A = 140;
+  const maior = Math.max(1, ...fluxo.map((v) => Math.abs(v)));
+  const zeroY = A / 2;
+  const larguraBarra = Math.max(1, (L / n) * 0.7);
+  const passo = L / n;
+  return (
+    <svg
+      viewBox={`0 0 ${L} ${A}`}
+      className="h-36 w-full"
+      role="img"
+      aria-label="Fluxo líquido do sócio, mês a mês"
+    >
+      {fluxo.map((v, i) => {
+        const altura = (Math.abs(v) / maior) * (A / 2 - 6);
+        const x = i * passo + (passo - larguraBarra) / 2;
+        return (
+          <rect
+            key={i}
+            x={x}
+            y={v >= 0 ? zeroY - altura : zeroY}
+            width={larguraBarra}
+            height={Math.max(altura, v === 0 ? 0 : 0.5)}
+            className={v >= 0 ? 'fill-emerald-500' : 'fill-rose-400'}
+          >
+            <title>{`Mês ${i + 1}: ${dinheiro(v, moeda)}`}</title>
+          </rect>
+        );
+      })}
+      {/* A linha do zero por cima das barras: é a referência de leitura. */}
+      <line x1={0} y1={zeroY} x2={L} y2={zeroY} className="stroke-slate-400" strokeWidth={1} />
+    </svg>
+  );
+}
+
 export function AbaResultado({ rascunho, resultado }: Props) {
   const { apuracao: ap, indicadores: ind, agregados: ag } = resultado;
   const moeda = rascunho.moeda;
   const d = (v: number | null | undefined) => dinheiro(v, moeda);
+
+  // Abas internas da própria aba Resultado — não são aba nova do editor.
+  // 'geral' é o padrão: é o conteúdo que já existia.
+  const [visao, setVisao] = useState('geral');
+  const [socioIndice, setSocioIndice] = useState('0');
+  const socio: RateioSocio | undefined = resultado.rateioSocios[Number(socioIndice)];
+  /** 1 ponto percentual — mesma tolerância da conferência `capital_vs_participacao`. */
+  const divergente =
+    socio != null && Math.abs(socio.pctCapital - socio.participacaoPct) > 0.01;
 
   const cascata = [
     { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta, sinal: 1 },
@@ -75,7 +132,15 @@ export function AbaResultado({ rascunho, resultado }: Props) {
   };
 
   return (
-    <div className="space-y-6">
+    // Abas INTERNAS da aba Resultado — o editor não ganha aba nova. 'geral' é o
+    // padrão porque é exatamente o conteúdo que já existia aqui.
+    <Tabs value={visao} onValueChange={setVisao} className="w-full">
+      <TabsList className="mb-4">
+        <TabsTrigger value="geral">Geral</TabsTrigger>
+        <TabsTrigger value="por-socio">Por sócio</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="geral" className="space-y-6">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Indicador rotulo="Lucro do projeto" valor={d(ap.lucroProjeto)} nota={`Margem de ${percentual(ind.margemVgv)} sobre o VGV`} />
         <Indicador rotulo="MOIC" valor={multiplo(ind.moic)} nota={`ROI de ${percentual(ind.roi)}`} />
@@ -90,6 +155,12 @@ export function AbaResultado({ rascunho, resultado }: Props) {
         />
         <Indicador rotulo="XIRR" valor={percentual(ind.xirr)} nota="Com as datas reais, base actual/365" />
       </div>
+
+      <p className="text-xs leading-5 text-slate-500">
+        Os indicadores gerais tratam o projeto como se tivesse um único sócio, somando os aportes nas
+        datas em que ocorrem. Com datas de aporte diferentes por sócio, a TIR geral não é a média das
+        TIRs individuais — os perfis no tempo são diferentes.
+      </p>
 
       <FinanceDetailSectionCard
         title="Por unidade"
@@ -312,13 +383,13 @@ export function AbaResultado({ rascunho, resultado }: Props) {
 
       <FinanceDetailSectionCard
         title="Rateio por sócio"
-        description="Pro-rata. MOIC, ROI e TIR são idênticos para todos — o que varia é apenas a escala."
+        description="A participação governa o lucro; o capital pode seguir outra regra. Quando as duas frações divergem, MOIC e TIR deixam de ser iguais para todos — e a coluna % capital acende âmbar."
       >
         <div className="overflow-x-auto rounded-2xl border border-slate-200">
           <table className="w-full min-w-[720px]">
             <thead className="bg-slate-50">
               <tr>
-                {['Sócio', 'Participação', 'Capital', 'Lucro', 'Total', 'MOIC', 'TIR anual'].map((h, i) => (
+                {['Sócio', 'Participação', '% capital', 'Capital', 'Lucro', 'Total', 'MOIC', 'TIR anual'].map((h, i) => (
                   <th key={h} className={cn('px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500', i === 0 ? 'text-left' : 'text-right')}>
                     {h}
                   </th>
@@ -337,11 +408,25 @@ export function AbaResultado({ rascunho, resultado }: Props) {
                     ) : null}
                   </td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{percentual(s.participacaoPct)}</td>
+                  {/* A fração de CAPITAL, que pode divergir da participação — é ela
+                      que explica MOIC e TIR diferentes entre os sócios. */}
+                  <td
+                    className={cn(
+                      'px-3 py-2 text-right text-sm tabular-nums',
+                      Math.abs(s.pctCapital - s.participacaoPct) > 0.01
+                        ? 'font-medium text-amber-700'
+                        : 'text-slate-700',
+                    )}
+                  >
+                    {percentual(s.pctCapital)}
+                  </td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(s.capital)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(s.lucro)}</td>
                   <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">{d(s.total)}</td>
-                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-500">{multiplo(ind.moic)}</td>
-                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-500">{percentual(ind.tirAnual)}</td>
+                  {/* MOIC e TIR DELE, não os do projeto: com capital ou datas
+                      próprias, os dois números deixam de ser iguais para todos. */}
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-500">{multiplo(s.moic)}</td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-500">{percentual(s.tirAnual)}</td>
                 </tr>
               ))}
             </tbody>
@@ -382,6 +467,155 @@ export function AbaResultado({ rascunho, resultado }: Props) {
           </div>
         ) : null}
       </FinanceDetailSectionCard>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="por-socio" className="space-y-6">
+        {resultado.rateioSocios.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500">
+            Nenhum sócio cadastrado. Adicione os sócios na aba Sócios para ver o retorno de cada um.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="w-full max-w-xs">
+                <Select value={socioIndice} onValueChange={setSocioIndice}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {resultado.rateioSocios.map((s, i) => (
+                      <SelectItem key={i} value={String(i)}>
+                        {s.nome || `Sócio ${i + 1}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Os dois selos lado a lado: é a leitura que responde "por que o
+                  meu retorno é diferente do dele?" sem abrir o fluxo. */}
+              {socio ? (
+                <>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium tabular-nums text-slate-700">
+                    Participação {percentual(socio.participacaoPct)}
+                  </span>
+                  <span
+                    className={cn(
+                      'rounded-full px-3 py-1 text-xs font-medium tabular-nums',
+                      divergente ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700',
+                    )}
+                    title={
+                      divergente
+                        ? 'A fração de capital diverge da participação em mais de 1 ponto percentual. Não é erro — é a negociação.'
+                        : undefined
+                    }
+                  >
+                    Capital {percentual(socio.pctCapital)}
+                  </span>
+                </>
+              ) : null}
+            </div>
+
+            {socio ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <Indicador rotulo="Capital aportado" valor={d(socio.capital)} nota="Σ dos aportes dele" />
+                  <Indicador rotulo="Total recebido" valor={d(socio.total)} nota="Capital devolvido + lucro" />
+                  <Indicador
+                    rotulo="Lucro"
+                    valor={d(socio.lucro)}
+                    nota={`${percentual(socio.participacaoPct)} do lucro dos investidores`}
+                  />
+                  <Indicador rotulo="MOIC" valor={multiplo(socio.moic)} nota={`ROI de ${percentual(socio.roi)}`} />
+                  <Indicador rotulo="ROI" valor={percentual(socio.roi)} nota="Lucro sobre o capital dele" />
+                  <Indicador
+                    rotulo="TIR anual"
+                    valor={percentual(socio.tirAnual)}
+                    nota={`${percentual(socio.tirMensal, 4)} ao mês`}
+                  />
+                  <Indicador rotulo="XIRR" valor={percentual(socio.xirr)} nota="Com as datas reais, base actual/365" />
+                  <Indicador
+                    rotulo="TIR geral do projeto"
+                    valor={percentual(ind.tirAnual)}
+                    nota="Para comparar — não é a média das TIRs individuais"
+                  />
+                </div>
+
+                <FinanceDetailSectionCard
+                  title="Fluxo líquido"
+                  description="Barras para cima: o que ele recebeu. Para baixo: o que ele aportou. É este fluxo que produz a TIR dele."
+                >
+                  <GraficoFluxo fluxo={socio.fluxoPorMes} moeda={moeda} />
+                </FinanceDetailSectionCard>
+
+                <FinanceDetailSectionCard
+                  title="Extrato mensal"
+                  description="Mês a mês, o que entrou e o que saiu do bolso deste sócio."
+                >
+                  <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200">
+                    <table className="w-full min-w-[640px]">
+                      <thead className="sticky top-0 z-10 bg-slate-50">
+                        <tr>
+                          {['Mês', 'Data', 'Aporte', 'Devolução', 'Fluxo líquido', 'Acumulado'].map((h, i) => (
+                            <th
+                              key={h}
+                              className={cn(
+                                'px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500',
+                                i <= 1 ? 'text-left' : 'text-right',
+                              )}
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultado.meses.map((m, k) => {
+                          const fluxo = socio.fluxoPorMes[k] ?? 0;
+                          const acumulado = socio.fluxoPorMes.slice(0, k + 1).reduce((a, v) => a + v, 0);
+                          return (
+                            <tr key={m.mes} className="border-t border-slate-100">
+                              <td className="px-3 py-1.5 text-sm tabular-nums text-slate-500">{m.mes}</td>
+                              <td className="px-3 py-1.5 text-sm text-slate-500">{mesAno(m.data)}</td>
+                              <td className="px-3 py-1.5 text-right text-sm tabular-nums text-slate-700">
+                                {socio.chamadasPorMes[k] === 0 ? '—' : d(socio.chamadasPorMes[k])}
+                              </td>
+                              <td className="px-3 py-1.5 text-right text-sm tabular-nums text-slate-700">
+                                {socio.devolucoesPorMes[k] === 0 ? '—' : d(socio.devolucoesPorMes[k])}
+                              </td>
+                              <td
+                                className={cn(
+                                  'px-3 py-1.5 text-right text-sm font-medium tabular-nums',
+                                  fluxo < 0 ? 'text-rose-600' : fluxo > 0 ? 'text-emerald-700' : 'text-slate-400',
+                                )}
+                              >
+                                {fluxo === 0 ? '—' : d(fluxo)}
+                              </td>
+                              <td
+                                className={cn(
+                                  'px-3 py-1.5 text-right text-sm tabular-nums',
+                                  acumulado < 0 ? 'text-rose-600' : 'text-slate-700',
+                                )}
+                              >
+                                {d(acumulado)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </FinanceDetailSectionCard>
+
+                <p className="rounded-xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600">
+                  A devolução segue duas camadas: primeiro cada sócio recupera o capital que aportou,
+                  depois o lucro é repartido pela participação.{' '}
+                  <strong>Não há preferred return nem promote nesta modelagem.</strong>
+                </p>
+              </>
+            ) : null}
+          </>
+        )}
+      </TabsContent>
+    </Tabs>
   );
 }

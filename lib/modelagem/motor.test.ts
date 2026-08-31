@@ -15,11 +15,17 @@ import {
 } from './motor';
 import { bloqueiaSalvamento } from './conferencias';
 import { indiceMes, tirMensal, somarMeses } from './indicadores';
-import { comParcelaNoMes, curvaComoParcelas, editaPlanoDeAportes, semParcelaNoMes } from './aportes';
+import {
+  aporteSomenteLeitura,
+  comParcelaNoMes,
+  curvaComoParcelas,
+  editaPlanoDeAportes,
+  semParcelaNoMes,
+} from './aportes';
 import { apuracaoAnual, totalAnual } from './anual';
-import { mapearCustos, mapearModelInput } from './mapear';
+import { mapearAportes, mapearCustos, mapearModelInput, mapearSocios } from './mapear';
 import { CATEGORIAS_CUSTO } from './tipos';
-import type { CustoAdicional, ModelInput, Override } from './tipos';
+import type { CustoAdicional, ModelInput, Override, RegraRateioCapital, Socio } from './tipos';
 
 const DOLAR = 1.0;
 const RATIO = 0.0001;
@@ -53,6 +59,7 @@ const casoBase = (): ModelInput => ({
     modoAporte: 'demanda',
     aporteBaseTotal: 732_778,
     valorTotalAlvo: 0,
+    regraRateioCapital: 'participacao' as const,
   },
   financiamento: {
     taxaAnual: 0.095,
@@ -82,8 +89,8 @@ const casoBase = (): ModelInput => ({
     benchmarkPadrao: 0,
   },
   socios: [
-    { nome: 'Sócio 1', participacaoPct: 0.5, cotaDisponivel: false },
-    { nome: 'Sócio 2', participacaoPct: 0.5, cotaDisponivel: false },
+    { nome: 'Sócio 1', participacaoPct: 0.5, cotaDisponivel: false, aportes: [] },
+    { nome: 'Sócio 2', participacaoPct: 0.5, cotaDisponivel: false, aportes: [] },
   ],
   receita: {
     comissaoPct: 0.06,
@@ -397,8 +404,8 @@ describe('5 — overrides órfãos', () => {
 describe('6 — validação de sócios', () => {
   const base = casoBase();
   base.socios = [
-    { nome: 'Sócio 1', participacaoPct: 0.5, cotaDisponivel: false },
-    { nome: 'Sócio 2', participacaoPct: 0.49, cotaDisponivel: false },
+    { nome: 'Sócio 1', participacaoPct: 0.5, cotaDisponivel: false, aportes: [] },
+    { nome: 'Sócio 2', participacaoPct: 0.49, cotaDisponivel: false, aportes: [] },
   ];
   const out = calcular(base);
 
@@ -565,6 +572,7 @@ describe('11 — plano de aportes', () => {
       modoAporte: modo,
       aporteBaseTotal: 732_778,
       valorTotalAlvo: 900_000,
+      regraRateioCapital: 'participacao' as const,
       parcelas: [
         { mes: 1, valor: 300_000 },
         { mes: 6, valor: 300_000 },
@@ -1004,6 +1012,7 @@ describe('14 — não-regressão e conversões', () => {
         modoAporte: 'plano',
         aporteBaseTotal: base.aportes!.aporteBaseTotal,
         valorTotalAlvo: 0,
+        regraRateioCapital: 'participacao' as const,
         parcelas: curvaComoParcelas(original),
       },
     };
@@ -1064,6 +1073,7 @@ describe('14 — não-regressão e conversões', () => {
       modoAporte: 'plano',
       aporteBaseTotal: 732_778,
       valorTotalAlvo: 0,
+      regraRateioCapital: 'participacao' as const,
       parcelas: [{ mes: 1, valor: 300_000 }],
     };
     expect(editaPlanoDeAportes(base, 'equity_call')).toBe(true);
@@ -2414,7 +2424,7 @@ describe('18 — carência, prestação e balloon', () => {
       amortizacaoMeses: 300,
       balloonNoVencimento: true,
     });
-    base.aportes = { modoAporte: 'plano', aporteBaseTotal: 0, valorTotalAlvo: 0, parcelas: [{ mes: 1, valor: 1_800_000 }] };
+    base.aportes = { modoAporte: 'plano', aporteBaseTotal: 0, valorTotalAlvo: 0, regraRateioCapital: 'participacao', parcelas: [{ mes: 1, valor: 1_800_000 }] };
     base.overrides = [{ mes: 1, linha: 'draw', valor: 1_500_000 }];
     const out = calcular(base);
 
@@ -3292,5 +3302,430 @@ describe('27 — mapeamento das parcelas de custo', () => {
       { id: 1, label: 'X', gatilho: 'mes_fixo', parcelas: [{ id: 9, mes: null, valor: null }] },
     ]);
     expect(c.parcelas).toEqual([{ id: 9, ordem: 0, mes: 1, valor: 0 }]);
+  });
+});
+
+describe('28 — capital por sócio: rateio, devolução e indicadores individuais', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1763100000.
+  //
+  // 'participacao' é o default e o estado de toda modelagem já gravada: a fração
+  // de capital É a participação, e o rateio volta a ser o pro-rata de sempre.
+  const socio = (nome: string, p: number, extra: Partial<Socio> = {}): Socio => ({
+    nome,
+    participacaoPct: p,
+    cotaDisponivel: false,
+    aportes: [],
+    ...extra,
+  });
+
+  const comRegra = (
+    regra: RegraRateioCapital,
+    socios: Socio[],
+  ): ModelInput => {
+    const base = casoBase();
+    base.socios = socios;
+    base.aportes = { ...base.aportes!, regraRateioCapital: regra };
+    return base;
+  };
+
+  const referencia = calcular(casoBase());
+
+  it('(a) regra "participacao" sem pctCapital reproduz o rateio de sempre', () => {
+    const out = calcular(comRegra('participacao', [socio('S1', 0.5), socio('S2', 0.5)]));
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+    expect(JSON.stringify(out.indicadores)).toBe(JSON.stringify(referencia.indicadores));
+    expect(out.fluxoInvestidor).toEqual(referencia.fluxoInvestidor);
+    // E o rateio antigo, campo a campo: capital, lucro, total e chamadasPorMes.
+    out.rateioSocios.forEach((r, i) => {
+      const p = 0.5;
+      expect(r.pctCapital).toBeCloseTo(p, 10);
+      expect(r.capital).toBeCloseTo(p * out.apuracao.equityTotal, 6);
+      expect(r.lucro).toBeCloseTo(p * out.apuracao.lucroInvestidores, 6);
+      expect(r.total).toBeCloseTo(p * out.apuracao.totalDistribuido, 6);
+      expect(r.chamadasPorMes).toEqual(out.meses.map((m) => p * m.equityCall));
+      expect(JSON.stringify(r.chamadasPorMes)).toBe(
+        JSON.stringify(referencia.rateioSocios[i].chamadasPorMes),
+      );
+    });
+  });
+
+  it('regra ausente cai em "participacao", como a modelagem nunca migrada', () => {
+    const base = casoBase();
+    // Exatamente o objeto que o mapeador entregava ANTES desta migration.
+    base.aportes = { modoAporte: 'demanda', aporteBaseTotal: 732_778, valorTotalAlvo: 0 } as never;
+    const out = calcular(base);
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.rateioSocios)).toBe(JSON.stringify(referencia.rateioSocios));
+  });
+
+  // ─── Identidade 1: o capital não aparece nem some entre projeto e sócios ───
+  const fechaChamadas = (out: ReturnType<typeof calcular>) => {
+    for (let k = 0; k < out.meses.length; k++) {
+      const somaChamadas = soma(out.rateioSocios.map((r) => r.chamadasPorMes[k]));
+      expect(somaChamadas).toBeCloseTo(out.meses[k].equityCall, 6);
+    }
+  };
+  /** Identidade forte: vale SEMPRE, inclusive com override em distribution. */
+  const fechaDevolucoes = (out: ReturnType<typeof calcular>) => {
+    for (let k = 0; k < out.meses.length; k++) {
+      const somaDev = soma(out.rateioSocios.map((r) => r.devolucoesPorMes[k]));
+      expect(somaDev).toBeCloseTo(out.meses[k].distribution, 6);
+    }
+  };
+  /**
+   * Identidade contra a APURAÇÃO. Vale quando a distribuição é a automática —
+   * que é todo caso sem override em `distribution` e com o mês de saída dentro
+   * do prazo. Com override, o fluxo distribui um valor que a apuração não
+   * conhece, e é o FLUXO que manda: `total` é o que o sócio recebeu de fato.
+   */
+  const fechaTotalDistribuido = (out: ReturnType<typeof calcular>) =>
+    expect(soma(out.rateioSocios.map((r) => r.total))).toBeCloseTo(
+      out.apuracao.totalDistribuido,
+      6,
+    );
+
+  it('Σ chamadas = equityCall e Σ devoluções = distribution nas TRÊS regras', () => {
+    const porParticipacao = calcular(comRegra('participacao', [socio('S1', 0.6), socio('S2', 0.4)]));
+    fechaChamadas(porParticipacao);
+    fechaDevolucoes(porParticipacao);
+    fechaTotalDistribuido(porParticipacao);
+
+    const porCapital = calcular(
+      comRegra('pct_capital', [
+        socio('S1', 0.5, { pctCapital: 0.7 }),
+        socio('S2', 0.5, { pctCapital: 0.3 }),
+      ]),
+    );
+    fechaChamadas(porCapital);
+    fechaDevolucoes(porCapital);
+    fechaTotalDistribuido(porCapital);
+
+    const porCronograma = calcular(
+      comRegra('cronograma_socio', [
+        socio('S1', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 300_000 }, { ordem: 1, mes: 8, valor: 120_000 }] }),
+        socio('S2', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 300_000 }, { ordem: 1, mes: 12, valor: 120_000 }] }),
+      ]),
+    );
+    fechaChamadas(porCronograma);
+    fechaDevolucoes(porCronograma);
+    fechaTotalDistribuido(porCronograma);
+  });
+
+  it('pct_capital: 70/30 do capital com 50/50 de lucro', () => {
+    const out = calcular(
+      comRegra('pct_capital', [
+        socio('S1', 0.5, { pctCapital: 0.7 }),
+        socio('S2', 0.5, { pctCapital: 0.3 }),
+      ]),
+    );
+    const [a, b] = out.rateioSocios;
+    expect(a.pctCapital).toBeCloseTo(0.7, 10);
+    expect(a.capital).toBeCloseTo(0.7 * out.apuracao.equityTotal, 6);
+    expect(b.capital).toBeCloseTo(0.3 * out.apuracao.equityTotal, 6);
+    // O LUCRO continua saindo da participação, não do capital.
+    expect(a.lucro).toBeCloseTo(0.5 * out.apuracao.lucroInvestidores, 6);
+    expect(b.lucro).toBeCloseTo(0.5 * out.apuracao.lucroInvestidores, 6);
+    // Quem põe mais capital e recebe o mesmo lucro tem retorno MENOR.
+    expect(a.moic!).toBeLessThan(b.moic!);
+    expect(a.roi!).toBeLessThan(b.roi!);
+    expect(semaforo(out, 'capital_vs_participacao')).toBe('ambar');
+    expect(semaforo(out, 'soma_pct_capital')).toBe('verde');
+  });
+
+  it('pctCapital nulo herda a participação; zero é "não põe capital"', () => {
+    const out = calcular(
+      comRegra('pct_capital', [
+        socio('S1', 0.5, { pctCapital: null }),
+        socio('S2', 0.5, { pctCapital: null }),
+      ]),
+    );
+    // Herdando, a regra vira a de participação — e o rateio é o de sempre.
+    expect(JSON.stringify(out.rateioSocios.map((r) => r.chamadasPorMes))).toBe(
+      JSON.stringify(referencia.rateioSocios.map((r) => r.chamadasPorMes)),
+    );
+    expect(semaforo(out, 'capital_vs_participacao')).toBe('verde');
+    // E na regra 'participacao' a conferência nem existe: seria verde por
+    // construção, e apareceria como item novo no painel de toda modelagem salva.
+    expect(semaforo(referencia, 'capital_vs_participacao')).toBeUndefined();
+
+    const semCapital = calcular(
+      comRegra('pct_capital', [
+        socio('S1', 0.5, { pctCapital: 1 }),
+        socio('S2', 0.5, { pctCapital: 0 }),
+      ]),
+    );
+    const b = semCapital.rateioSocios[1];
+    expect(b.capital).toBe(0);
+    // Capital zero: null em tudo, nunca Infinity nem NaN.
+    expect(b.moic).toBeNull();
+    expect(b.roi).toBeNull();
+    expect(b.tirMensal).toBeNull();
+    expect(b.tirAnual).toBeNull();
+    expect(b.xirr).toBeNull();
+    // Mas ele continua recebendo lucro pela participação: o total NÃO é zero.
+    expect(b.total).toBeGreaterThan(0);
+  });
+
+  it('50/50 com pct_capital 50/50: TIR de cada sócio é a TIR geral', () => {
+    const out = calcular(
+      comRegra('pct_capital', [
+        socio('S1', 0.5, { pctCapital: 0.5 }),
+        socio('S2', 0.5, { pctCapital: 0.5 }),
+      ]),
+    );
+    for (const r of out.rateioSocios) {
+      expect(r.tirMensal!).toBeCloseTo(out.indicadores.tirMensal!, 8);
+      expect(r.tirAnual!).toBeCloseTo(out.indicadores.tirAnual!, 8);
+      expect(r.moic!).toBeCloseTo(out.indicadores.moic!, 8);
+      // O fluxo dele é o fluxo do investidor em escala.
+      r.fluxoPorMes.forEach((v, k) => expect(v).toBeCloseTo(0.5 * out.fluxoInvestidor[k], 6));
+    }
+  });
+
+  it('mesmo valor em meses diferentes: quem aporta DEPOIS tem TIR maior', () => {
+    // A verificação que separa este item de um rateio pro-rata disfarçado: com a
+    // fração de capital idêntica, só a DATA muda — e a TIR precisa reagir a ela.
+    const out = calcular(
+      comRegra('cronograma_socio', [
+        socio('Cedo', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 400_000 }] }),
+        socio('Tarde', 0.5, { aportes: [{ ordem: 0, mes: 6, valor: 400_000 }] }),
+      ]),
+    );
+    const [cedo, tarde] = out.rateioSocios;
+    // Mesmo capital e mesma devolução: a única diferença é o mês.
+    expect(cedo.capital).toBeCloseTo(tarde.capital, 6);
+    expect(cedo.total).toBeCloseTo(tarde.total, 6);
+    expect(cedo.moic!).toBeCloseTo(tarde.moic!, 8);
+    // …e ainda assim as TIRs divergem, porque o dinheiro ficou parado mais tempo.
+    expect(tarde.tirMensal!).toBeGreaterThan(cedo.tirMensal!);
+    expect(tarde.xirr!).toBeGreaterThan(cedo.xirr!);
+    // E as duas divergem da TIR geral, que trata o projeto como um sócio só.
+    expect(cedo.tirMensal).not.toBeCloseTo(out.indicadores.tirMensal!, 6);
+    expect(tarde.tirMensal).not.toBeCloseTo(out.indicadores.tirMensal!, 6);
+    fechaChamadas(out);
+    fechaDevolucoes(out);
+    fechaTotalDistribuido(out);
+  });
+
+  it('cronograma_socio: o equityCall do mês é a SOMA dos aportes daquele mês', () => {
+    const out = calcular(
+      comRegra('cronograma_socio', [
+        socio('S1', 0.5, { aportes: [{ ordem: 0, mes: 2, valor: 250_000 }] }),
+        socio('S2', 0.5, { aportes: [{ ordem: 0, mes: 2, valor: 150_000 }, { ordem: 1, mes: 9, valor: 100_000 }] }),
+      ]),
+    );
+    expect(out.meses[1].equityCall).toBeCloseTo(400_000, 6);
+    expect(out.meses[8].equityCall).toBeCloseTo(100_000, 6);
+    expect(out.meses[0].equityCall).toBe(0);
+    expect(out.apuracao.equityTotal).toBeCloseTo(500_000, 6);
+    // A fração de capital é DERIVADA do que cada um pôs.
+    expect(out.rateioSocios[0].pctCapital).toBeCloseTo(250_000 / 500_000, 8);
+    expect(out.rateioSocios[1].pctCapital).toBeCloseTo(250_000 / 500_000, 8);
+  });
+
+  it('dois aportes do mesmo sócio no mesmo mês somam, não se sobrescrevem', () => {
+    const out = calcular(
+      comRegra('cronograma_socio', [
+        socio('S1', 1, {
+          aportes: [
+            { ordem: 0, mes: 3, valor: 200_000 },
+            { ordem: 1, mes: 3, valor: 300_000 },
+          ],
+        }),
+      ]),
+    );
+    expect(out.meses[2].equityCall).toBeCloseTo(500_000, 6);
+    expect(out.rateioSocios[0].chamadasPorMes[2]).toBeCloseTo(500_000, 6);
+  });
+
+  it('aporte no mês 99 de um projeto de 23 meses não é lançado e acende a conferência', () => {
+    const out = calcular(
+      comRegra('cronograma_socio', [
+        socio('S1', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 400_000 }, { ordem: 1, mes: 99, valor: 400_000 }] }),
+        socio('S2', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 400_000 }] }),
+      ]),
+    );
+    expect(out.cronograma.prazoTotal).toBe(23);
+    expect(out.apuracao.equityTotal).toBeCloseTo(800_000, 6);
+    const fora = out.conferencias.find((c) => c.chave === 'aportes_socio_fora_do_prazo');
+    expect(fora?.semaforo).toBe('ambar');
+    expect(fora?.valor).toBe('1');
+    // Mês fracionário e mês zero também ficam de fora, sem contaminar o fluxo.
+    const estranho = calcular(
+      comRegra('cronograma_socio', [
+        socio('S1', 1, { aportes: [{ ordem: 0, mes: 5.5, valor: 100 }, { ordem: 1, mes: 0, valor: 100 }] }),
+      ]),
+    );
+    expect(estranho.apuracao.equityTotal).toBe(0);
+    expect(estranho.meses.every((m) => Number.isFinite(m.equityCall))).toBe(true);
+  });
+
+  it('cronograma_socio ignora o override de equity_call — e é a única exceção', () => {
+    const base = comRegra('cronograma_socio', [
+      socio('S1', 1, { aportes: [{ ordem: 0, mes: 1, valor: 500_000 }] }),
+    ]);
+    const semOverride = calcular(base);
+    const comOverride = calcular({
+      ...base,
+      overrides: [{ mes: 1, linha: 'equity_call', valor: 9_999_999 }],
+    });
+    // O override NÃO entra: o motor não teria a quem atribuir o valor, e a
+    // identidade Σ chamadas = equityCall quebraria.
+    expect(comOverride.meses[0].equityCall).toBeCloseTo(500_000, 6);
+    expect(JSON.stringify(comOverride.meses)).toBe(JSON.stringify(semOverride.meses));
+    fechaChamadas(comOverride);
+    // Nas outras regras o override continua vencendo, como sempre.
+    const porParticipacao = calcular({
+      ...comRegra('participacao', [socio('S1', 1)]),
+      overrides: [{ mes: 1, linha: 'equity_call', valor: 9_999_999 }],
+    });
+    expect(porParticipacao.meses[0].equityCall).toBeCloseTo(9_999_999, 6);
+  });
+
+  it('a devolução é capital primeiro, lucro depois — e não um waterfall', () => {
+    const out = calcular(
+      comRegra('cronograma_socio', [
+        socio('S1', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 600_000 }] }),
+        socio('S2', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 200_000 }] }),
+      ]),
+    );
+    const [a, b] = out.rateioSocios;
+    const mesSaida = out.cronograma.mesSaida - 1;
+    // Camada 1: cada um recupera exatamente o que pôs.
+    // Camada 2: o que sobra vai por PARTICIPAÇÃO, meio a meio.
+    const lucroCadaUm = 0.5 * out.apuracao.lucroInvestidores;
+    expect(a.total).toBeCloseTo(600_000 + lucroCadaUm, 4);
+    expect(b.total).toBeCloseTo(200_000 + lucroCadaUm, 4);
+    expect(a.lucro).toBeCloseTo(lucroCadaUm, 4);
+    expect(b.lucro).toBeCloseTo(lucroCadaUm, 4);
+    // Tudo acontece no mês da saída, que é onde a distribuição é lançada.
+    expect(a.devolucoesPorMes[mesSaida]).toBeCloseTo(a.total, 4);
+    // Quem pôs menos capital para o mesmo lucro tem MOIC e ROI maiores.
+    expect(b.moic!).toBeGreaterThan(a.moic!);
+    expect(b.roi!).toBeGreaterThan(a.roi!);
+  });
+
+  it('sócio que entra depois da distribuição não é reembolsado antes de aportar', () => {
+    // A camada de capital olha o saldo NAQUELE mês, não o capital do projeto
+    // inteiro: ninguém recebe de volta um dinheiro que ainda não pôs.
+    const base = comRegra('cronograma_socio', [
+      socio('S1', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 500_000 }] }),
+      socio('S2', 0.5, { aportes: [{ ordem: 0, mes: 20, valor: 500_000 }] }),
+    ]);
+    base.overrides = [{ mes: 10, linha: 'distribution', valor: 200_000 }];
+    const out = calcular(base);
+    // No mês 10 só S1 tem capital em risco: a devolução é toda dele.
+    expect(out.rateioSocios[0].devolucoesPorMes[9]).toBeCloseTo(200_000, 4);
+    expect(out.rateioSocios[1].devolucoesPorMes[9]).toBe(0);
+    // A identidade por MÊS vale mesmo aqui. A identidade contra a apuração não:
+    // o override distribuiu $200.000 que `totalDistribuido` não conhece, e é o
+    // fluxo que manda no que o sócio recebeu.
+    fechaDevolucoes(out);
+    expect(soma(out.rateioSocios.map((r) => r.total))).toBeCloseTo(
+      out.apuracao.totalDistribuido + 200_000,
+      4,
+    );
+  });
+
+  it('sem sócio nenhum o rateio é lista vazia, e nada estoura', () => {
+    const out = calcular(comRegra('participacao', []));
+    expect(out.rateioSocios).toEqual([]);
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+    expect(semaforo(out, 'soma_participacoes')).toBe('ambar');
+  });
+
+  it('pct_capital que não soma 100% é vermelho e BLOQUEIA o salvamento', () => {
+    const out = calcular(
+      comRegra('pct_capital', [
+        socio('S1', 0.5, { pctCapital: 0.5 }),
+        socio('S2', 0.5, { pctCapital: 0.3 }),
+      ]),
+    );
+    expect(semaforo(out, 'soma_pct_capital')).toBe('vermelho');
+    expect(bloqueiaSalvamento(out.conferencias).map((c) => c.chave)).toContain('soma_pct_capital');
+    // E na regra 'participacao' a conferência nem existe — nenhuma modelagem já
+    // gravada passa a ser bloqueada por ela.
+    expect(semaforo(referencia, 'soma_pct_capital')).toBeUndefined();
+    expect(bloqueiaSalvamento(referencia.conferencias)).toEqual([]);
+  });
+
+  it('sócio sem aporte no cronograma acende âmbar em vez de sumir', () => {
+    const out = calcular(
+      comRegra('cronograma_socio', [
+        socio('S1', 0.5, { aportes: [{ ordem: 0, mes: 1, valor: 800_000 }] }),
+        socio('S2', 0.5),
+      ]),
+    );
+    const c = out.conferencias.find((x) => x.chave === 'socio_sem_aporte');
+    expect(c?.semaforo).toBe('ambar');
+    expect(c?.detalhe).toContain('S2');
+    expect(out.rateioSocios[1].capital).toBe(0);
+    expect(out.rateioSocios[1].moic).toBeNull();
+  });
+
+  it('cronograma que não cobre a demanda deixa o caixa negativo e é acusado', () => {
+    const out = calcular(
+      comRegra('cronograma_socio', [socio('S1', 1, { aportes: [{ ordem: 0, mes: 1, valor: 1_000 }] })]),
+    );
+    const c = out.conferencias.find((x) => x.chave === 'caixa_minimo');
+    expect(c?.semaforo).toBe('vermelho');
+    expect(c?.detalhe).toContain('cronograma por sócio');
+    // Não há uma SEGUNDA conferência dizendo a mesma coisa.
+    expect(semaforo(out, 'aportes_socio_vs_demanda')).toBeUndefined();
+  });
+
+  it('a célula de aporte do fluxo fica somente leitura no cronograma por sócio', () => {
+    const porSocio = comRegra('cronograma_socio', [socio('S1', 1)]);
+    expect(editaPlanoDeAportes(porSocio, 'equity_call')).toBe(false);
+    expect(aporteSomenteLeitura(porSocio, 'equity_call')).toBe(true);
+    // Nas demais regras nada muda: com o plano ligado a célula edita a parcela.
+    const comPlano = comRegra('participacao', [socio('S1', 1)]);
+    comPlano.aportes = { ...comPlano.aportes!, modoAporte: 'plano' };
+    expect(editaPlanoDeAportes(comPlano, 'equity_call')).toBe(true);
+    expect(aporteSomenteLeitura(comPlano, 'equity_call')).toBe(false);
+    expect(aporteSomenteLeitura(porSocio, 'revenue')).toBe(false);
+  });
+});
+
+describe('29 — mapeamento do capital por sócio', () => {
+  it('DECIMAL como string vira número e o sub-select nulo vira lista vazia', () => {
+    const socios = mapearSocios([
+      {
+        id: 4,
+        nome: 'S1',
+        participacao_pct: '0.500000',
+        pct_capital: '0.700000',
+        aportes: [
+          { id: 9, ordem: '1', mes: '6', valor: '150000.00' },
+          { id: 8, ordem: '0', mes: '1', valor: '250000.00' },
+        ],
+      },
+      // Linha gravada antes da migration: sem `pct_capital` e sem `aportes`.
+      { id: 5, nome: 'S2', participacao_pct: '0.500000' },
+    ]);
+    expect(socios[0].pctCapital).toBe(0.7);
+    expect(socios[0].aportes).toEqual([
+      { id: 8, ordem: 0, mes: 1, valor: 250_000, observacao: null },
+      { id: 9, ordem: 1, mes: 6, valor: 150_000, observacao: null },
+    ]);
+    // Somar os aportes mapeados dá número, não texto concatenado.
+    expect(socios[0].aportes.reduce((a, p) => a + p.valor, 0)).toBe(400_000);
+    // `null` sobrevive: é "usa a participação", diferente de "capital zero".
+    expect(socios[1].pctCapital).toBeNull();
+    expect(socios[1].aportes).toEqual([]);
+  });
+
+  it('pct_capital zero NÃO vira null — zero é uma escolha do usuário', () => {
+    const [s] = mapearSocios([{ id: 1, nome: 'X', participacao_pct: '0.5', pct_capital: '0.000000' }]);
+    expect(s.pctCapital).toBe(0);
+  });
+
+  it('regra ausente ou desconhecida cai em "participacao"', () => {
+    expect(mapearAportes({}).regraRateioCapital).toBe('participacao');
+    expect(mapearAportes({ regra_rateio_capital: 'xpto' }).regraRateioCapital).toBe('participacao');
+    expect(mapearAportes({ regra_rateio_capital: 'pct_capital' }).regraRateioCapital).toBe(
+      'pct_capital',
+    );
   });
 });

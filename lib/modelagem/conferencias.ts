@@ -2,10 +2,10 @@
  * Painel de validação da modelagem.
  *
  * Conferências NUNCA bloqueiam o cálculo — só sinalizam. Bloquear o SALVAMENTO é
- * outra coisa, e vale para TRÊS casos: soma das participações, divisão do lucro
- * fora de 100% e distribuição de unidades por fase que não fecha. A lista
- * canônica, com o critério de cada uma, está em `bloqueiaSalvamento` no fim do
- * arquivo — é lá que se mexe, não aqui.
+ * outra coisa, e vale para QUATRO casos: soma das participações, soma dos
+ * percentuais de capital, divisão do lucro fora de 100% e distribuição de
+ * unidades por fase que não fecha. A lista canônica, com o critério de cada uma,
+ * está em `bloqueiaSalvamento` no fim do arquivo — é lá que se mexe, não aqui.
  *
  * Nenhuma igualdade é comparada com `==`: tudo por tolerância. "Exatamente 100%"
  * não existe quando alguém divide participação em três.
@@ -18,6 +18,7 @@ import type {
   MesFluxo,
   ModelInput,
   Override,
+  RateioSocio,
   Semaforo,
 } from './tipos';
 import type { BasesDeCalculo, ResolucaoCustos } from './motor';
@@ -57,6 +58,14 @@ interface Contexto {
   vendasPorMes: Map<number, number>;
   /** Release PRETENDIDO no projeto inteiro, antes do clamp pelo saldo devedor. */
   releaseTotal: number;
+  /**
+   * Rateio por sócio já apurado pelo motor.
+   *
+   * Vem pronto em vez de ser recalculado aqui pelo mesmo motivo de `bases` e
+   * `resolucao`: a conferência tem de cobrar exatamente a fração que o cálculo
+   * usou, e recomputar abriria espaço para as duas contas divergirem.
+   */
+  rateioSocios: RateioSocio[];
 }
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
@@ -76,6 +85,12 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
     comoResolver: string,
   ) => lista.push({ chave, titulo, semaforo, valor, detalhe, comoResolver });
 
+  // ─── Rateio do capital entre os sócios ─────────────────────────────────────
+  // Lido aqui em cima porque `caixa_minimo` já precisa dele: com cronograma por
+  // sócio, um caixa negativo tem outra causa e outra saída.
+  const regraCapital = input.aportes?.regraRateioCapital ?? 'participacao';
+  const porCronogramaDeSocio = regraCapital === 'cronograma_socio';
+
   // ─── Caixa mínimo acumulado ────────────────────────────────────────────────
   const caixaMinimo = meses.length ? Math.min(...meses.map((m) => m.caixaAcumulado)) : 0;
   const mesDoMinimo = meses.find((m) => m.caixaAcumulado === caixaMinimo)?.mes ?? 0;
@@ -85,11 +100,20 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
     caixaMinimo < -TOLERANCIA ? 'vermelho' : caixaMinimo < colchao - TOLERANCIA ? 'ambar' : 'verde',
     dinheiro(caixaMinimo),
     caixaMinimo < -TOLERANCIA
-      ? `O caixa fica negativo no mês ${mesDoMinimo}.`
+      ? // Com cronograma por sócio o aporte do mês deixa de ser resíduo de caixa:
+        // é a soma do que os sócios declararam. Um caixa negativo aqui significa
+        // que o cronograma dos sócios não cobre a demanda — que é exatamente o
+        // que `aportes_socio_vs_demanda` diria. Estender esta em vez de criar uma
+        // segunda evita o painel dizer duas vezes a mesma coisa.
+        porCronogramaDeSocio
+        ? `O caixa fica negativo no mês ${mesDoMinimo}: faltam ${dinheiro(Math.abs(caixaMinimo))}. Com o cronograma por sócio, o aporte do mês é a soma do que os sócios declararam — o motor não completa a diferença.`
+        : `O caixa fica negativo no mês ${mesDoMinimo}.`
       : caixaMinimo < colchao - TOLERANCIA
         ? `O caixa cai abaixo do colchão de ${dinheiro(colchao)} no mês ${mesDoMinimo}.`
         : 'O caixa nunca fica descoberto.',
-    'Aumente o aporte do mês, antecipe saque do financiamento ou reduza o colchão mínimo.',
+    porCronogramaDeSocio
+      ? 'Acrescente ou antecipe aportes na aba Sócios, antecipe saque do financiamento ou reduza o colchão mínimo.'
+      : 'Aumente o aporte do mês, antecipe saque do financiamento ou reduza o colchão mínimo.',
   );
 
   // ─── Saldo devedor final ───────────────────────────────────────────────────
@@ -123,6 +147,105 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
       : `As participações somam ${pct(somaPart)}.`,
     'Ajuste os percentuais até somar 100%. Enquanto não somar, o salvamento fica bloqueado.',
   );
+
+  // ─── Rateio do capital (migration 1763100000) ──────────────────────────────
+  // Restritas às regras NOVAS de propósito: com 'participacao' — o default e o
+  // estado de toda modelagem já gravada — `soma_pct_capital` e
+  // `socio_sem_aporte` são inalcançáveis, então nenhuma delas ganha item novo no
+  // painel. `capital_vs_participacao` fica verde ali por construção, já que as
+  // duas frações são a mesma.
+  const rateio = ctx.rateioSocios;
+
+  if (regraCapital === 'pct_capital') {
+    // Capital que não soma 100% reparte dinheiro que não existe — ou deixa parte
+    // do capital sem dono. É o mesmo critério de `soma_participacoes`, e por isso
+    // também bloqueia o salvamento.
+    const somaCapital = socios.reduce((a, s) => a + (s.pctCapital ?? s.participacaoPct ?? 0), 0);
+    add(
+      'soma_pct_capital',
+      'Soma dos percentuais de capital',
+      socios.length === 0
+        ? 'ambar'
+        : Math.abs(somaCapital - 1) <= TOL_PARTICIPACAO
+          ? 'verde'
+          : 'vermelho',
+      socios.length === 0 ? 'sem sócios' : pct(somaCapital),
+      socios.length === 0
+        ? 'Nenhum sócio cadastrado — não há como repartir o capital.'
+        : `Os percentuais de capital somam ${pct(somaCapital)}. Sócio sem percentual próprio entra com a participação dele.`,
+      'Ajuste os percentuais de capital até somar 100%. Enquanto não somarem, o salvamento fica bloqueado.',
+    );
+  }
+
+  // Divergência entre capital e participação NÃO é erro: é a negociação. Só
+  // precisa estar visível, porque é ela que faz a TIR de um sócio diferir da do
+  // outro — e ninguém deveria descobrir isso lendo a tabela de indicadores.
+  //
+  // Restrita às regras NOVAS pelo mesmo motivo das demais: em 'participacao' a
+  // fração de capital É a participação, então a conferência seria verde por
+  // construção — e ainda assim apareceria como item novo no painel de toda
+  // modelagem já salva, que é justamente o que este módulo não faz.
+  const TOL_DIVERGENCIA = 0.01; // 1 ponto percentual
+  const divergentes = rateio.filter(
+    (r) => Math.abs(r.pctCapital - r.participacaoPct) > TOL_DIVERGENCIA,
+  );
+  if (regraCapital !== 'participacao') {
+  add(
+    'capital_vs_participacao',
+    'Capital diferente da participação',
+    divergentes.length > 0 ? 'ambar' : 'verde',
+    `${divergentes.length}`,
+    divergentes.length > 0
+      ? `${divergentes
+          .map(
+            (r, i) =>
+              `${r.nome || `Sócio ${i + 1}`}: ${pct(r.pctCapital)} do capital contra ${pct(
+                r.participacaoPct,
+              )} de participação`,
+          )
+          .join('; ')}. Não é erro — é a negociação. Só saiba que quem põe mais capital e recebe o mesmo lucro tem retorno menor.`
+      : 'Cada sócio entra com a mesma fração que tem na sociedade.',
+    'Se a divergência não é intencional, iguale o percentual de capital à participação na aba Sócios.',
+  );
+  }
+
+  if (porCronogramaDeSocio) {
+    // Sócio sem aporte nenhum: ou a negociação é essa, ou faltou lançar. O motor
+    // não decide — e o capital dele fica zero, com MOIC e TIR nulos.
+    const semAporte = socios.filter((s) => (s.aportes ?? []).length === 0);
+    add(
+      'socio_sem_aporte',
+      'Sócio sem aporte lançado',
+      semAporte.length > 0 ? 'ambar' : 'verde',
+      `${semAporte.length}`,
+      semAporte.length > 0
+        ? `${semAporte
+            .map((s, i) => s.nome || `Sócio ${i + 1}`)
+            .join('; ')} — nenhum aporte lançado. O capital deles fica zerado, e MOIC, ROI e TIR ficam sem denominador.`
+        : 'Todos os sócios têm aporte lançado.',
+      'Lance os aportes na aba Sócios, ou troque a regra de rateio do capital se a intenção é repartir por percentual.',
+    );
+
+    // Aporte além do prazo não é lançado em mês nenhum — o dinheiro não some do
+    // cadastro, mas não entra no fluxo. Mesma leitura de
+    // `aporte_parcela_fora_prazo` e `custo_parcelas_fora_do_prazo`.
+    const foraDoPrazo = socios.flatMap((s) =>
+      (s.aportes ?? [])
+        .filter((a) => !Number.isInteger(a.mes) || a.mes < 1 || a.mes > cronograma.prazoTotal)
+        .map((a) => ({ s, a })),
+    );
+    const valorFora = foraDoPrazo.reduce((acc, x) => acc + (x.a.valor || 0), 0);
+    add(
+      'aportes_socio_fora_do_prazo',
+      'Aportes de sócio fora do prazo',
+      foraDoPrazo.length > 0 ? 'ambar' : 'verde',
+      `${foraDoPrazo.length}`,
+      foraDoPrazo.length > 0
+        ? `${foraDoPrazo.length} aporte(s) somando ${dinheiro(valorFora)} caem fora dos ${cronograma.prazoTotal} meses do cronograma: ficam guardados, inativos, e não entram no fluxo.`
+        : 'Todos os aportes caem dentro do cronograma.',
+      'Mova os aportes para meses dentro do prazo ou aumente o cronograma. O sistema não apaga aporte nenhum sozinho.',
+    );
+  }
 
   // ─── Divisão do lucro ──────────────────────────────────────────────────────
   const somaLucro = (rec.lucroInvestidoresPct || 0) + (rec.lucroSponsorPct || 0);
@@ -877,23 +1000,35 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
 }
 
 /**
- * Só estes TRÊS casos impedem SALVAR. Todo o resto é sinalização — o cálculo
+ * Só estes QUATRO casos impedem SALVAR. Todo o resto é sinalização — o cálculo
  * continua rodando e devolvendo resultado mesmo com conferência vermelha.
  *
- * O critério é o mesmo nos três: são inputs em que gravar o estado inconsistente
+ * O critério é o mesmo nos quatro: são inputs em que gravar o estado inconsistente
  * produziria uma modelagem que ninguém consegue interpretar depois.
  *
- *   soma_participacoes — rateio que não soma 100% distribui capital que não existe;
- *   divisao_lucro      — idem para o lucro entre investidores e sponsor;
+ *   soma_participacoes — rateio que não soma 100% distribui LUCRO que não existe;
+ *   soma_pct_capital   — idem para o CAPITAL, na regra 'pct_capital': a fração de
+ *                        cada sócio multiplica o equity_call de todo mês, então
+ *                        um total ≠ 100% produz rateio errado em toda a tela —
+ *                        capital, MOIC, ROI e TIR de cada sócio;
+ *   divisao_lucro      — idem para a divisão entre investidores e sponsor;
  *   alocacao_fases     — unidade não alocada some do fluxo: a modelagem passaria a
  *                        mostrar um custo de obra menor que o das próprias
  *                        tipologias, sem nada na tela explicando a diferença.
  *
- * A terceira entrou por decisão explícita do usuário, que definiu a distribuição
+ * A quarta entrou por decisão explícita do usuário, que definiu a distribuição
  * por fase como obrigatória quando o projeto é faseado. Sem esta lista, quem ler
  * o arquivo depois vai achar que é bug — não é.
+ *
+ * `soma_pct_capital` só existe na regra 'pct_capital', então nenhuma modelagem
+ * já gravada passa a ser bloqueada por ela.
  */
 export function bloqueiaSalvamento(conferencias: Conferencia[]): Conferencia[] {
-  const BLOQUEANTES = ['soma_participacoes', 'divisao_lucro', 'alocacao_fases'];
+  const BLOQUEANTES = [
+    'soma_participacoes',
+    'soma_pct_capital',
+    'divisao_lucro',
+    'alocacao_fases',
+  ];
   return conferencias.filter((c) => BLOQUEANTES.includes(c.chave) && c.semaforo === 'vermelho');
 }

@@ -505,22 +505,30 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
   // ── 11 · Quadro de investidores ───────────────────────────────────────────
   ctx.ensureSpace(30);
   drawSectionTitle(ctx, '', 'Quadro de Investidores', 'title');
+  // MOIC e TIR saem POR SÓCIO, não do projeto: desde a migration 1763100000 os
+  // dois números deixam de ser iguais para todos quando o capital ou as datas
+  // divergem. `% capital` entra ao lado da participação porque é a coluna que
+  // explica a diferença.
   const colsSocios = distribuir([
-    { label: 'Sócio', width: 56, align: 'left' },
-    { label: 'Participação', width: 24, align: 'right' },
-    { label: 'Capital', width: 26, align: 'right' },
-    { label: 'Lucro', width: 26, align: 'right' },
-    { label: 'Total', width: 26, align: 'right' },
-    { label: 'MOIC', width: 20, align: 'right' },
+    { label: 'Sócio', width: 46, align: 'left' },
+    { label: 'Participação', width: 20, align: 'right' },
+    { label: '% capital', width: 18, align: 'right' },
+    { label: 'Capital efetivo', width: 24, align: 'right' },
+    { label: 'Lucro', width: 22, align: 'right' },
+    { label: 'Total', width: 22, align: 'right' },
+    { label: 'MOIC', width: 16, align: 'right' },
+    { label: 'TIR a.a.', width: 18, align: 'right' },
   ], ctx.contentWidth);
   const linhasSocios: LinhaTabela[] = resultado.rateioSocios.map((s, i) => ({
     celulas: [
       s.nome || `Sócio ${i + 1}`,
       percentual(s.participacaoPct, 2),
+      percentual(s.pctCapital, 2),
       dc(s.capital),
       dc(s.lucro),
       { texto: dc(s.total), negrito: true },
-      ouTraco(multiplo(ind.moic)),
+      ouTraco(multiplo(s.moic)),
+      ouTraco(percentual(s.tirAnual)),
     ],
   }));
   if (resultado.rateioSocios.length > 0) {
@@ -528,8 +536,18 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
     const somaLucroSocios = resultado.rateioSocios.reduce((a, s) => a + s.lucro, 0);
     const somaTotal = resultado.rateioSocios.reduce((a, s) => a + s.total, 0);
     const somaPart = resultado.rateioSocios.reduce((a, s) => a + s.participacaoPct, 0);
+    const somaPctCapital = resultado.rateioSocios.reduce((a, s) => a + s.pctCapital, 0);
     linhasSocios.push({
-      celulas: ['Total', percentual(somaPart, 2), dc(somaCapital), dc(somaLucroSocios), dc(somaTotal), ''],
+      celulas: [
+        'Total',
+        percentual(somaPart, 2),
+        percentual(somaPctCapital, 2),
+        dc(somaCapital),
+        dc(somaLucroSocios),
+        dc(somaTotal),
+        '',
+        '',
+      ],
       fundo: C.light, negrito: true, reguaSuperior: true, cor: C.navy,
     });
   }

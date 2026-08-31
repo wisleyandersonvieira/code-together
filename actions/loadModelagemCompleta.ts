@@ -51,10 +51,17 @@ function loadModelagemCompleta() {
           SELECT json_agg(bc ORDER BY bc.mes)
           FROM modelagem_benchmark_curva bc WHERE bc.modelagem_id = m.id
         ) AS benchmark_curva,
-        (
-          SELECT json_agg(s ORDER BY s.ordem, s.id)
-          FROM modelagem_socios s WHERE s.modelagem_id = m.id
-        ) AS socios,
+        -- Os aportes vêm ANINHADOS dentro do sócio, não como segunda lista.
+        -- Cruzar duas listas por socio_id no cliente é justamente onde o aporte
+        -- de um sócio recém-criado se perderia; aninhado, ele chega junto com o
+        -- dono. Sem aporte nenhum o sub-select devolve '[]', nunca NULL.
+        (SELECT json_agg(s2 ORDER BY s2.ordem, s2.id) FROM (
+           SELECT s.*, (
+             SELECT COALESCE(json_agg(a ORDER BY a.ordem, a.mes), '[]'::json)
+             FROM modelagem_socio_aportes a WHERE a.socio_id = s.id
+           ) AS aportes
+           FROM modelagem_socios s WHERE s.modelagem_id = m.id
+         ) s2) AS socios,
         (
           SELECT row_to_json(r) FROM modelagem_receita r WHERE r.modelagem_id = m.id
         ) AS receita,

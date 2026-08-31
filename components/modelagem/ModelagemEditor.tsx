@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 import {
   bloqueiaSalvamento,
   calcular,
+  aporteSomenteLeitura,
+  AVISO_APORTE_POR_SOCIO,
   comParcelaNoMes,
   editaPlanoDeAportes,
   mapearModelInput,
@@ -49,6 +51,10 @@ import deleteModelagemCustoParcelasDoCustoAction from '@/actions/deleteModelagem
 import createModelagemSocioAction from '@/actions/createModelagemSocio';
 import updateModelagemSocioAction from '@/actions/updateModelagemSocio';
 import deleteModelagemSocioAction from '@/actions/deleteModelagemSocio';
+import createModelagemSocioAporteAction from '@/actions/createModelagemSocioAporte';
+import updateModelagemSocioAporteAction from '@/actions/updateModelagemSocioAporte';
+import deleteModelagemSocioAporteAction from '@/actions/deleteModelagemSocioAporte';
+import deleteModelagemSocioAportesDoSocioAction from '@/actions/deleteModelagemSocioAportesDoSocio';
 import saveModelagemAportesAction from '@/actions/saveModelagemAportes';
 import createModelagemAporteParcelaAction from '@/actions/createModelagemAporteParcela';
 import updateModelagemAporteParcelaAction from '@/actions/updateModelagemAporteParcela';
@@ -133,6 +139,10 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [criarSocio] = useMutateAction(createModelagemSocioAction);
   const [atualizarSocio] = useMutateAction(updateModelagemSocioAction);
   const [removerSocio] = useMutateAction(deleteModelagemSocioAction);
+  const [criarAporteSocio] = useMutateAction(createModelagemSocioAporteAction);
+  const [atualizarAporteSocio] = useMutateAction(updateModelagemSocioAporteAction);
+  const [removerAporteSocio] = useMutateAction(deleteModelagemSocioAporteAction);
+  const [removerAportesDoSocio] = useMutateAction(deleteModelagemSocioAportesDoSocioAction);
   const [salvarAportes] = useMutateAction(saveModelagemAportesAction);
   const [criarParcela] = useMutateAction(createModelagemAporteParcelaAction);
   const [atualizarParcela] = useMutateAction(updateModelagemAporteParcelaAction);
@@ -223,6 +233,16 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const aplicarOverride = async (mes: number, linha: LinhaFluxo, valor: number | null) => {
     if (!rascunho || cenarioId == null) return;
 
+    // Com cronograma por sócio a linha de aporte não aceita override: o motor
+    // não teria a quem atribuir o valor. Avisar em vez de ignorar em silêncio —
+    // silêncio aqui vira "o sistema não salva o que eu digito". A regra e a
+    // frase são únicas, em lib/modelagem/aportes.ts, para a tela e o toast não
+    // divergirem.
+    if (aporteSomenteLeitura(rascunho, linha)) {
+      toast({ title: 'Aporte por sócio', description: AVISO_APORTE_POR_SOCIO });
+      return;
+    }
+
     // A linha de aporte com o plano ligado NÃO vira override: ela edita a parcela
     // daquele mês. Override e plano são duas fontes para a mesma linha do fluxo;
     // manter as duas ativas seria criar sincronização onde tem de haver fonte única.
@@ -279,6 +299,13 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
 
   const reverterCelula = async (mes: number, linha: LinhaFluxo) => {
     if (!rascunho || cenarioId == null) return;
+
+    // Mesma guarda do aplicarOverride: não há o que reverter numa célula que
+    // nunca aceitou edição.
+    if (aporteSomenteLeitura(rascunho, linha)) {
+      toast({ title: 'Aporte por sócio', description: AVISO_APORTE_POR_SOCIO });
+      return;
+    }
 
     // Mesmo desvio do aplicarOverride, do outro lado: com o plano ligado, o que
     // se reverte na linha de aporte é a parcela. Com confirmação, porque parcela
@@ -460,13 +487,79 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         );
       }
 
-      await sincronizar(
-        rascunho.socios ?? [],
+      // `pctCapital` viaja como string vazia quando é nulo: a action usa NULLIF
+      // para devolvê-lo a NULL no banco, e nulo é "usa a participação" — que é
+      // diferente de zero, "não põe capital nenhum".
+      const pctCapitalParam = (s: { pctCapital?: number | null }) =>
+        s.pctCapital == null ? '' : String(s.pctCapital);
+      const sociosAtuais = rascunho.socios ?? [];
+      const idsSocios = await sincronizar(
+        sociosAtuais,
         original.socios ?? [],
-        (s, i) => criarSocio({ modelagemId, ordem: i, ...s, observacoes: '' }),
-        (s, i) => atualizarSocio({ id: s.id, ordem: i, ...s, observacoes: '' }),
+        (s, i) =>
+          criarSocio({ modelagemId, ordem: i, ...s, pctCapital: pctCapitalParam(s), observacoes: '' }),
+        (s, i) =>
+          atualizarSocio({ id: s.id, ordem: i, ...s, pctCapital: pctCapitalParam(s), observacoes: '' }),
         (id) => removerSocio({ id }),
       );
+
+      // Aportes por sócio (migration 1763100000). DEPOIS do sincronizar acima, e
+      // usando os ids que ele devolve: um sócio novo só tem id depois do INSERT,
+      // e sem essa ordem os aportes de um sócio recém-criado se perderiam no
+      // primeiro salvamento, em silêncio. É o mesmo cuidado das parcelas de custo.
+      //
+      // Sócio removido não precisa de nada: modelagem_socio_aportes.socio_id tem
+      // ON DELETE CASCADE.
+      const aportesOriginais = new Map<number, typeof sociosAtuais[number]['aportes']>();
+      for (const s of original.socios ?? []) {
+        if (s.id != null) aportesOriginais.set(s.id, s.aportes ?? []);
+      }
+      for (let i = 0; i < sociosAtuais.length; i++) {
+        const socioId = idsSocios[i];
+        // Sem id o INSERT do sócio falhou: não há a quem amarrar o aporte, e
+        // gravá-lo em outro sócio seria pior do que não gravar.
+        if (socioId == null) continue;
+        const atuais = sociosAtuais[i].aportes ?? [];
+        const anteriores = aportesOriginais.get(socioId) ?? [];
+        if (anteriores.length > 0 && atuais.length > 0 && atuais.every((a) => a.id == null)) {
+          // Assinatura do "gerar de novo": a lista inteira é nova. Um DELETE só
+          // no lugar de N DELETEs do diff por id.
+          await removerAportesDoSocio({ socioId });
+          for (let k = 0; k < atuais.length; k++) {
+            await criarAporteSocio({
+              modelagemId,
+              socioId,
+              ordem: k,
+              mes: atuais[k].mes,
+              valor: atuais[k].valor,
+              observacao: atuais[k].observacao ?? '',
+            });
+          }
+          continue;
+        }
+        await sincronizar(
+          atuais,
+          anteriores,
+          (a, k) =>
+            criarAporteSocio({
+              modelagemId,
+              socioId,
+              ordem: k,
+              mes: a.mes,
+              valor: a.valor,
+              observacao: a.observacao ?? '',
+            }),
+          (a, k) =>
+            atualizarAporteSocio({
+              id: a.id,
+              ordem: k,
+              mes: a.mes,
+              valor: a.valor,
+              observacao: a.observacao ?? '',
+            }),
+          (id) => removerAporteSocio({ id }),
+        );
+      }
 
       // Cabeçalho do plano de aportes. Vai antes das parcelas: se o INSERT do
       // cabeçalho falhar, não faz sentido gravar parcela nenhuma.
@@ -477,6 +570,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
           modoAporte: plano.modoAporte,
           aporteBaseTotal: plano.aporteBaseTotal,
           valorTotalAlvo: plano.valorTotalAlvo,
+          regraRateioCapital: plano.regraRateioCapital,
         });
         // As parcelas editadas pela linha do fluxo já foram gravadas na hora; as
         // editadas na aba entram aqui, pelo mesmo diff por id das demais listas.

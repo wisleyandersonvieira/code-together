@@ -19,7 +19,9 @@ import type {
   Override,
   ParcelaCusto,
   PlanoAportes,
+  RegraRateioCapital,
   Socio,
+  SocioAporte,
   Takedown,
   Unidade,
 } from './tipos';
@@ -30,6 +32,7 @@ import {
   GATILHOS_CUSTO,
   LINHAS_FLUXO,
   MODOS_AMORTIZACAO,
+  REGRAS_RATEIO_CAPITAL,
 } from './tipos';
 
 /** Número tolerante: string do Postgres, null, undefined ou '' viram `padrao`. */
@@ -125,6 +128,14 @@ export function mapearAportes(linha: unknown, parcelas?: unknown): PlanoAportes 
     aporteBaseTotal: num(a.aporte_base_total),
     valorTotalAlvo: num(a.valor_total_alvo),
     parcelas: mapearParcelasAporte(parcelas),
+    // 'participacao' é o default da coluna (migration 1763100000) e o que
+    // reproduz o rateio anterior para toda modelagem já gravada — inclusive as
+    // que nem têm linha em modelagem_aportes.
+    regraRateioCapital: REGRAS_RATEIO_CAPITAL.includes(
+      a.regra_rateio_capital as RegraRateioCapital,
+    )
+      ? (a.regra_rateio_capital as RegraRateioCapital)
+      : 'participacao',
   };
 }
 
@@ -287,12 +298,45 @@ export function mapearBenchmarkCurva(linhas: unknown): PontoBenchmark[] {
     .sort((a, b) => a.mes - b.mes);
 }
 
+/**
+ * Aportes de um sócio (`modelagem_socio_aportes`), sempre ordenados por mês.
+ *
+ * Sub-select ausente ou nulo vira LISTA VAZIA, nunca `undefined`: nenhum aporte é
+ * o estado de toda linha já gravada, e é o que mantém a regra 'participacao'
+ * calculando como antes.
+ *
+ * Dois aportes no mesmo mês são preservados os dois — o motor soma. Deduplicar
+ * aqui apagaria input do usuário em silêncio.
+ */
+export function mapearSocioAportes(linhas: unknown): SocioAporte[] {
+  return lista(linhas)
+    .map((a, i) => ({
+      id: num(a.id) || undefined,
+      ordem: Math.trunc(num(a.ordem, i)),
+      // DECIMAL(15,2) chega como STRING. Sem num(), "250000.00" somado aos demais
+      // aportes seria concatenação de texto e o equity do mês sairia absurdo — ou
+      // NaN — sem erro nenhum.
+      valor: num(a.valor),
+      mes: Math.max(1, Math.trunc(num(a.mes, 1))),
+      observacao: a.observacao == null ? null : String(a.observacao),
+    }))
+    .sort((a, b) => a.mes - b.mes || a.ordem - b.ordem);
+}
+
 export function mapearSocios(linhas: unknown): Socio[] {
   return lista(linhas).map((s) => ({
     id: num(s.id) || undefined,
     nome: texto(s.nome),
     participacaoPct: num(s.participacao_pct),
     cotaDisponivel: bool(s.cota_disponivel),
+    // `null` é diferente de zero aqui, e a distinção é o comportamento default:
+    // nulo é "usa participacao_pct", zero seria "não põe capital nenhum". Por
+    // isso `numeroOuNulo` e não `num`.
+    pctCapital: numeroOuNulo(s.pct_capital),
+    // Vêm ANINHADOS no sócio pelo `loadModelagemCompleta`, e não como segunda
+    // lista a ser cruzada por id: o cruzamento é justamente onde o aporte de um
+    // sócio recém-criado se perderia.
+    aportes: mapearSocioAportes(s.aportes),
   }));
 }
 

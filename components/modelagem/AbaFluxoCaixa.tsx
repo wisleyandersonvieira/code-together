@@ -12,7 +12,7 @@ import type {
   ModelInput,
   ModelOutput,
 } from '@/lib/modelagem';
-import { agruparCustosPorCategoria, ROTULO_CATEGORIA } from '@/lib/modelagem';
+import { agruparCustosPorCategoria, aporteSomenteLeitura, AVISO_APORTE_POR_SOCIO, ROTULO_CATEGORIA } from '@/lib/modelagem';
 import { dinheiroCurto, mesAno, paraNumero } from './formato';
 
 interface Props {
@@ -413,7 +413,13 @@ export function AbaFluxoCaixa({
                   </td>
 
                   {meses.map((m) => {
-                    const editavel = !!def.linha;
+                    // Com cronograma por sócio a linha de aporte é consequência da
+                    // aba Sócios: o valor do mês é a soma de aportes atribuídos a
+                    // sócios nomeados, e um número digitado aqui não diria de quem
+                    // é. A regra é a mesma que o motor usa — vem de
+                    // lib/modelagem/aportes.ts, não repetida aqui.
+                    const porSocio = !!def.linha && aporteSomenteLeitura(rascunho, def.linha);
+                    const editavel = !!def.linha && !porSocio;
                     const marcado = temOverride(m.mes, def.linha);
                     const emEdicao =
                       editando && def.linha && editando.mes === m.mes && editando.linha === def.linha;
@@ -447,13 +453,16 @@ export function AbaFluxoCaixa({
                           setEditando({ mes: m.mes, linha: def.linha! });
                         }}
                         onDoubleClick={() => {
+                          if (porSocio) return;
                           // Com o plano ligado a célula de aporte não tem override, mas
                           // tem parcela — e o duplo clique precisa dar conta dela também.
                           const reversivel = marcado || (planoLigado && def.linha === 'equity_call');
                           if (reversivel && def.linha) reverterCelula(m.mes, def.linha);
                         }}
                         title={
-                          marcado
+                          porSocio
+                            ? AVISO_APORTE_POR_SOCIO
+                            : marcado
                             ? `Manual. Valor automático: ${dinheiroCurto(automatico)}. Duplo clique reverte.`
                             : !editavel
                               ? 'Linha calculada — não recebe override'
@@ -464,6 +473,7 @@ export function AbaFluxoCaixa({
                         className={cn(
                           'relative border-b border-slate-100 px-2 py-1.5 text-right tabular-nums',
                           editavel && 'cursor-cell',
+                          porSocio && 'cursor-not-allowed',
                           marcado && 'bg-amber-50 font-medium text-amber-900',
                           !marcado && valor < 0 && 'text-red-600',
                           !editavel && 'text-slate-500',

@@ -36,6 +36,7 @@ import type {
   ModelOutput,
   Override,
   RateioSocio,
+  RegraRateioCapital,
   ResultadoUnidade,
   Unidade,
 } from './tipos';
@@ -499,6 +500,40 @@ export function calcular(input: ModelInput): ModelOutput {
     parcelasAcumuladas[m] = parcelasAcumuladas[m - 1] + (parcelaPorMes.get(m) ?? 0);
   }
 
+  // ─── Capital por sócio (migration 1763100000) ──────────────────────────────
+  // 'participacao' é o default e o comportamento de sempre; os outros dois
+  // caminhos são inalcançáveis para toda modelagem já gravada.
+  const regraCapital: RegraRateioCapital = input.aportes?.regraRateioCapital ?? 'participacao';
+
+  /**
+   * O que cada sócio aporta em cada mês, e o total do mês.
+   *
+   * A guarda de mês é a mesma de `lancar` nos custos: aporte fora de
+   * 1..prazoTotal NÃO é lançado, fica guardado no banco e vira conferência. Sem
+   * ela, `mes = 5.5` criaria uma propriedade solta no array — invisível no fluxo,
+   * mas contada como aportada.
+   *
+   * Dois aportes do mesmo sócio no mesmo mês SOMAM: é a mesma leitura dos
+   * takedowns e das parcelas de custo, e a única que não perde dinheiro do usuário.
+   */
+  const aporteDoSocioPorMes = socios.map(() => new Map<number, number>());
+  const aporteSociosPorMes = new Map<number, number>();
+  socios.forEach((s, i) => {
+    for (const a of s.aportes ?? []) {
+      const mes = Math.trunc(a.mes);
+      if (!Number.isInteger(a.mes) || mes < 1 || mes > prazoTotal) continue;
+      const v = a.valor || 0;
+      aporteDoSocioPorMes[i].set(mes, (aporteDoSocioPorMes[i].get(mes) ?? 0) + v);
+      aporteSociosPorMes.set(mes, (aporteSociosPorMes.get(mes) ?? 0) + v);
+    }
+  });
+
+  const aportesSociosAcumulados = new Array<number>(prazoTotal + 1).fill(0);
+  for (let m = 1; m <= prazoTotal; m++) {
+    aportesSociosAcumulados[m] =
+      aportesSociosAcumulados[m - 1] + (aporteSociosPorMes.get(m) ?? 0);
+  }
+
   /**
    * Equity disponível para a obra ATÉ o mês `m`.
    *
@@ -511,9 +546,14 @@ export function calcular(input: ModelInput): ModelOutput {
    * acumulada.
    */
   const equityDisponivelObraAte = (m: number) =>
-    modoAporte === 'plano'
-      ? Math.max(0, (parcelasAcumuladas[m] ?? 0) - terrenosTotal)
-      : equityDisponivelObra;
+    // Com cronograma por sócio a curva sai da soma dos aportes declarados — é a
+    // mesma lógica do modo 'plano', só muda a fonte. E vem ANTES dele porque em
+    // 'cronograma_socio' são os sócios que definem o aporte do mês.
+    regraCapital === 'cronograma_socio'
+      ? Math.max(0, (aportesSociosAcumulados[m] ?? 0) - terrenosTotal)
+      : modoAporte === 'plano'
+        ? Math.max(0, (parcelasAcumuladas[m] ?? 0) - terrenosTotal)
+        : equityDisponivelObra;
 
   // ─── Valor efetivo de cada custo adicional ─────────────────────────────────
   // Resolvido UMA vez, aqui, e reusado tanto nos subtotais por categoria quanto
@@ -1009,8 +1049,20 @@ export function calcular(input: ModelInput): ModelOutput {
       //    No modo 'plano' o mês sem parcela recebe ZERO e o caixa fica negativo
       //    se o plano não cobrir a demanda — é exatamente o que o usuário quer
       //    enxergar, e a conferência de caixa mínimo acusa.
+      //    A regra 'cronograma_socio' vem ANTES do override, e é a ÚNICA exceção
+      //    à invariante "override sempre vence" em todo o módulo. O motivo é que
+      //    ali o equity do mês não é um número solto: é a soma de aportes
+      //    atribuídos a sócios NOMEADOS, e um override não diz de quem é o
+      //    dinheiro. Aceitá-lo obrigaria o motor a adivinhar o dono — ou a
+      //    quebrar a identidade Σ chamadasPorMes = equityCall, que é justamente o
+      //    que garante que não há dinheiro aparecendo entre o projeto e os sócios.
+      //    A célula fica somente leitura no fluxo (ver `editaPlanoDeAportes`) e a
+      //    interface diz onde editar, em vez de aceitar em silêncio o que vai
+      //    ignorar.
       let equityCall: number;
-      if (temOverride(m, 'equity_call')) {
+      if (regraCapital === 'cronograma_socio') {
+        equityCall = aporteSociosPorMes.get(m) ?? 0;
+      } else if (temOverride(m, 'equity_call')) {
         equityCall = valorOverride(m, 'equity_call');
       } else if (modoAporte === 'plano') {
         equityCall = parcelaPorMes.get(m) ?? 0;
@@ -1213,18 +1265,139 @@ export function calcular(input: ModelInput): ModelOutput {
     margemPorUnidade: razao(lucroProjeto, unidadesTotal),
   };
 
-  // ─── Rateio por sócio — todos pro-rata ─────────────────────────────────────
-  // MOIC, ROI e TIR são idênticos para todos os sócios: só a escala muda.
-  const rateioSocios: RateioSocio[] = socios.map((s) => {
-    const p = s.participacaoPct || 0;
+  // ─── Rateio por sócio ──────────────────────────────────────────────────────
+  //
+  // ATENÇÃO, E ISTO É O QUE MAIS IMPORTA NESTE BLOCO: ISTO NÃO É PREFERRED
+  // RETURN, NÃO É CATCH-UP E NÃO É PROMOTE. É DEVOLUÇÃO DE CAPITAL SEGUIDA DE
+  // LUCRO POR PARTICIPAÇÃO — DUAS CAMADAS, NADA MAIS. UM WATERFALL DE VERDADE
+  // (HURDLE, TIERS, PROMOTE DO SPONSOR) É OUTRO PROJETO. QUEM LER ESTE CÓDIGO
+  // ACHANDO QUE JÁ TEM UM WATERFALL VAI PROMETER AO INVESTIDOR UM RETORNO QUE O
+  // MODELO NÃO CALCULA.
+  //
+  // Duas grandezas, e a confusão entre elas é o erro clássico:
+  //   `participacaoPct` governa o LUCRO;
+  //   `pctCapital` (ou o cronograma do sócio) governa o CAPITAL.
+  // Na regra 'participacao' as duas coincidem, e é por isso que o resultado de
+  // toda modelagem já gravada não muda: `pctCapital` cai em `participacaoPct` e
+  // `chamadasPorMes` volta a ser exatamente `p × equityCall`.
+
+  /**
+   * Fração efetiva do capital de cada sócio.
+   *
+   * Em 'cronograma_socio' não existe fração declarada: ela é DERIVADA do que o
+   * sócio de fato aportou. `razao` devolve null em denominador zero e aqui isso
+   * vira 0 — um NaN escapando daqui contaminaria capital, MOIC, ROI e TIR de
+   * todos os sócios em silêncio.
+   */
+  const capitalDoSocio = socios.map((s, i) =>
+    regraCapital === 'cronograma_socio'
+      ? soma(meses.map((x) => aporteDoSocioPorMes[i].get(x.mes) ?? 0))
+      : 0,
+  );
+  const fracaoCapital = socios.map((s, i) => {
+    if (regraCapital === 'cronograma_socio') {
+      return razao(capitalDoSocio[i], equityTotal) ?? 0;
+    }
+    if (regraCapital === 'pct_capital') {
+      // `null` = "usa a participação"; `0` = "não põe capital nenhum". A
+      // distinção é a razão de `pctCapital` ser nullable no banco.
+      return s.pctCapital ?? s.participacaoPct ?? 0;
+    }
+    return s.participacaoPct || 0;
+  });
+
+  /**
+   * Aporte REAL de cada sócio em cada mês.
+   *
+   * Identidade que o teste cobra: para todo mês, Σ chamadas de todos os sócios é
+   * exatamente `meses[m].equityCall`. Em 'cronograma_socio' isso vale por
+   * construção — o equity do mês É a soma dos aportes. Nas outras duas vale
+   * quando as frações somam 1, que é o que `soma_participacoes` e
+   * `soma_pct_capital` exigem em vermelho, bloqueando o salvamento.
+   */
+  const chamadasPorSocio = socios.map((s, i) =>
+    regraCapital === 'cronograma_socio'
+      ? meses.map((x) => aporteDoSocioPorMes[i].get(x.mes) ?? 0)
+      : meses.map((x) => fracaoCapital[i] * x.equityCall),
+  );
+
+  // ─── Devolução, mês a mês, em duas camadas ─────────────────────────────────
+  // 1ª camada: devolução de CAPITAL, pro-rata ao capital ainda não devolvido de
+  //            cada sócio NAQUELE momento — não ao capital total do projeto. Um
+  //            sócio que só entra no mês 20 não pode ser reembolsado no mês 10 de
+  //            um dinheiro que ainda não pôs.
+  // 2ª camada: o que sobra da distribuição do mês vai para o LUCRO, repartido por
+  //            `participacaoPct`.
+  //
+  // O aporte do mês entra no saldo ANTES da distribuição do mesmo mês: o dinheiro
+  // já está na conta do projeto quando a distribuição é calculada.
+  const devolucoesPorSocio = socios.map(() => meses.map(() => 0));
+  const lucroRecebido = socios.map(() => 0);
+  {
+    // Saldo de capital a devolver, por sócio, caminhando no tempo.
+    const saldo = socios.map(() => 0);
+    for (let k = 0; k < meses.length; k++) {
+      for (let i = 0; i < socios.length; i++) saldo[i] += chamadasPorSocio[i][k];
+
+      const disponivel = meses[k].distribution;
+      if (disponivel <= 0 || socios.length === 0) continue;
+
+      const saldoTotal = soma(saldo);
+      const pagoCapital = Math.min(disponivel, saldoTotal);
+      if (pagoCapital > 0 && saldoTotal > 0) {
+        for (let i = 0; i < socios.length; i++) {
+          const parte = (pagoCapital * saldo[i]) / saldoTotal;
+          saldo[i] -= parte;
+          devolucoesPorSocio[i][k] += parte;
+        }
+      }
+
+      // Sobra = lucro do mês. Repartido por PARTICIPAÇÃO, não por capital: é a
+      // outra grandeza, e é exatamente aqui que a distinção aparece no dinheiro.
+      //
+      // Sem normalizar por Σ participação de propósito: se as participações não
+      // somam 100%, a fatia que sobra não é de ninguém, e é isso que
+      // `soma_participacoes` acusa em vermelho — inventar um dono aqui esconderia
+      // o erro em vez de mostrá-lo.
+      const sobra = disponivel - pagoCapital;
+      if (sobra > 0) {
+        for (let i = 0; i < socios.length; i++) {
+          const parte = sobra * (socios[i].participacaoPct || 0);
+          lucroRecebido[i] += parte;
+          devolucoesPorSocio[i][k] += parte;
+        }
+      }
+    }
+  }
+
+  const rateioSocios: RateioSocio[] = socios.map((s, i) => {
+    const chamadas = chamadasPorSocio[i];
+    const devolucoes = devolucoesPorSocio[i];
+    const capital = soma(chamadas);
+    const total = soma(devolucoes);
+    // O fluxo DELE: o que recebeu menos o que pôs, mês a mês. É daqui que sai a
+    // TIR individual — e é por isso que dois sócios com o mesmo capital em datas
+    // diferentes têm TIRs diferentes, coisa que o rateio pro-rata não mostrava.
+    const fluxo = devolucoes.map((v, k) => v - chamadas[k]);
+    // Capital zero devolve null em tudo: `razao` e `tirMensal` já garantem isso,
+    // e é o que impede Infinity e NaN de chegarem à tela.
+    const tirDele = tirMensal(fluxo);
     return {
       nome: s.nome,
-      participacaoPct: p,
+      participacaoPct: s.participacaoPct || 0,
       cotaDisponivel: !!s.cotaDisponivel,
-      capital: p * equityTotal,
-      lucro: p * lucroInvestidores,
-      total: p * equityTotal + p * lucroInvestidores,
-      chamadasPorMes: meses.map((x) => p * x.equityCall),
+      pctCapital: fracaoCapital[i],
+      capital,
+      lucro: lucroRecebido[i],
+      total,
+      chamadasPorMes: chamadas,
+      devolucoesPorMes: devolucoes,
+      fluxoPorMes: fluxo,
+      moic: razao(total, capital),
+      roi: razao(lucroRecebido[i], capital),
+      tirMensal: tirDele,
+      tirAnual: anualizar(tirDele),
+      xirr: xirr(fluxo, meses.map((x) => x.data)),
     };
   });
 
@@ -1281,6 +1454,7 @@ export function calcular(input: ModelInput): ModelOutput {
     lancadoPorCusto,
     vendasPorMes,
     releaseTotal,
+    rateioSocios,
   });
 
   return {

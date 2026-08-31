@@ -286,6 +286,7 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
   abaAportes();
   abaJuros();
   abaInvestidores();
+  abaSociosDetalhe();
   abaRetorno();
   abaSensibilidade();
   abaConferencias();
@@ -1092,16 +1093,21 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
 
   // ── 8 · Quadro de Investidores ────────────────────────────────────────────
   function abaInvestidores() {
-    const larguras = [28, 14, 16, 16, 16, 10, 16, ...meses.map(() => 11.5)];
+    // Duas colunas novas (migration 1763100000): `% capital` ao lado da
+    // participação — é ela que explica MOIC e TIR diferentes entre sócios — e a
+    // TIR anual de cada um. As colunas de mês são a chamada de capital REAL.
+    const larguras = [28, 14, 12, 16, 16, 16, 10, 12, 16, ...meses.map(() => 11.5)];
     const ws = novaAba(wb, 'Quadro de Investidores', larguras);
     const ULT = 1 + larguras.length;
-    const COL_MES = 9;
+    const COL_MES = 11;
     tituloAba(ws, 1, 2, ULT, `${nome.toUpperCase()}  ·  QUADRO DE INVESTIDORES`,
-      'Rateio pro-rata e a chamada de capital de cada sócio, mês a mês.');
+      'A participação governa o lucro; o capital pode seguir outra regra. MOIC e TIR são de cada sócio.');
     const HEADER = 4;
     cabecalhoTabela(ws, HEADER, 2, [
-      { titulo: 'Sócio' }, { titulo: 'Participação', align: 'right' }, { titulo: 'Capital', align: 'right' },
+      { titulo: 'Sócio' }, { titulo: 'Participação', align: 'right' }, { titulo: '% capital', align: 'right' },
+      { titulo: 'Capital efetivo', align: 'right' },
       { titulo: 'Lucro', align: 'right' }, { titulo: 'Total', align: 'right' }, { titulo: 'MOIC', align: 'right' },
+      { titulo: 'TIR a.a.', align: 'right' },
       { titulo: 'Cota disponível', align: 'center' },
       ...meses.map((m) => ({ titulo: `M${m.mes}`, align: 'right' as const })),
     ]);
@@ -1126,14 +1132,26 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
       ws.getCell(l, 2).alignment = esq;
       ws.getCell(l, 3).value = s.participacaoPct;
       ws.getCell(l, 3).numFmt = FMT_PCT2;
-      ws.getCell(l, 4).value = s.capital;
-      ws.getCell(l, 5).value = s.lucro;
-      ws.getCell(l, 6).value = s.total;
-      for (const c of [4, 5, 6]) ws.getCell(l, c).numFmt = MOEDA;
-      const moic = ws.getCell(l, 7);
-      moic.value = ind.moic ?? '–';
-      if (ind.moic != null) moic.numFmt = FMT_MULT;
-      const cota = ws.getCell(l, 8);
+      const pctCap = ws.getCell(l, 4);
+      pctCap.value = s.pctCapital;
+      pctCap.numFmt = FMT_PCT2;
+      // Divergência acima de 1 p.p. destacada, como na tela: não é erro, é a
+      // negociação — mas quem lê a planilha precisa enxergar.
+      if (Math.abs(s.pctCapital - s.participacaoPct) > 0.01) {
+        pctCap.font = fonte({ bold: true, color: { argb: T.dourado } });
+      }
+      ws.getCell(l, 5).value = s.capital;
+      ws.getCell(l, 6).value = s.lucro;
+      ws.getCell(l, 7).value = s.total;
+      for (const c of [5, 6, 7]) ws.getCell(l, c).numFmt = MOEDA;
+      // MOIC e TIR DELE, não os do projeto.
+      const moic = ws.getCell(l, 8);
+      moic.value = s.moic ?? '–';
+      if (s.moic != null) moic.numFmt = FMT_MULT;
+      const tir = ws.getCell(l, 9);
+      tir.value = s.tirAnual ?? '–';
+      if (s.tirAnual != null) tir.numFmt = FMT_PCT2;
+      const cota = ws.getCell(l, 10);
       cota.value = s.cotaDisponivel ? 'SIM' : '–';
       cota.alignment = centro;
       cota.font = fonte({ bold: s.cotaDisponivel, color: { argb: s.cotaDisponivel ? T.dourado : T.cinza } });
@@ -1145,11 +1163,11 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
         cel.alignment = dir;
         cel.font = fonte();
       });
-      for (let c = 2; c <= 7; c++) {
+      for (let c = 2; c <= 9; c++) {
         ws.getCell(l, c).font = ws.getCell(l, c).font ?? fonte();
         if (c > 2) ws.getCell(l, c).alignment = dir;
       }
-      ws.getCell(l, 6).font = fonte({ bold: true });
+      ws.getCell(l, 7).font = fonte({ bold: true });
     });
 
     const ultima = primeira + resultado.rateioSocios.length - 1;
@@ -1157,11 +1175,13 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     if (resultado.rateioSocios.length > 0) {
       ws.getCell(totalLinha, 2).value = 'Total';
       ws.getCell(totalLinha, 2).alignment = esq;
-      for (let c = 3; c <= 6; c++) {
+      // MOIC e TIR NÃO são somados: taxa não soma. As colunas 8 e 9 ficam vazias
+      // no total de propósito.
+      for (let c = 3; c <= 7; c++) {
         const L = letra(ws, c);
         const cel = ws.getCell(totalLinha, c);
         cel.value = { formula: `SUM(${L}${primeira}:${L}${ultima})`, date1904: false };
-        cel.numFmt = c === 3 ? FMT_PCT2 : MOEDA;
+        cel.numFmt = c === 3 || c === 4 ? FMT_PCT2 : MOEDA;
         cel.alignment = dir;
       }
       for (let k = 0; k < meses.length; k++) {
@@ -1175,9 +1195,173 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     }
 
     nota(ws, totalLinha + 2, 2, ULT,
-      'MOIC, ROI e TIR são idênticos para todos os sócios — o rateio é pro-rata, o que varia é só a escala. A coluna "Cota disponível" marca o capital ainda por captar.');
+      'A devolução segue duas camadas: primeiro cada sócio recupera o capital que aportou, depois o lucro é repartido pela participação. NÃO há preferred return nem promote. MOIC e TIR são de cada sócio e divergem quando o capital ou as datas de aporte divergem. A coluna "Cota disponível" marca o capital ainda por captar.');
 
     ws.views = [{ state: 'frozen', xSplit: 2, ySplit: HEADER + 1, showGridLines: false }];
+    ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  }
+
+  // ── 8b · Extrato por sócio ────────────────────────────────────────────────
+  /**
+   * Uma aba POR SÓCIO até 8 sócios; acima disso, uma aba única com todos lado a
+   * lado.
+   *
+   * O limite não é estético: 20 sócios virariam 20 abas, e uma planilha assim
+   * demora para abrir e ninguém navega. O conteúdo é o mesmo dos dois jeitos —
+   * aporte, devolução e fluxo líquido mês a mês —, muda só o arranjo.
+   */
+  const LIMITE_ABAS_SOCIO = 8;
+
+  function abaSociosDetalhe() {
+    const socios = resultado.rateioSocios;
+    if (socios.length === 0) return;
+
+    const cabecalhoDoSocio = (ws: Worksheet, l: number, s: (typeof socios)[number]) => {
+      ws.getCell(l, 2).value = 'Capital aportado';
+      ws.getCell(l, 3).value = s.capital;
+      ws.getCell(l + 1, 2).value = 'Total recebido';
+      ws.getCell(l + 1, 3).value = s.total;
+      ws.getCell(l + 2, 2).value = 'Lucro';
+      ws.getCell(l + 2, 3).value = s.lucro;
+      for (const k of [0, 1, 2]) {
+        ws.getCell(l + k, 2).alignment = esq;
+        ws.getCell(l + k, 3).numFmt = MOEDA;
+        ws.getCell(l + k, 3).alignment = dir;
+      }
+      ws.getCell(l + 3, 2).value = 'Participação / % capital';
+      ws.getCell(l + 3, 2).alignment = esq;
+      const frac = ws.getCell(l + 3, 3);
+      frac.value = `${(s.participacaoPct * 100).toFixed(2)}%  /  ${(s.pctCapital * 100).toFixed(2)}%`;
+      frac.alignment = dir;
+      if (Math.abs(s.pctCapital - s.participacaoPct) > 0.01) {
+        frac.font = fonte({ bold: true, color: { argb: T.dourado } });
+      }
+      ws.getCell(l + 4, 2).value = 'MOIC / TIR a.a. / XIRR';
+      ws.getCell(l + 4, 2).alignment = esq;
+      const ind3 = ws.getCell(l + 4, 3);
+      ind3.value = `${s.moic == null ? '–' : `${s.moic.toFixed(2)}x`}  /  ${
+        s.tirAnual == null ? '–' : `${(s.tirAnual * 100).toFixed(2)}%`
+      }  /  ${s.xirr == null ? '–' : `${(s.xirr * 100).toFixed(2)}%`}`;
+      ind3.alignment = dir;
+      return l + 6;
+    };
+
+    if (socios.length <= LIMITE_ABAS_SOCIO) {
+      socios.forEach((s, i) => {
+        const rotulo = (s.nome || `Sócio ${i + 1}`).slice(0, 24);
+        // Nome de aba do Excel: máximo 31 caracteres e sem : \ / ? * [ ]
+        const ws = novaAba(wb, `Sócio · ${rotulo}`.replace(/[:\\/?*[\]]/g, ' ').slice(0, 31), [
+          10, 16, 18, 18, 18, 18,
+        ]);
+        const ULT = 7;
+        tituloAba(ws, 1, 2, ULT, `${(s.nome || `SÓCIO ${i + 1}`).toUpperCase()}  ·  EXTRATO`,
+          'Aporte, devolução e fluxo líquido mês a mês. É este fluxo que produz a TIR dele.');
+        let l = cabecalhoDoSocio(ws, 4, s);
+
+        const HEADER = l;
+        cabecalhoTabela(ws, HEADER, 2, [
+          { titulo: 'Mês' }, { titulo: 'Data', align: 'right' }, { titulo: 'Aporte', align: 'right' },
+          { titulo: 'Devolução', align: 'right' }, { titulo: 'Fluxo líquido', align: 'right' },
+          { titulo: 'Acumulado', align: 'right' },
+        ]);
+        l = HEADER + 1;
+        let acumulado = 0;
+        meses.forEach((m, k) => {
+          acumulado += s.fluxoPorMes[k] ?? 0;
+          ws.getCell(l, 2).value = m.mes;
+          ws.getCell(l, 2).alignment = dir;
+          const data = dataDoMes(m.data);
+          const cd = ws.getCell(l, 3);
+          cd.value = data ?? m.data;
+          if (data) cd.numFmt = FMT_MES;
+          cd.alignment = dir;
+          ws.getCell(l, 4).value = s.chamadasPorMes[k] ?? 0;
+          ws.getCell(l, 5).value = s.devolucoesPorMes[k] ?? 0;
+          ws.getCell(l, 6).value = s.fluxoPorMes[k] ?? 0;
+          ws.getCell(l, 7).value = acumulado;
+          for (const c of [4, 5, 6, 7]) {
+            ws.getCell(l, c).numFmt = MOEDA;
+            ws.getCell(l, c).alignment = dir;
+            ws.getCell(l, c).font = fonte();
+          }
+          l++;
+        });
+        const totalLinha = l;
+        ws.getCell(totalLinha, 2).value = 'Total';
+        ws.getCell(totalLinha, 2).alignment = esq;
+        for (const c of [4, 5, 6]) {
+          const L = letra(ws, c);
+          const cel = ws.getCell(totalLinha, c);
+          cel.value = { formula: `SUM(${L}${HEADER + 1}:${L}${totalLinha - 1})`, date1904: false };
+          cel.numFmt = MOEDA;
+          cel.alignment = dir;
+        }
+        estiloTotal(ws, totalLinha, 2, ULT);
+        nota(ws, totalLinha + 2, 2, ULT,
+          'A devolução segue duas camadas: primeiro o sócio recupera o capital que aportou, depois o lucro é repartido pela participação. NÃO há preferred return nem promote nesta modelagem.');
+        ws.views = [{ state: 'frozen', ySplit: HEADER, showGridLines: false }];
+      });
+      return;
+    }
+
+    // Acima do limite: uma aba só, com três colunas por sócio.
+    const larguras = [10, 16, ...socios.flatMap(() => [15, 15, 15])];
+    const ws = novaAba(wb, 'Sócios · Extrato', larguras);
+    const ULT = 1 + larguras.length;
+    tituloAba(ws, 1, 2, ULT, `${nome.toUpperCase()}  ·  EXTRATO POR SÓCIO`,
+      `${socios.length} sócios lado a lado — acima de ${LIMITE_ABAS_SOCIO} sócios uma aba por pessoa deixaria a planilha impossível de abrir.`);
+
+    const HEADER = 4;
+    // Primeira linha: o nome do sócio sobre as três colunas dele.
+    socios.forEach((s, i) => {
+      const de = 4 + i * 3;
+      barraSecao(ws, HEADER, de, de + 2, s.nome || `Sócio ${i + 1}`);
+    });
+    cabecalhoTabela(ws, HEADER + 1, 2, [
+      { titulo: 'Mês' }, { titulo: 'Data', align: 'right' },
+      ...socios.flatMap(() => [
+        { titulo: 'Aporte', align: 'right' as const },
+        { titulo: 'Devolução', align: 'right' as const },
+        { titulo: 'Fluxo', align: 'right' as const },
+      ]),
+    ]);
+
+    let l = HEADER + 2;
+    meses.forEach((m, k) => {
+      ws.getCell(l, 2).value = m.mes;
+      ws.getCell(l, 2).alignment = dir;
+      const data = dataDoMes(m.data);
+      const cd = ws.getCell(l, 3);
+      cd.value = data ?? m.data;
+      if (data) cd.numFmt = FMT_MES;
+      cd.alignment = dir;
+      socios.forEach((s, i) => {
+        const de = 4 + i * 3;
+        ws.getCell(l, de).value = s.chamadasPorMes[k] ?? 0;
+        ws.getCell(l, de + 1).value = s.devolucoesPorMes[k] ?? 0;
+        ws.getCell(l, de + 2).value = s.fluxoPorMes[k] ?? 0;
+        for (const c of [de, de + 1, de + 2]) {
+          ws.getCell(l, c).numFmt = MOEDA;
+          ws.getCell(l, c).alignment = dir;
+          ws.getCell(l, c).font = fonte();
+        }
+      });
+      l++;
+    });
+    const totalLinha = l;
+    ws.getCell(totalLinha, 2).value = 'Total';
+    ws.getCell(totalLinha, 2).alignment = esq;
+    for (let c = 4; c <= ULT; c++) {
+      const L = letra(ws, c);
+      const cel = ws.getCell(totalLinha, c);
+      cel.value = { formula: `SUM(${L}${HEADER + 2}:${L}${totalLinha - 1})`, date1904: false };
+      cel.numFmt = MOEDA;
+      cel.alignment = dir;
+    }
+    estiloTotal(ws, totalLinha, 2, ULT);
+    nota(ws, totalLinha + 2, 2, ULT,
+      'A devolução segue duas camadas: primeiro cada sócio recupera o capital que aportou, depois o lucro é repartido pela participação. NÃO há preferred return nem promote nesta modelagem.');
+    ws.views = [{ state: 'frozen', xSplit: 3, ySplit: HEADER + 1, showGridLines: false }];
     ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   }
 

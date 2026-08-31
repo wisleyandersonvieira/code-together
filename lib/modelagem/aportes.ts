@@ -15,6 +15,9 @@ export const PLANO_NEUTRO: PlanoAportes = {
   aporteBaseTotal: 0,
   valorTotalAlvo: 0,
   parcelas: [],
+  // 'participacao' é o default do banco (migration 1763100000) e o rateio de
+  // sempre: capital repartido pela participação de cada sócio.
+  regraRateioCapital: 'participacao',
 };
 
 /** Arredonda para centavo. Usado só onde o valor vai virar input gravado. */
@@ -29,8 +32,29 @@ const ordenar = (parcelas: AporteParcela[]) => [...parcelas].sort((a, b) => a.me
  * na mesma célula seria criar duas fontes para o mesmo número.
  */
 export function editaPlanoDeAportes(input: ModelInput, linha: LinhaFluxo): boolean {
-  return linha === 'equity_call' && input.aportes?.modoAporte === 'plano';
+  if (linha !== 'equity_call') return false;
+  // Com cronograma por sócio a célula não é editável por NENHUM dos dois
+  // caminhos: nem parcela, nem override. O valor do mês é a soma de aportes
+  // atribuídos a sócios nomeados, e um número digitado no fluxo não diz de quem
+  // é — atribuí-lo seria inventar dado. Ver `aporteSociosPorMes` no motor.
+  if (input.aportes?.regraRateioCapital === 'cronograma_socio') return false;
+  return input.aportes?.modoAporte === 'plano';
 }
+
+/**
+ * A célula de aporte do fluxo é somente leitura?
+ *
+ * Existe separada de `editaPlanoDeAportes` porque as duas respondem perguntas
+ * diferentes: aquela diz PARA ONDE vai a edição, esta diz se há edição possível.
+ * Sem ela, a tela teria de repetir a regra — e as duas divergiriam na primeira
+ * mudança.
+ */
+export function aporteSomenteLeitura(input: ModelInput, linha: LinhaFluxo): boolean {
+  return linha === 'equity_call' && input.aportes?.regraRateioCapital === 'cronograma_socio';
+}
+
+/** A frase única para o caso acima: a tela e o toast dizem a MESMA coisa. */
+export const AVISO_APORTE_POR_SOCIO = 'Aporte definido por sócio. Edite na aba Sócios.';
 
 /**
  * Lança o valor do mês como parcela. Não cria, não remove e não toca em override

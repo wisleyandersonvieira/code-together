@@ -401,14 +401,82 @@ export interface Financiamento {
   benchmarkCurva?: PontoBenchmark[];
 }
 
+/**
+ * Um aporte de capital de UM sócio (migration 1763100000).
+ *
+ * Dois aportes do mesmo sócio no mesmo mês SOMAM em vez de um sobrescrever o
+ * outro — mesma leitura dos takedowns e das parcelas de custo. Por isso a tabela
+ * não tem UNIQUE (socio_id, mes).
+ */
+export interface SocioAporte {
+  id?: number;
+  ordem: number;
+  /** Índice do mês no cronograma, 1..prazoTotal. Igual ao resto do módulo. */
+  mes: number;
+  valor: number;
+  observacao?: string | null;
+}
+
 export interface Socio {
   id?: number;
   nome: string;
-  /** Fração, não percentual: 0.5 = 50%. */
+  /**
+   * Fração, não percentual: 0.5 = 50%. Governa o LUCRO — e, só na regra
+   * 'participacao', também o capital.
+   */
   participacaoPct: number;
   /** Cota ainda não colocada. Continua no rateio pro-rata; a flag é só sinalização. */
   cotaDisponivel: boolean;
+  /**
+   * Fração do CAPITAL chamado. Só vale com `regraRateioCapital = 'pct_capital'`.
+   *
+   * `null` é diferente de zero e a distinção importa: `null` = "usa
+   * `participacaoPct`", que é o comportamento anterior à migration 1763100000;
+   * `0` = "este sócio não põe capital nenhum".
+   */
+  pctCapital?: number | null;
+  /**
+   * Cronograma próprio de capital. Só tem efeito com
+   * `regraRateioCapital = 'cronograma_socio'`; nas demais regras fica guardado e
+   * inativo — nunca apagado. Lista vazia é o estado de toda linha já gravada.
+   */
+  aportes: SocioAporte[];
 }
+
+/**
+ * Como o capital chamado se reparte entre os sócios.
+ *
+ * NÃO confundir com `participacaoPct`, que governa o LUCRO. Um sócio pode ter 30%
+ * da sociedade e ter posto 40% do dinheiro — é o caso das negociações individuais,
+ * e é a razão de existir desta regra.
+ *
+ * 'participacao' é o default do banco e o comportamento anterior à migration
+ * 1763100000: a fração de capital É a participação, e por isso MOIC, ROI e TIR
+ * saíam idênticos para todos os sócios.
+ */
+export type RegraRateioCapital = 'participacao' | 'pct_capital' | 'cronograma_socio';
+
+/** Chaves estáveis: são o CHECK de `modelagem_aportes.regra_rateio_capital`. */
+export const REGRAS_RATEIO_CAPITAL: RegraRateioCapital[] = [
+  'participacao',
+  'pct_capital',
+  'cronograma_socio',
+];
+
+export const ROTULO_REGRA_CAPITAL: Record<RegraRateioCapital, string> = {
+  participacao: 'Pela participação',
+  pct_capital: 'Por percentual de capital',
+  cronograma_socio: 'Cronograma por sócio',
+};
+
+export const EXPLICACAO_REGRA_CAPITAL: Record<RegraRateioCapital, string> = {
+  participacao:
+    'Cada sócio entra com a fatia igual à sua participação na sociedade.',
+  pct_capital:
+    'Cada sócio entra com uma fatia própria, que pode diferir da participação.',
+  cronograma_socio:
+    'Cada sócio tem seus próprios valores e meses de aporte.',
+};
 
 export type ModoAporte = 'demanda' | 'plano';
 
@@ -449,6 +517,16 @@ export interface PlanoAportes {
   /** Alvo declarado. Não é imposto — se as parcelas não somarem, acende âmbar. */
   valorTotalAlvo: number;
   parcelas?: AporteParcela[];
+  /**
+   * Como o capital se reparte entre os sócios (migration 1763100000).
+   *
+   * Ortogonal a `modoAporte`, que decide de ONDE vem o total do mês. Esta decide
+   * PARA QUEM ele vai — com uma exceção: em 'cronograma_socio' a soma dos aportes
+   * dos sócios passa a ser também a origem do total, e vence `modoAporte`.
+   *
+   * 'participacao' é o default e reproduz exatamente o rateio anterior.
+   */
+  regraRateioCapital: RegraRateioCapital;
 }
 
 /**
@@ -689,15 +767,42 @@ export interface Indicadores {
   margemPorUnidade: number | null;
 }
 
+/**
+ * O que cada sócio pôs, o que recebeu e a que taxa — apurado a partir do FLUXO,
+ * não de uma fração aplicada sobre a apuração.
+ *
+ * A diferença importa: com datas de aporte próprias, dois sócios com a mesma
+ * fração de capital têm TIRs diferentes, e nenhum número derivado de percentual
+ * sobre o total conseguiria mostrar isso.
+ */
 export interface RateioSocio {
   nome: string;
+  /** Governa o LUCRO. Continua sendo a participação na sociedade. */
   participacaoPct: number;
   cotaDisponivel: boolean;
+  /**
+   * Fração EFETIVA do capital do projeto, qualquer que seja a regra. Em
+   * 'participacao' é a própria `participacaoPct` — daí a não-regressão.
+   */
+  pctCapital: number;
+  /** Capital efetivamente aportado por ele: Σ `chamadasPorMes`. */
   capital: number;
+  /** Camada de lucro que ele recebeu. Com tudo automático, é p × lucroInvestidores. */
   lucro: number;
+  /** Capital devolvido + lucro. É Σ `devolucoesPorMes`. */
   total: number;
-  /** Chamada de capital do sócio mês a mês, alinhada com `meses`. */
+  /** Aporte REAL do sócio mês a mês, alinhado com `meses`. */
   chamadasPorMes: number[];
+  /** Quanto ele recebe em cada mês: devolução de capital + lucro. */
+  devolucoesPorMes: number[];
+  /** devoluções − chamadas. É a base da TIR DELE. */
+  fluxoPorMes: number[];
+  /** `null` — nunca Infinity, nunca NaN — quando o capital dele é zero. */
+  moic: number | null;
+  roi: number | null;
+  tirMensal: number | null;
+  tirAnual: number | null;
+  xirr: number | null;
 }
 
 export type RegraRateioUnidade = 'custo_direto' | 'preco_venda' | 'area';

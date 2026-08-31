@@ -26,6 +26,7 @@ const casoBase = (): ModelInput => ({
     modoAporte: 'demanda',
     aporteBaseTotal: 732_778,
     valorTotalAlvo: 0,
+    regraRateioCapital: 'participacao' as const,
   },
   financiamento: {
     taxaAnual: 0.095, feeEstruturacaoPct: 0.015, feeTiming: 'first_draw',
@@ -37,7 +38,7 @@ const casoBase = (): ModelInput => ({
     convencaoJuros: 'mensal_12', tipoTaxa: 'fixa', spread: 0, benchmarkNome: null,
     benchmarkPadrao: 0,
   },
-  socios: [{ nome: 'S1', participacaoPct: 1, cotaDisponivel: false }],
+  socios: [{ nome: 'S1', participacaoPct: 1, cotaDisponivel: false, aportes: [] }],
   receita: {
     comissaoPct: 0.06, custoCartorioPct: 0.02, modoVenda: 'single_exit', mesSaida: 23,
     lucroInvestidoresPct: 0.8, lucroSponsorPct: 0.2,
