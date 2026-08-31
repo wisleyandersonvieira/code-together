@@ -350,7 +350,38 @@ export interface AlocacaoFase {
   quantidade: number;
 }
 
-export type ModoVenda = 'single_exit' | 'per_unit' | 'manual';
+export type ModoVenda = 'single_exit' | 'per_unit' | 'manual' | 'takedown';
+
+/**
+ * Um lote de venda: N unidades de uma tipologia fechando num mês.
+ *
+ * É o que uma pro forma real chama de takedown — 3 ou 4 casas por mês, cada leva
+ * com seu preço. Substitui, para quem precisa escalonar, o `per_unit`, em que a
+ * tipologia inteira vende de uma vez.
+ *
+ * Índices, não ids — mesma convenção de `VendaUnidade` e `AlocacaoFase`. O banco
+ * guarda por id (`modelagem_takedowns`) e a conversão acontece em
+ * `mapearModelInput`, com o mesmo Map<id, índice> que a venda por unidade usa.
+ */
+export interface Takedown {
+  id?: number;
+  /** Índice da tipologia no array `unidades`. */
+  unidadeIndex: number;
+  /** Índice da fase no array `fases`. `null` = lote sem fase declarada. */
+  faseIndex?: number | null;
+  ordem: number;
+  /** Índice do cronograma, não data. */
+  mes: number;
+  /** Quantas unidades da tipologia fecham neste lote. Inteiro ≥ 1. */
+  quantidade: number;
+  /**
+   * Preço POR UNIDADE deste lote. ZERO significa "usar o preço da tipologia" —
+   * é o caso comum e o default do banco. Semântica declarada, não ausência de
+   * valor: um lote vendido a zero de verdade não existe.
+   */
+  precoUnitario: number;
+  observacao?: string | null;
+}
 
 export interface VendaUnidade {
   /** Índice da unidade no array `unidades` do input. */
@@ -367,6 +398,8 @@ export interface Receita {
   lucroInvestidoresPct: number;
   lucroSponsorPct: number;
   vendasPorUnidade?: VendaUnidade[];
+  /** Só tem efeito com `modoVenda = 'takedown'`. */
+  takedowns?: Takedown[];
 }
 
 /**
@@ -593,6 +626,18 @@ export interface ModelOutput {
   conferencias: Conferencia[];
   /** Fluxo do investidor por mês: distribution − equity_call. Base da TIR. */
   fluxoInvestidor: number[];
+  /**
+   * Quantas unidades fecham em cada mês, alinhado com `meses` (índice 0 = mês 1).
+   *
+   * Derivado do modo de venda: no takedown é Σ quantidade dos lotes daquele mês;
+   * no per_unit é a quantidade das tipologias que vendem ali; no single_exit é
+   * tudo no mês de saída; no manual é zero em toda parte, porque o usuário não
+   * declarou cronograma de venda nenhum.
+   *
+   * É a mesma grandeza que o gatilho de custo 'por_venda' usa para ratear impact
+   * fees — as duas leituras saem daqui, e por isso não podem divergir.
+   */
+  unidadesVendidasPorMes: number[];
   /** Quantas passadas o ponto fixo consumiu e se convergiu. */
   iteracoes: number;
   convergiu: boolean;

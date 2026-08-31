@@ -55,6 +55,9 @@ import deleteModelagemUnidadeFaseAction from '@/actions/deleteModelagemUnidadeFa
 import saveModelagemFinanciamentoAction from '@/actions/saveModelagemFinanciamento';
 import saveModelagemReceitaAction from '@/actions/saveModelagemReceita';
 import saveModelagemVendaUnidadeAction from '@/actions/saveModelagemVendaUnidade';
+import createModelagemTakedownAction from '@/actions/createModelagemTakedown';
+import updateModelagemTakedownAction from '@/actions/updateModelagemTakedown';
+import deleteModelagemTakedownAction from '@/actions/deleteModelagemTakedown';
 import upsertModelagemOverrideAction from '@/actions/upsertModelagemOverride';
 import deleteModelagemOverrideAction from '@/actions/deleteModelagemOverride';
 import deleteModelagemOverridesLinhaAction from '@/actions/deleteModelagemOverridesLinha';
@@ -127,6 +130,9 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [salvarFinanciamento] = useMutateAction(saveModelagemFinanciamentoAction);
   const [salvarReceita] = useMutateAction(saveModelagemReceitaAction);
   const [salvarVenda] = useMutateAction(saveModelagemVendaUnidadeAction);
+  const [criarTakedown] = useMutateAction(createModelagemTakedownAction);
+  const [atualizarTakedown] = useMutateAction(updateModelagemTakedownAction);
+  const [removerTakedown] = useMutateAction(deleteModelagemTakedownAction);
   const [gravarOverride] = useMutateAction(upsertModelagemOverrideAction);
   const [apagarOverride] = useMutateAction(deleteModelagemOverrideAction);
   const [apagarOverridesLinha] = useMutateAction(deleteModelagemOverridesLinhaAction);
@@ -460,6 +466,42 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
           await salvarVenda({ modelagemId, unidadeId: unidade.id, mesVenda: venda.mesVenda });
         }
       }
+
+      // Takedowns. Depois de tipologias e fases, porque grava por id dos dois — e
+      // pelo mesmo diff por id das demais listas, já que o lote TEM identidade
+      // própria (dois lotes da mesma tipologia no mesmo mês são legítimos, então
+      // o par (unidade, mês) não serve de chave).
+      //
+      // `faseId` fica nulo quando o lote não declara fase, ou quando declara uma
+      // fase ainda sem id gravado: o vínculo é opcional e a venda não pode deixar
+      // de ser salva por causa dele.
+      await sincronizar(
+        rascunho.receita.takedowns ?? [],
+        original.receita.takedowns ?? [],
+        (t, i) =>
+          criarTakedown({
+            modelagemId,
+            unidadeId: idsUnidades[t.unidadeIndex],
+            faseId: t.faseIndex == null ? null : (idsFases[t.faseIndex] ?? null),
+            ordem: i,
+            mes: t.mes,
+            quantidade: t.quantidade,
+            precoUnitario: t.precoUnitario,
+            observacao: t.observacao ?? '',
+          }),
+        (t, i) =>
+          atualizarTakedown({
+            id: t.id,
+            unidadeId: idsUnidades[t.unidadeIndex],
+            faseId: t.faseIndex == null ? null : (idsFases[t.faseIndex] ?? null),
+            ordem: i,
+            mes: t.mes,
+            quantidade: t.quantidade,
+            precoUnitario: t.precoUnitario,
+            observacao: t.observacao ?? '',
+          }),
+        (id) => removerTakedown({ id }),
+      );
 
       toast({ title: 'Modelagem salva' });
       recarregar();

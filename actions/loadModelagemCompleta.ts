@@ -51,6 +51,10 @@ function loadModelagemCompleta() {
           SELECT json_agg(v) FROM modelagem_vendas_unidade v WHERE v.modelagem_id = m.id
         ) AS vendas_unidade,
         (
+          SELECT json_agg(td ORDER BY td.ordem, td.mes, td.id)
+          FROM modelagem_takedowns td WHERE td.modelagem_id = m.id
+        ) AS takedowns,
+        (
           SELECT json_agg(cn ORDER BY cn.is_baseline DESC, cn.id)
           FROM modelagem_cenarios cn WHERE cn.modelagem_id = m.id
         ) AS cenarios,

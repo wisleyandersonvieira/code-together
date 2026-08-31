@@ -1850,3 +1850,312 @@ describe('14 — gatilho de vencimento do custo', () => {
     expect(custos[2].gatilho).toBe('cronograma');
   });
 });
+
+describe('15 — fases com orçamento e cronograma próprios', () => {
+  // Teste de NÃO-REGRESSÃO das fases: `usaFases = false` é o default da migration
+  // 1761000000, e com ele o motor segue pelo caminho de frente única.
+  //
+  // A verificação do item: a obra em 2 fases soma o MESMO obraTotal da
+  // distribuição linear única — só muda a posição no tempo.
+  const semFases = calcular(casoBase());
+
+  const duasFases = [
+    { ordem: 0, nome: 'PH1', dataInicio: '2026-10-01', dataFim: '2027-01-31' },
+    { ordem: 1, nome: 'PH2', dataInicio: '2027-02-01', dataFim: '2027-05-31' },
+  ];
+
+  it('usaFases = false não muda nada, mesmo com fases cadastradas', () => {
+    const base = casoBase();
+    // Fases e alocação GRAVADAS mas com o switch desligado: input do usuário fica
+    // guardado e inativo, e o resultado é o de sempre.
+    base.usaFases = false;
+    base.fases = duasFases;
+    base.alocacoes = [
+      { unidadeIndex: 0, faseIndex: 0, quantidade: 1 },
+      { unidadeIndex: 1, faseIndex: 0, quantidade: 1 },
+      { unidadeIndex: 2, faseIndex: 1, quantidade: 1 },
+      { unidadeIndex: 3, faseIndex: 1, quantidade: 1 },
+    ];
+    const out = calcular(base);
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(semFases.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(semFases.apuracao));
+    expect(JSON.stringify(out.indicadores)).toBe(JSON.stringify(semFases.indicadores));
+    // Nenhuma conferência de fase aparece: todas são condicionais ao switch.
+    expect(out.conferencias.map((c) => c.chave)).toEqual(semFases.conferencias.map((c) => c.chave));
+    expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
+  });
+
+  it('Σ construction é idêntico com e sem fases — só muda a posição no tempo', () => {
+    const base = casoBase();
+    base.usaFases = true;
+    base.fases = duasFases;
+    base.alocacoes = [
+      { unidadeIndex: 0, faseIndex: 0, quantidade: 1 },
+      { unidadeIndex: 1, faseIndex: 0, quantidade: 1 },
+      { unidadeIndex: 2, faseIndex: 1, quantidade: 1 },
+      { unidadeIndex: 3, faseIndex: 1, quantidade: 1 },
+    ];
+    const comFases = calcular(base);
+
+    const totalSem = soma(semFases.meses.map((m) => m.construction));
+    const totalCom = soma(comFases.meses.map((m) => m.construction));
+    expect(totalCom).toBeCloseTo(totalSem, 6);
+    expect(totalCom).toBeCloseTo(comFases.agregados.obraTotal, 6);
+    // O cronograma global continua mandando no prazo: as fases se encaixam nele.
+    expect(comFases.cronograma.prazoTotal).toBe(semFases.cronograma.prazoTotal);
+    // E a posição no tempo MUDOU — senão o teste acima não provaria nada.
+    expect(JSON.stringify(comFases.meses.map((m) => m.construction))).not.toBe(
+      JSON.stringify(semFases.meses.map((m) => m.construction)),
+    );
+  });
+
+  it('alocação que não fecha bloqueia o salvamento, junto das outras duas', () => {
+    const base = casoBase();
+    base.usaFases = true;
+    base.fases = duasFases;
+    base.alocacoes = [{ unidadeIndex: 0, faseIndex: 0, quantidade: 1 }]; // faltam 3
+    const out = calcular(base);
+    expect(semaforo(out, 'alocacao_fases')).toBe('vermelho');
+    expect(bloqueiaSalvamento(out.conferencias).map((c) => c.chave)).toEqual(['alocacao_fases']);
+    // Bloquear o SALVAMENTO nunca é bloquear o CÁLCULO.
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+  });
+});
+
+describe('16 — takedown schedule', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1761800000: 'takedown' é um modo NOVO, e
+  // nenhuma modelagem já salva o tem.
+  const referencia = calcular(casoBase());
+
+  it('os três modos antigos continuam idênticos', () => {
+    for (const modo of ['single_exit', 'per_unit', 'manual'] as const) {
+      const base = casoBase();
+      base.receita.modoVenda = modo;
+      if (modo === 'per_unit') {
+        base.receita.vendasPorUnidade = [
+          { unidadeIndex: 0, mesVenda: 20 },
+          { unidadeIndex: 1, mesVenda: 20 },
+          { unidadeIndex: 2, mesVenda: 23 },
+          { unidadeIndex: 3, mesVenda: 23 },
+        ];
+      }
+      // Takedowns GRAVADOS mas com outro modo ativo: ficam guardados e inertes.
+      base.receita.takedowns = [
+        { unidadeIndex: 0, faseIndex: null, ordem: 0, mes: 5, quantidade: 1, precoUnitario: 999_999 },
+      ];
+      const out = calcular(base);
+      const semTakedowns = calcular({ ...base, receita: { ...base.receita, takedowns: [] } });
+      expect(JSON.stringify(out.meses)).toBe(JSON.stringify(semTakedowns.meses));
+      expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(semTakedowns.apuracao));
+      // E nenhuma conferência de takedown aparece fora do modo.
+      for (const chave of [
+        'takedown_quantidade', 'takedown_incompleto', 'takedown_fora_prazo', 'takedown_antes_da_fase',
+      ]) {
+        expect(semaforo(out, chave)).toBeUndefined();
+      }
+    }
+    // O caso base — single_exit — segue bit a bit o de sempre.
+    expect(JSON.stringify(calcular(casoBase()).meses)).toBe(JSON.stringify(referencia.meses));
+  });
+
+  /** 45 casas a $875.000, vendidas em 12 levas de 4 e 3 a partir do mês 12. */
+  const casoTakedown = (): ModelInput => {
+    const base = casoBase();
+    base.unidades = [
+      { nome: 'Casa', quantidade: 45, custoTerreno: 0, custoObra: 0, precoVenda: 875_000, propertyTaxAno: 0 },
+    ];
+    base.receita.comissaoPct = 0;
+    base.receita.custoCartorioPct = 0;
+    base.receita.modoVenda = 'takedown';
+    const levas = [4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3]; // 45 unidades em 12 meses
+    base.receita.takedowns = levas.map((quantidade, k) => ({
+      unidadeIndex: 0,
+      faseIndex: null,
+      ordem: k,
+      mes: 12 + k,
+      quantidade,
+      // 0 = usar o preço da tipologia.
+      precoUnitario: 0,
+    }));
+    return base;
+  };
+
+  it('12 levas de 3-4 unidades somam 45 unidades e $39.375.000 de receita bruta', () => {
+    const out = calcular(casoTakedown());
+    // 45 × 875.000 = 39.375.000.
+    expect(out.agregados.unidadesTotal).toBe(45);
+    expect(out.apuracao.receitaBruta).toBeCloseTo(39_375_000, 2);
+    expect(soma(out.meses.map((m) => m.revenue))).toBeCloseTo(39_375_000, 2);
+    // Sem comissão nem cartório, o lançado bate com o apurado: verde.
+    expect(semaforo(out, 'receita_lancada')).toBe('verde');
+    expect(semaforo(out, 'takedown_quantidade')).toBe('verde');
+    expect(semaforo(out, 'takedown_incompleto')).toBe('verde');
+  });
+
+  it('o revenue mensal bate leva a leva', () => {
+    const out = calcular(casoTakedown());
+    const levas = [4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3];
+    levas.forEach((n, k) => {
+      expect(out.meses[12 + k - 1].revenue).toBeCloseTo(n * 875_000, 2);
+    });
+    // E em nenhum outro mês.
+    const comReceita = out.meses.filter((m) => m.revenue > 0).map((m) => m.mes);
+    expect(comReceita).toEqual([12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
+  });
+
+  it('expõe unidadesVendidasPorMes alinhado com meses', () => {
+    const out = calcular(casoTakedown());
+    expect(out.unidadesVendidasPorMes).toHaveLength(out.meses.length);
+    expect(soma(out.unidadesVendidasPorMes)).toBe(45);
+    expect(out.unidadesVendidasPorMes[11]).toBe(4); // mês 12
+    expect(out.unidadesVendidasPorMes[20]).toBe(3); // mês 21
+    expect(out.unidadesVendidasPorMes[0]).toBe(0);
+  });
+
+  it('é a MESMA grandeza que o gatilho de custo por_venda usa', () => {
+    // As duas leituras saem do mesmo mapa: se divergirem, é bug.
+    const base = casoTakedown();
+    base.custosAdicionais = [
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda' }),
+    ];
+    const out = calcular(base);
+    out.meses.forEach((m, k) => {
+      expect(m.otherCosts).toBeCloseTo(out.unidadesVendidasPorMes[k] * 1_000, 6);
+    });
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(45_000, 2);
+  });
+
+  it('preço 0 usa o da tipologia; preço próprio sobrepõe', () => {
+    const base = casoTakedown();
+    base.receita.takedowns = [
+      { unidadeIndex: 0, faseIndex: null, ordem: 0, mes: 12, quantidade: 20, precoUnitario: 0 },
+      { unidadeIndex: 0, faseIndex: null, ordem: 1, mes: 13, quantidade: 25, precoUnitario: 900_000 },
+    ];
+    const out = calcular(base);
+    expect(out.meses[11].revenue).toBeCloseTo(20 * 875_000, 2);
+    expect(out.meses[12].revenue).toBeCloseTo(25 * 900_000, 2);
+    // O preço próprio afasta o lançado do VGV apurado — e a conferência que já
+    // existia acusa, sem precisar de regra nova.
+    expect(semaforo(out, 'receita_lancada')).toBe('ambar');
+  });
+
+  it('dois lotes no mesmo mês somam em vez de um sobrescrever o outro', () => {
+    const base = casoTakedown();
+    base.receita.takedowns = [
+      { unidadeIndex: 0, faseIndex: null, ordem: 0, mes: 12, quantidade: 20, precoUnitario: 0 },
+      { unidadeIndex: 0, faseIndex: null, ordem: 1, mes: 12, quantidade: 25, precoUnitario: 0 },
+    ];
+    const out = calcular(base);
+    expect(out.meses[11].revenue).toBeCloseTo(45 * 875_000, 2);
+    expect(out.unidadesVendidasPorMes[11]).toBe(45);
+  });
+
+  it('acusa em vermelho quem vende mais unidades do que a tipologia tem', () => {
+    const base = casoTakedown();
+    base.receita.takedowns = [
+      { unidadeIndex: 0, faseIndex: null, ordem: 0, mes: 12, quantidade: 50, precoUnitario: 0 },
+    ];
+    const out = calcular(base);
+    expect(semaforo(out, 'takedown_quantidade')).toBe('vermelho');
+    expect(out.conferencias.find((c) => c.chave === 'takedown_quantidade')?.detalhe).toContain('50 de 45');
+    // Vermelho, mas NÃO bloqueia salvamento nem cálculo.
+    expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+  });
+
+  it('acusa em âmbar a unidade que sobrou sem lote', () => {
+    const base = casoTakedown();
+    base.receita.takedowns = [
+      { unidadeIndex: 0, faseIndex: null, ordem: 0, mes: 12, quantidade: 40, precoUnitario: 0 },
+    ];
+    const out = calcular(base);
+    const conf = out.conferencias.find((c) => c.chave === 'takedown_incompleto');
+    expect(conf?.semaforo).toBe('ambar');
+    expect(conf?.valor).toBe('5');
+    expect(soma(out.meses.map((m) => m.revenue))).toBeCloseTo(40 * 875_000, 2);
+  });
+
+  it('lote fora do prazo fica guardado, não é lançado e acende âmbar', () => {
+    const base = casoTakedown();
+    base.receita.takedowns = [
+      { unidadeIndex: 0, faseIndex: null, ordem: 0, mes: 12, quantidade: 40, precoUnitario: 0 },
+      { unidadeIndex: 0, faseIndex: null, ordem: 1, mes: 99, quantidade: 5, precoUnitario: 0 },
+    ];
+    const out = calcular(base);
+    expect(semaforo(out, 'takedown_fora_prazo')).toBe('ambar');
+    // Não lançado, mas não apagado: o input continua no array de entrada.
+    expect(soma(out.meses.map((m) => m.revenue))).toBeCloseTo(40 * 875_000, 2);
+    expect(base.receita.takedowns).toHaveLength(2);
+    // A quantidade declarada fecha, então `takedown_incompleto` fica verde: o
+    // problema é o mês, e é a conferência do mês que tem de acusar.
+    expect(semaforo(out, 'takedown_incompleto')).toBe('verde');
+  });
+
+  it('acusa em âmbar a venda anterior à conclusão da fase', () => {
+    const base = casoTakedown();
+    base.usaFases = true;
+    base.fases = [{ ordem: 0, nome: 'PH1', dataInicio: '2026-10-01', dataFim: '2027-05-31' }];
+    base.alocacoes = [{ unidadeIndex: 0, faseIndex: 0, quantidade: 45 }];
+    base.receita.takedowns = [
+      // A fase conclui no mês 18; este lote vende no 12 — venda na planta.
+      { unidadeIndex: 0, faseIndex: 0, ordem: 0, mes: 12, quantidade: 45, precoUnitario: 0 },
+    ];
+    const out = calcular(base);
+    expect(out.cronograma.fases[0].mesFim).toBe(18);
+    expect(semaforo(out, 'takedown_antes_da_fase')).toBe('ambar');
+    // Sem fase declarada no lote, não há o que comparar: verde.
+    const semFase = calcular({
+      ...base,
+      receita: {
+        ...base.receita,
+        takedowns: (base.receita.takedowns ?? []).map((t) => ({ ...t, faseIndex: null })),
+      },
+    });
+    expect(semaforo(semFase, 'takedown_antes_da_fase')).toBe('verde');
+  });
+
+  it('override em revenue continua vencendo o takedown', () => {
+    const base = casoTakedown();
+    base.overrides = [{ mes: 12, linha: 'revenue', valor: 1_234 }];
+    const out = calcular(base);
+    expect(out.meses[11].revenue).toBe(1_234);
+  });
+
+  it('mapeia takedowns do banco por id, com o Map<id, índice> das tipologias', () => {
+    const input = mapearModelInput({
+      id: 7,
+      data_inicio: '2025-12-01',
+      meses_aprovacao: 10,
+      meses_construcao: 8,
+      meses_pos_obra: 5,
+      unidades: [
+        { id: 41, ordem: 0, nome: 'A', quantidade: 2, custo_terreno: '0', custo_obra: '0', preco_venda: '875000.00', property_tax_ano: '0' },
+        { id: 42, ordem: 1, nome: 'B', quantidade: 3, custo_terreno: '0', custo_obra: '0', preco_venda: '900000.00', property_tax_ano: '0' },
+      ],
+      fases: [{ id: 71, ordem: 0, nome: 'PH1', data_inicio: '2026-10-01', data_fim: '2027-01-31' }],
+      receita: { modo_venda: 'takedown', comissao_pct: '0', custo_cartorio_pct: '0', lucro_investidores_pct: '0.8', lucro_sponsor_pct: '0.2' },
+      takedowns: [
+        // DECIMAL(15,2) chega como STRING — sem num(), "875000.00" × 2 seria
+        // concatenação e a receita sairia errada sem erro nenhum.
+        { id: 1, ordem: 0, unidade_id: 41, fase_id: 71, mes: 12, quantidade: 2, preco_unitario: '875000.00', observacao: null },
+        { id: 2, ordem: 1, unidade_id: 42, fase_id: null, mes: 13, quantidade: 3, preco_unitario: '0.00', observacao: 'sem preço próprio' },
+        // Aponta para tipologia que não existe: descartado.
+        { id: 3, ordem: 2, unidade_id: 999, fase_id: null, mes: 14, quantidade: 1, preco_unitario: '0.00', observacao: null },
+      ],
+    } as never);
+
+    const t = input.receita.takedowns!;
+    expect(t).toHaveLength(2);
+    expect(t[0].unidadeIndex).toBe(0);
+    expect(t[0].faseIndex).toBe(0);
+    expect(t[0].precoUnitario).toBe(875_000);
+    expect(t[1].unidadeIndex).toBe(1);
+    expect(t[1].faseIndex).toBeNull();
+    expect(t[1].precoUnitario).toBe(0);
+
+    // E o motor lê isso sem erro: 2 × 875.000 no mês 12, 3 × 900.000 no 13.
+    const out = calcular(input);
+    expect(out.meses[11].revenue).toBeCloseTo(1_750_000, 2);
+    expect(out.meses[12].revenue).toBeCloseTo(2_700_000, 2);
+  });
+});

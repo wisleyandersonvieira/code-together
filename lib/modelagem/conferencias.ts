@@ -2,8 +2,10 @@
  * Painel de validação da modelagem.
  *
  * Conferências NUNCA bloqueiam o cálculo — só sinalizam. Bloquear o SALVAMENTO é
- * outra coisa, e vale para dois casos apenas: soma das participações e divisão do
- * lucro fora de 100% (ver `bloqueiaSalvamento`).
+ * outra coisa, e vale para TRÊS casos: soma das participações, divisão do lucro
+ * fora de 100% e distribuição de unidades por fase que não fecha. A lista
+ * canônica, com o critério de cada uma, está em `bloqueiaSalvamento` no fim do
+ * arquivo — é lá que se mexe, não aqui.
  *
  * Nenhuma igualdade é comparada com `==`: tudo por tolerância. "Exatamente 100%"
  * não existe quando alguém divide participação em três.
@@ -51,6 +53,8 @@ interface Contexto {
   resolucao: ResolucaoCustos;
   /** Quanto de cada custo o gatilho conseguiu de fato lançar no fluxo. */
   lancadoPorCusto: number[];
+  /** Unidades que fecham em cada mês, já derivadas do modo de venda. */
+  vendasPorMes: Map<number, number>;
 }
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
@@ -535,6 +539,101 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
         )
         .join('; ')}. O que não foi lançado NÃO é apagado — volta ao fluxo assim que o gatilho encontrar mês.`,
       'Informe o mês âncora, ajuste o cronograma para que o evento caia dentro do prazo, ou declare o mês de venda das tipologias na aba Receita.',
+    );
+  }
+
+  // ─── Takedown schedule ─────────────────────────────────────────────────────
+  // Restritas ao modo 'takedown' DE PROPÓSITO: nenhuma modelagem anterior à
+  // migration 1761800000 tem esse modo, então nenhuma delas ganha item novo no
+  // painel. 'single_exit', 'per_unit' e 'manual' seguem com as conferências de
+  // sempre.
+  if (rec.modoVenda === 'takedown') {
+    const takedowns = rec.takedowns ?? [];
+    const unidades = input.unidades ?? [];
+
+    // Quanto cada tipologia já tem vendido, contando TODOS os lotes — inclusive
+    // os que caem fora do prazo. O usuário declarou a venda; que ela não caiba no
+    // cronograma é outro problema, e some no `nao lançado` abaixo.
+    const vendidoPorTipologia = new Map<number, number>();
+    for (const t of takedowns) {
+      if (!unidades[t.unidadeIndex]) continue;
+      vendidoPorTipologia.set(
+        t.unidadeIndex,
+        (vendidoPorTipologia.get(t.unidadeIndex) ?? 0) + Math.max(0, Math.trunc(t.quantidade || 0)),
+      );
+    }
+    const balanco = unidades.map((u, i) => ({
+      nome: u.nome || `Tipologia ${i + 1}`,
+      total: Math.max(1, Math.trunc(u.quantidade || 1)),
+      vendido: vendidoPorTipologia.get(i) ?? 0,
+    }));
+
+    // ── Vendeu mais unidades do que a tipologia tem ──────────────────────────
+    const excedidas = balanco.filter((x) => x.vendido > x.total);
+    add(
+      'takedown_quantidade',
+      'Takedowns dentro da quantidade da tipologia',
+      excedidas.length > 0 ? 'vermelho' : 'verde',
+      `${excedidas.length}`,
+      excedidas.length === 0
+        ? 'Nenhuma tipologia vende mais unidades do que tem.'
+        : `${excedidas
+            .map((x) => `${x.nome} (${x.vendido} de ${x.total}, +${x.vendido - x.total})`)
+            .join('; ')}. O motor lança a receita de todos os lotes assim mesmo — o excedente vira receita que não existe.`,
+      'Reduza a quantidade dos lotes ou aumente a quantidade da tipologia na aba Tipologias.',
+    );
+
+    // ── Sobrou unidade sem lote ──────────────────────────────────────────────
+    const incompletas = balanco.filter((x) => x.vendido < x.total);
+    const sobrando = incompletas.reduce((a, x) => a + (x.total - x.vendido), 0);
+    add(
+      'takedown_incompleto',
+      'Unidades sem takedown',
+      sobrando > 0 ? 'ambar' : 'verde',
+      `${sobrando}`,
+      sobrando === 0
+        ? 'Todas as unidades estão distribuídas em lotes.'
+        : `${incompletas
+            .map((x) => `${x.nome} (${x.vendido} de ${x.total})`)
+            .join('; ')}. As ${sobrando} unidades restantes não geram receita em mês nenhum, mas o custo delas continua no fluxo.`,
+      'Use "Gerar cronograma" na aba Receita para distribuir o que falta, ou acrescente os lotes à mão.',
+    );
+
+    // ── Lote fora do prazo do cronograma ─────────────────────────────────────
+    // Não é a mesma coisa que o item acima: aqui o lote EXISTE, mas cai num mês
+    // que o cronograma não tem. Como sempre neste módulo, não é apagado — fica
+    // guardado e volta a valer se o prazo aumentar.
+    const foraDoPrazo = takedowns.filter(
+      (t) => !Number.isInteger(t.mes) || t.mes < 1 || t.mes > cronograma.prazoTotal,
+    );
+    add(
+      'takedown_fora_prazo',
+      'Takedowns fora do prazo',
+      foraDoPrazo.length > 0 ? 'ambar' : 'verde',
+      `${foraDoPrazo.length}`,
+      foraDoPrazo.length > 0
+        ? `${foraDoPrazo.length} lote(s) somando ${foraDoPrazo.reduce((a, t) => a + Math.max(0, Math.trunc(t.quantidade || 0)), 0)} unidade(s) caem fora dos ${cronograma.prazoTotal} meses do cronograma e não entram no fluxo.`
+        : 'Todos os lotes caem dentro do cronograma.',
+      'Mova os lotes para meses dentro do prazo ou aumente o cronograma. O sistema não apaga lote nenhum sozinho.',
+    );
+
+    // ── Venda antes de a fase concluir ───────────────────────────────────────
+    // Vender na planta é legítimo e comum. A conferência não condena: só garante
+    // que ninguém descubra por acaso que a receita entra antes da obra terminar.
+    const antesDaFase = takedowns
+      .map((t) => ({ t, f: t.faseIndex == null ? undefined : cronograma.fases[t.faseIndex] }))
+      .filter((x) => x.f && x.t.mes < x.f.mesFim);
+    add(
+      'takedown_antes_da_fase',
+      'Takedown antes da conclusão da fase',
+      antesDaFase.length > 0 ? 'ambar' : 'verde',
+      `${antesDaFase.length}`,
+      antesDaFase.length > 0
+        ? `${antesDaFase
+            .map((x) => `${x.f!.nome || 'fase'}: lote no mês ${x.t.mes}, fase conclui no ${x.f!.mesFim}`)
+            .join('; ')}. Vender antes de a fase concluir é possível — venda na planta —, mas a receita entra antes de a obra terminar.`
+        : 'Nenhum lote vende antes de a fase dele concluir.',
+      'Se a venda na planta é intencional, ignore. Senão, mova o lote para depois do fim da fase ou corrija a fase do lote.',
     );
   }
 

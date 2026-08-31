@@ -17,6 +17,7 @@ import type {
   Override,
   PlanoAportes,
   Socio,
+  Takedown,
   Unidade,
 } from './tipos';
 import { BASES_CALCULO_CUSTO, CATEGORIAS_CUSTO, GATILHOS_CUSTO, LINHAS_FLUXO } from './tipos';
@@ -199,6 +200,36 @@ export function mapearCustos(linhas: unknown): CustoAdicional[] {
   }));
 }
 
+/**
+ * Takedowns (`modelagem_takedowns`).
+ *
+ * O banco guarda por id e o motor trabalha por índice, igual à venda por unidade
+ * e à alocação por fase. Lote que aponta para uma tipologia que não existe mais é
+ * descartado — o banco tem CASCADE, então isso só acontece com dado em trânsito.
+ * A fase é opcional: `faseIndex` nulo é lote sem fase declarada, não erro.
+ */
+export function mapearTakedowns(
+  linhas: unknown,
+  indicePorUnidade: Map<number, number>,
+  indicePorFase: Map<number, number>,
+): Takedown[] {
+  return lista(linhas)
+    .map((t, i) => ({
+      id: num(t.id) || undefined,
+      unidadeIndex: indicePorUnidade.get(num(t.unidade_id)) ?? -1,
+      faseIndex: t.fase_id == null ? null : (indicePorFase.get(num(t.fase_id)) ?? null),
+      ordem: Math.trunc(num(t.ordem, i)),
+      mes: Math.max(1, Math.trunc(num(t.mes, 1))),
+      quantidade: Math.max(0, Math.trunc(num(t.quantidade))),
+      // DECIMAL(15,2) — chega como STRING. Sem num(), "875000.00" × quantidade
+      // seria concatenação e a receita sairia errada sem erro nenhum.
+      precoUnitario: num(t.preco_unitario),
+      observacao: t.observacao == null ? null : String(t.observacao),
+    }))
+    .filter((t) => t.unidadeIndex >= 0)
+    .sort((a, b) => a.ordem - b.ordem || a.mes - b.mes);
+}
+
 export function mapearSocios(linhas: unknown): Socio[] {
   return lista(linhas).map((s) => ({
     id: num(s.id) || undefined,
@@ -290,6 +321,7 @@ export function mapearModelInput(linha: LinhaModelagem): ModelInput {
       lucroInvestidoresPct: num(rec.lucro_investidores_pct, 0.8),
       lucroSponsorPct: num(rec.lucro_sponsor_pct, 0.2),
       vendasPorUnidade,
+      takedowns: mapearTakedowns(linha.takedowns, indicePorId, indicePorFaseId),
     },
     overrides: mapearOverrides(linha.overrides),
   };

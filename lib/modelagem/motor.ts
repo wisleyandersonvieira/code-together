@@ -523,10 +523,10 @@ export function calcular(input: ModelInput): ModelOutput {
   // módulo — `modelagem_vendas_unidade` guarda um único mês por tipologia. Logo,
   // a tipologia inteira fecha de uma vez. Quando o takedown chegar, é ESTE mapa
   // que passa a ser montado a partir dele; nada mais abaixo precisa mudar.
-  const unidadesVendidasPorMes = new Map<number, number>();
+  const vendasPorMes = new Map<number, number>();
   const venderNoMes = (mes: number, n: number) => {
-    if (mes < 1 || mes > prazoTotal || n <= 0) return;
-    unidadesVendidasPorMes.set(mes, (unidadesVendidasPorMes.get(mes) ?? 0) + n);
+    if (!Number.isInteger(mes) || mes < 1 || mes > prazoTotal || n <= 0) return;
+    vendasPorMes.set(mes, (vendasPorMes.get(mes) ?? 0) + n);
   };
   if (rec.modoVenda === 'single_exit') {
     // Saída única: todas as unidades fecham no mês da venda do projeto.
@@ -535,6 +535,14 @@ export function calcular(input: ModelInput): ModelOutput {
     for (const venda of rec.vendasPorUnidade ?? []) {
       const u = unidades[venda.unidadeIndex];
       if (u) venderNoMes(venda.mesVenda, qtd(u));
+    }
+  } else if (rec.modoVenda === 'takedown') {
+    // Aqui o takedown deixa de ser hipótese e vira a fonte: cada lote fecha N
+    // unidades no seu mês. Lote fora do prazo não é contado (nem lançado) — a
+    // conferência `takedown_incompleto` acusa a unidade que sobrou.
+    for (const t of rec.takedowns ?? []) {
+      const u = unidades[t.unidadeIndex];
+      if (u) venderNoMes(t.mes, Math.max(0, Math.trunc(t.quantidade || 0)));
     }
   }
   // 'manual' → o usuário não declarou cronograma de venda nenhum. O motor NÃO
@@ -586,7 +594,7 @@ export function calcular(input: ModelInput): ModelOutput {
       // conferência acusa. Dividir por zero devolveria NaN e contaminaria o fluxo
       // inteiro em silêncio, que é o pior desfecho possível.
       if (unidadesTotal > 0) {
-        for (const [mes, n] of unidadesVendidasPorMes) lancar(i, mes, (valor * n) / unidadesTotal);
+        for (const [mes, n] of vendasPorMes) lancar(i, mes, (valor * n) / unidadesTotal);
       }
     } else {
       // 'cronograma' — o default, e o caminho de toda modelagem anterior à
@@ -613,11 +621,25 @@ export function calcular(input: ModelInput): ModelOutput {
       const u = unidades[venda.unidadeIndex];
       if (!u) continue;
       if (venda.mesVenda >= 1 && venda.mesVenda <= prazoTotal) {
-        // A tipologia inteira vende no mesmo mês: venda escalonada dentro de uma
-        // tipologia (parte das N unidades num mês, o resto em outro) NÃO é
-        // suportada nesta versão. Quem precisar disso separa em duas linhas.
+        // A tipologia inteira vende no mesmo mês. Para escalonar dentro de uma
+        // tipologia — parte das N unidades num mês, o resto em outro — o modo é
+        // 'takedown'; este aqui continua existindo e inalterado.
         revenue[venda.mesVenda] += (u.precoVenda || 0) * qtd(u) * fatorLiquido;
       }
+    }
+  } else if (rec.modoVenda === 'takedown') {
+    // Cada lote lança quantidade × preço efetivo × fatorLiquido no seu mês.
+    // Dois lotes no mesmo mês SOMAM em vez de um sobrescrever o outro — é a
+    // mesma leitura das parcelas de aporte, e a única que não perde dinheiro do
+    // usuário.
+    for (const t of rec.takedowns ?? []) {
+      const u = unidades[t.unidadeIndex];
+      if (!u) continue;
+      const n = Math.max(0, Math.trunc(t.quantidade || 0));
+      if (n <= 0 || !Number.isInteger(t.mes) || t.mes < 1 || t.mes > prazoTotal) continue;
+      // preço 0 = "usar o preço da tipologia", conforme o COMMENT da coluna.
+      const preco = (t.precoUnitario || 0) > 0 ? t.precoUnitario : u.precoVenda || 0;
+      revenue[t.mes] += preco * n * fatorLiquido;
     }
   }
   // 'manual' → só overrides.
@@ -878,6 +900,9 @@ export function calcular(input: ModelInput): ModelOutput {
 
   // ─── Indicadores ───────────────────────────────────────────────────────────
   const fluxoInvestidor = meses.map((x) => x.distribution - x.equityCall);
+  // Mesmo mapa que alimenta o gatilho de custo 'por_venda': as duas leituras
+  // saem daqui, então não têm como divergir.
+  const unidadesVendidasPorMes = meses.map((x) => vendasPorMes.get(x.mes) ?? 0);
   const tir = tirMensal(fluxoInvestidor);
   const indicadores: Indicadores = {
     moic: razao(totalDistribuido, equityTotal),
@@ -958,6 +983,7 @@ export function calcular(input: ModelInput): ModelOutput {
     bases,
     resolucao,
     lancadoPorCusto,
+    vendasPorMes,
   });
 
   return {
@@ -970,6 +996,7 @@ export function calcular(input: ModelInput): ModelOutput {
     resultadoUnidades,
     conferencias,
     fluxoInvestidor,
+    unidadesVendidasPorMes,
     iteracoes,
     convergiu,
     overridesOrfaos: orfaos,
