@@ -18,10 +18,17 @@ function loadModelagemCompleta() {
           SELECT json_agg(u ORDER BY u.ordem, u.id)
           FROM modelagem_unidades u WHERE u.modelagem_id = m.id
         ) AS unidades,
-        (
-          SELECT json_agg(c ORDER BY c.ordem, c.id)
-          FROM modelagem_custos c WHERE c.modelagem_id = m.id
-        ) AS custos,
+        -- As parcelas vêm ANINHADAS dentro do custo, não como segunda lista.
+        -- Cruzar duas listas por custo_id no cliente é justamente onde a parcela
+        -- de um custo recém-criado se perderia; aninhada, ela chega junto com o
+        -- dono. Sem parcela nenhuma o sub-select devolve '[]', nunca NULL.
+        (SELECT json_agg(c2 ORDER BY c2.ordem, c2.id) FROM (
+           SELECT c.*, (
+             SELECT COALESCE(json_agg(p ORDER BY p.ordem, p.mes), '[]'::json)
+             FROM modelagem_custo_parcelas p WHERE p.custo_id = c.id
+           ) AS parcelas
+           FROM modelagem_custos c WHERE c.modelagem_id = m.id
+         ) c2) AS custos,
         (
           SELECT row_to_json(a) FROM modelagem_aportes a WHERE a.modelagem_id = m.id
         ) AS aportes,

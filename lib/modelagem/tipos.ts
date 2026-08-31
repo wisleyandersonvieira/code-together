@@ -33,7 +33,7 @@ export const ROTULO_LINHA: Record<LinhaFluxo, string> = {
   land: 'Terrenos',
   construction: 'Obra',
   property_tax: 'Property taxes',
-  other_costs: 'Outros custos',
+  other_costs: 'Custos',
   revenue: 'Receita',
   draw: 'Saque',
   amortization: 'Amortização',
@@ -192,6 +192,21 @@ export const EXPLICACAO_GATILHO: Record<GatilhoCusto, string> = {
   mes_fixo: 'Lançado inteiro no mês âncora, independente da distribuição.',
 };
 
+/**
+ * Uma parcela de um custo com gatilho 'mes_fixo' (migration 1763000000).
+ *
+ * Duas parcelas no mesmo mês SOMAM em vez de uma sobrescrever a outra — é a mesma
+ * leitura dos takedowns e das parcelas de aporte, e a única que não perde dinheiro
+ * do usuário. Por isso a tabela não tem UNIQUE (custo_id, mes).
+ */
+export interface ParcelaCusto {
+  id?: number;
+  ordem: number;
+  /** Índice do mês no cronograma, 1..prazoTotal. Igual a todo o resto do módulo. */
+  mes: number;
+  valor: number;
+}
+
 export interface CustoAdicional {
   id?: number;
   label: string;
@@ -236,6 +251,39 @@ export interface CustoAdicional {
    * comportamento anterior; os demais SUBSTITUEM `distribuicao`.
    */
   gatilho: GatilhoCusto;
+  /**
+   * Parcelamento do gatilho 'mes_fixo' (migration 1763000000). Ignorado nos
+   * demais gatilhos.
+   *
+   * Lista VAZIA é o default do banco e o comportamento anterior: 100% no
+   * `mesAncora`. Com parcelas, o `mesAncora` é ignorado — o gatilho já substitui
+   * a distribuição, e as parcelas substituem a âncora — e são elas que definem o
+   * total lançado, não o valor efetivo da base de cálculo.
+   */
+  parcelas: ParcelaCusto[];
+}
+
+/**
+ * Uma linha do orçamento vista MÊS A MÊS, do jeito que ela entrou no fluxo.
+ *
+ * É a mesma grandeza que `lancadoPorCusto` já alimentava, agora aberta no tempo:
+ * o escalar continua sendo a soma da matriz, e as duas saem do MESMO `lancar` do
+ * motor — não de um segundo laço, que divergiria na primeira mudança de regra.
+ *
+ * Sempre ANTES dos overrides: é o que o gatilho e a distribuição lançaram. O que
+ * o usuário forçou à mão na linha `other_costs` não aparece aqui, e a diferença
+ * é justamente a linha de "ajuste manual" que a grade mostra.
+ */
+export interface DetalheCusto {
+  /** Índice em `input.custosAdicionais`. */
+  indice: number;
+  id?: number;
+  label: string;
+  categoria: CategoriaCusto;
+  /** Lançado em cada mês, alinhado com `meses` (índice 0 = mês 1). */
+  porMes: number[];
+  /** Σ porMes. É o mesmo `lancadoPorCusto[indice]` que a conferência já usa. */
+  total: number;
 }
 
 export type ModoSaque = 'equity_first' | 'cash_demand' | 'manual';
@@ -770,6 +818,17 @@ export interface ModelOutput {
    * `MesFluxo`. Uma fonte só, duas formas.
    */
   unidadesVendidasPorMes: number[];
+  /**
+   * Cada custo adicional aberto mês a mês, na ordem de `input.custosAdicionais`.
+   *
+   * Para todo mês m, Σ detalhamentoCustos[i].porMes[m] é exatamente o
+   * `otherCosts` daquele mês ANTES dos overrides — é o que torna o detalhamento
+   * auditável em vez de decorativo.
+   *
+   * NÃO existe um agregado por categoria aqui de propósito: agrupar é leitura, e
+   * `agruparCustosPorCategoria` faz isso a partir desta lista. Uma fonte só.
+   */
+  detalhamentoCustos: DetalheCusto[];
   /** Quantas passadas o ponto fixo consumiu e se convergiu. */
   iteracoes: number;
   convergiu: boolean;

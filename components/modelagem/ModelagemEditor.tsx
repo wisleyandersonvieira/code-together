@@ -42,6 +42,10 @@ import deleteModelagemUnidadeAction from '@/actions/deleteModelagemUnidade';
 import createModelagemCustoAction from '@/actions/createModelagemCusto';
 import updateModelagemCustoAction from '@/actions/updateModelagemCusto';
 import deleteModelagemCustoAction from '@/actions/deleteModelagemCusto';
+import createModelagemCustoParcelaAction from '@/actions/createModelagemCustoParcela';
+import updateModelagemCustoParcelaAction from '@/actions/updateModelagemCustoParcela';
+import deleteModelagemCustoParcelaAction from '@/actions/deleteModelagemCustoParcela';
+import deleteModelagemCustoParcelasDoCustoAction from '@/actions/deleteModelagemCustoParcelasDoCusto';
 import createModelagemSocioAction from '@/actions/createModelagemSocio';
 import updateModelagemSocioAction from '@/actions/updateModelagemSocio';
 import deleteModelagemSocioAction from '@/actions/deleteModelagemSocio';
@@ -122,6 +126,10 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [criarCusto] = useMutateAction(createModelagemCustoAction);
   const [atualizarCusto] = useMutateAction(updateModelagemCustoAction);
   const [removerCusto] = useMutateAction(deleteModelagemCustoAction);
+  const [criarParcelaCusto] = useMutateAction(createModelagemCustoParcelaAction);
+  const [atualizarParcelaCusto] = useMutateAction(updateModelagemCustoParcelaAction);
+  const [removerParcelaCusto] = useMutateAction(deleteModelagemCustoParcelaAction);
+  const [removerParcelasDoCusto] = useMutateAction(deleteModelagemCustoParcelasDoCustoAction);
   const [criarSocio] = useMutateAction(createModelagemSocioAction);
   const [atualizarSocio] = useMutateAction(updateModelagemSocioAction);
   const [removerSocio] = useMutateAction(deleteModelagemSocioAction);
@@ -401,13 +409,56 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         (id) => removerUnidade({ id }),
       );
 
-      await sincronizar(
-        rascunho.custosAdicionais ?? [],
+      const custosAtuais = rascunho.custosAdicionais ?? [];
+      const idsCustos = await sincronizar(
+        custosAtuais,
         original.custosAdicionais ?? [],
         (c, i) => criarCusto({ modelagemId, ordem: i, ...c }),
         (c, i) => atualizarCusto({ id: c.id, ordem: i, ...c }),
         (id) => removerCusto({ id }),
       );
+
+      // Parcelas dos custos (migration 1763000000). DEPOIS do sincronizar acima,
+      // e usando os ids que ele devolve: um custo novo só tem id depois do INSERT,
+      // e sem essa ordem as parcelas de um custo recém-criado se perderiam no
+      // primeiro salvamento, em silêncio — que é o modo mais caro de falhar aqui.
+      //
+      // Custo removido não precisa de nada: modelagem_custo_parcelas.custo_id tem
+      // ON DELETE CASCADE.
+      const parcelasOriginais = new Map<number, typeof custosAtuais[number]['parcelas']>();
+      for (const c of original.custosAdicionais ?? []) {
+        if (c.id != null) parcelasOriginais.set(c.id, c.parcelas ?? []);
+      }
+      for (let i = 0; i < custosAtuais.length; i++) {
+        const custoId = idsCustos[i];
+        // Sem id o INSERT do custo falhou: não há a que amarrar a parcela, e
+        // gravá-la em outro custo seria pior do que não gravar.
+        if (custoId == null) continue;
+        const atuais = custosAtuais[i].parcelas ?? [];
+        const anteriores = parcelasOriginais.get(custoId) ?? [];
+        if (anteriores.length > 0 && atuais.length > 0 && atuais.every((p) => p.id == null)) {
+          // Assinatura do "gerar de novo": a lista inteira é nova. Um DELETE só
+          // no lugar de N DELETEs do diff por id.
+          await removerParcelasDoCusto({ custoId });
+          for (let k = 0; k < atuais.length; k++) {
+            await criarParcelaCusto({
+              modelagemId,
+              custoId,
+              ordem: k,
+              mes: atuais[k].mes,
+              valor: atuais[k].valor,
+            });
+          }
+          continue;
+        }
+        await sincronizar(
+          atuais,
+          anteriores,
+          (p, k) => criarParcelaCusto({ modelagemId, custoId, ordem: k, mes: p.mes, valor: p.valor }),
+          (p, k) => atualizarParcelaCusto({ id: p.id, ordem: k, mes: p.mes, valor: p.valor }),
+          (id) => removerParcelaCusto({ id }),
+        );
+      }
 
       await sincronizar(
         rascunho.socios ?? [],

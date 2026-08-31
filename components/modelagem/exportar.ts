@@ -24,7 +24,8 @@ function linhasDoFluxo(resultado: ModelOutput) {
     ['Terrenos', m.map((x) => x.land)],
     ['Obra', m.map((x) => x.construction)],
     ['Property taxes', m.map((x) => x.propertyTax)],
-    ['Outros custos', m.map((x) => x.otherCosts)],
+    // Rótulo idêntico ao da grade. O CSV leva o total do mês, sem as filhas.
+    ['Custos', m.map((x) => x.otherCosts)],
     ['Juros e taxas', m.map((x) => x.custoFinanceiroCaixa)],
     ['Total de pagamentos', m.map((x) => x.pagamentos)],
     ['Receita', m.map((x) => x.revenue)],

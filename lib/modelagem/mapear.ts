@@ -17,6 +17,7 @@ import type {
   Fase,
   ModelInput,
   Override,
+  ParcelaCusto,
   PlanoAportes,
   Socio,
   Takedown,
@@ -166,6 +167,30 @@ export function mapearAlocacoes(
 }
 
 /**
+ * Parcelas de um custo (`modelagem_custo_parcelas`), sempre ordenadas por mês.
+ *
+ * Sub-select ausente ou nulo vira LISTA VAZIA, nunca `undefined`: zero parcelas é
+ * o comportamento anterior à migration 1763000000 (100% no mês âncora), e é o que
+ * toda linha já gravada tem.
+ *
+ * Duas parcelas no mesmo mês são preservadas as duas — o motor soma. Deduplicar
+ * aqui apagaria input do usuário em silêncio.
+ */
+export function mapearParcelasCusto(linhas: unknown): ParcelaCusto[] {
+  return lista(linhas)
+    .map((p, i) => ({
+      id: num(p.id) || undefined,
+      ordem: Math.trunc(num(p.ordem, i)),
+      // DECIMAL(15,2) chega como STRING. Sem num(), "14000.00" somado às demais
+      // parcelas seria concatenação de texto e o custo lançaria um absurdo — ou
+      // NaN — sem erro nenhum.
+      valor: num(p.valor),
+      mes: Math.max(1, Math.trunc(num(p.mes, 1))),
+    }))
+    .sort((a, b) => a.mes - b.mes || a.ordem - b.ordem);
+}
+
+/**
  * Custos adicionais (`modelagem_custos`).
  *
  * `categoria` cai em 'outros' quando vem nula ou desconhecida — o mesmo default
@@ -206,6 +231,10 @@ export function mapearCustos(linhas: unknown): CustoAdicional[] {
     gatilho: GATILHOS_CUSTO.includes(c.gatilho as GatilhoCusto)
       ? (c.gatilho as GatilhoCusto)
       : 'cronograma',
+    // Vêm ANINHADAS no custo pelo `loadModelagemCompleta`, e não como segunda
+    // lista a ser cruzada por id: o cruzamento é justamente onde uma parcela de
+    // custo recém-criado se perderia.
+    parcelas: mapearParcelasCusto(c.parcelas),
   }));
 }
 

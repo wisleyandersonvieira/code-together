@@ -27,6 +27,7 @@ import type {
   Conferencia,
   CustoAdicional,
   Cronograma,
+  DetalheCusto,
   FaseCronograma,
   Indicadores,
   LinhaFluxo,
@@ -264,6 +265,58 @@ export function resolverCustos(
   for (const cat of CATEGORIAS_CUSTO) somaCategoria(cat);
 
   return { valores, circulares, referencias };
+}
+
+/** Uma categoria do orçamento aberta no tempo, com as linhas que a compõem. */
+export interface GrupoCustoCategoria {
+  categoria: CategoriaCusto;
+  /** Σ dos `porMes` dos itens, alinhado com `meses` (índice 0 = mês 1). */
+  porMes: number[];
+  /** Σ dos `total` dos itens. */
+  total: number;
+  /** Na ordem de `input.custosAdicionais`, inclusive os que não lançaram nada. */
+  itens: DetalheCusto[];
+}
+
+/**
+ * Agrupa o detalhamento por categoria do orçamento.
+ *
+ * Pura, e a ÚNICA implementação do agrupamento: a tela, o PDF e a planilha
+ * chamam esta função em vez de cada uma somar do seu jeito. Por isso o
+ * `ModelOutput` não ganhou um segundo campo agregado por categoria — agrupar é
+ * leitura, e a fonte continua sendo `detalhamentoCustos`. Mesma postura de
+ * `unidadesVendidasPorMes`, que existe como array solto sem virar segundo cálculo.
+ *
+ * Devolve um grupo por categoria QUE TENHA ITEM, na ordem de `CATEGORIAS_CUSTO`,
+ * e nunca poda item nenhum: um custo que não lançou nada continua dentro do seu
+ * grupo, porque ele é informação (a conferência `custo_gatilho_nao_lancado` já
+ * trata dele) e esconder aqui tiraria de quem lê a chance de mostrá-lo. Quem
+ * decide o que exibir é a tela.
+ *
+ * `prazoTotal` fixa o comprimento das séries: um `porMes` mais curto (custo
+ * recém-criado, output de outra versão) é preenchido com zero em vez de deixar
+ * `undefined` contaminar a soma com NaN.
+ */
+export function agruparCustosPorCategoria(
+  detalhe: DetalheCusto[],
+  prazoTotal: number,
+): GrupoCustoCategoria[] {
+  const n = Math.max(0, Math.trunc(prazoTotal) || 0);
+  const porCategoria = new Map<CategoriaCusto, GrupoCustoCategoria>();
+  for (const d of detalhe ?? []) {
+    const cat = CATEGORIAS_CUSTO.includes(d.categoria) ? d.categoria : 'outros';
+    let grupo = porCategoria.get(cat);
+    if (!grupo) {
+      grupo = { categoria: cat, porMes: new Array<number>(n).fill(0), total: 0, itens: [] };
+      porCategoria.set(cat, grupo);
+    }
+    for (let m = 0; m < n; m++) grupo.porMes[m] += d.porMes[m] || 0;
+    grupo.total += d.total || 0;
+    grupo.itens.push(d);
+  }
+  return CATEGORIAS_CUSTO.map((c) => porCategoria.get(c)).filter(
+    (g): g is GrupoCustoCategoria => g != null,
+  );
 }
 
 /**
@@ -616,6 +669,10 @@ export function calcular(input: ModelInput): ModelOutput {
   // (mês fora do prazo, nenhuma venda declarada) vira conferência em vez de
   // sumir em silêncio.
   const lancadoPorCusto = new Array<number>(custosAdicionais.length).fill(0);
+  // Mesma grandeza de `lancadoPorCusto`, aberta no tempo — e alimentada dentro do
+  // MESMO `lancar`, nunca num segundo laço: um laço paralelo divergiria do fluxo
+  // na primeira mudança de regra de gatilho, e divergiria em silêncio.
+  const porCustoMes = custosAdicionais.map(() => new Array<number>(prazoTotal + 1).fill(0));
   const lancar = (i: number, mes: number, valor: number) => {
     // `Number.isInteger` reproduz exatamente o comportamento anterior: o laço
     // antigo comparava `c.mesAncora === m` contra meses inteiros, então âncora
@@ -625,6 +682,7 @@ export function calcular(input: ModelInput): ModelOutput {
     if (!Number.isInteger(mes) || mes < 1 || mes > prazoTotal) return;
     otherCosts[mes] += valor;
     lancadoPorCusto[i] += valor;
+    porCustoMes[i][mes] += valor;
   };
 
   for (let i = 0; i < custosAdicionais.length; i++) {
@@ -636,8 +694,31 @@ export function calcular(input: ModelInput): ModelOutput {
     } else if (c.gatilho === 'fim_obra') {
       lancar(i, mesFimObra, valor);
     } else if (c.gatilho === 'mes_fixo') {
-      // Sem mês âncora não há onde lançar. Não é erro: é conferência.
-      if (c.mesAncora != null) lancar(i, c.mesAncora, valor);
+      // Parcelamento (migration 1763000000). Duas consequências, e as duas são
+      // deliberadas:
+      //
+      //   1. Com parcelas, `mesAncora` é IGNORADO. O gatilho já substitui a
+      //      distribuição; as parcelas substituem a âncora. A âncora continua
+      //      gravada e volta a valer se as parcelas forem removidas — nada do que
+      //      o usuário digitou é apagado.
+      //
+      //   2. Com parcelas, quem manda no total lançado são ELAS, não `valor`. Um
+      //      custo 'por_unidade' continua tendo o alvo derivado das unidades, e
+      //      esse alvo vira REFERÊNCIA da conferência `custo_parcelas_vs_alvo` —
+      //      não um teto e não um piso. Corrigir a última parcela para fechar o
+      //      alvo seria o motor decidindo por cima do usuário.
+      //
+      // Lista vazia cai no ramo de sempre: 100% no mês âncora, que é exatamente o
+      // comportamento anterior e o de toda linha já gravada.
+      const parcelasCusto = c.parcelas ?? [];
+      if (parcelasCusto.length > 0) {
+        // A guarda de `lancar` continua valendo: parcela fora do prazo não é
+        // lançada, fica guardada no banco e vira conferência.
+        for (const parcela of parcelasCusto) lancar(i, parcela.mes, parcela.valor || 0);
+      } else if (c.mesAncora != null) {
+        // Sem mês âncora não há onde lançar. Não é erro: é conferência.
+        lancar(i, c.mesAncora, valor);
+      }
     } else if (c.gatilho === 'por_venda') {
       // Rateio pro-rata pelas unidades que fecham em cada mês. Com base
       // 'por_unidade' isto é exatamente valorUnitario × unidades vendidas no mês;
@@ -666,6 +747,28 @@ export function calcular(input: ModelInput): ModelOutput {
       // 'manual' → só overrides. Lançar zero aqui é intencional.
     }
   }
+
+  // Detalhamento na ordem de `custosAdicionais` — a mesma ordem que a aba Custos
+  // grava, para o índice servir de endereço nos dois lados. `total` reusa
+  // `lancadoPorCusto` em vez de somar de novo: os dois números têm de ser o mesmo
+  // bit a bit, e a conferência lê justamente esse escalar.
+  //
+  // `slice(1)` alinha com `meses`: o array interno é indexado pelo mês (1..N) e o
+  // exposto pela posição (0 = mês 1), como `unidadesVendidasPorMes`.
+  //
+  // Montado AQUI, antes do bloco de overrides, e não no fim: o detalhamento é o
+  // que o motor lançou, e o override é ajuste sobre isso — misturar os dois faria
+  // a soma das filhas deixar de fechar com o pai sem nada dizer.
+  const detalhamentoCustos: DetalheCusto[] = custosAdicionais.map((c, i) => ({
+    indice: i,
+    id: c.id,
+    label: c.label,
+    // Mesma normalização de `custosPorCategoria`: categoria desconhecida cai em
+    // 'outros' em vez de criar um grupo que a tela não sabe rotular.
+    categoria: CATEGORIAS_CUSTO.includes(c.categoria) ? c.categoria : 'outros',
+    porMes: porCustoMes[i].slice(1),
+    total: lancadoPorCusto[i],
+  }));
 
   if (rec.modoVenda === 'single_exit') {
     if (mesSaida >= 1 && mesSaida <= prazoTotal) revenue[mesSaida] = vgv * fatorLiquido;
@@ -1191,6 +1294,7 @@ export function calcular(input: ModelInput): ModelOutput {
     conferencias,
     fluxoInvestidor,
     unidadesVendidasPorMes,
+    detalhamentoCustos,
     iteracoes,
     convergiu,
     overridesOrfaos: orfaos,

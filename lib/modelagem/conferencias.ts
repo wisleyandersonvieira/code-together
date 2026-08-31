@@ -445,6 +445,28 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
   const emCiclo = new Set(ctx.resolucao.circulares);
   const nomeDoCusto = (c: (typeof custos)[number], i: number) => c.label || `Custo ${i + 1}`;
 
+  /**
+   * As parcelas de um custo (migration 1763000000). Só o gatilho 'mes_fixo' as
+   * usa; nos demais a lista é ignorada, e por isso nem é lida aqui.
+   */
+  const parcelasDe = (c: (typeof custos)[number]) =>
+    c.gatilho === 'mes_fixo' ? (c.parcelas ?? []) : [];
+
+  /**
+   * O que se ESPERAVA lançar de um custo.
+   *
+   * Regra geral: o valor efetivo da base de cálculo. Com parcelas, porém, quem
+   * manda no total lançado são elas — cobrar o valor efetivo aqui faria
+   * `custo_gatilho_nao_lancado` acender por uma diferença que já tem conferência
+   * própria (`custo_parcelas_vs_alvo`), e o painel diria duas vezes a mesma
+   * coisa com números diferentes.
+   */
+  const alvoLancado = (c: (typeof custos)[number], i: number) => {
+    const parcelas = parcelasDe(c);
+    if (parcelas.length > 0) return parcelas.reduce((a, p) => a + (p.valor || 0), 0);
+    return ctx.resolucao.valores[i] ?? 0;
+  };
+
   /** Como o item foi digitado — para a mensagem dizer o que o usuário informou. */
   const comoFoiDigitado = (c: (typeof custos)[number]) => {
     if (c.baseCalculo === 'por_unidade') return `${dinheiro(c.valorUnitario || 0)} por unidade`;
@@ -512,11 +534,16 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
   // Restrita a gatilho <> 'cronograma' DE PROPÓSITO: com o default da migration
   // 1761500000 esta conferência é inalcançável, então nenhuma modelagem já salva
   // ganha item novo no painel.
+  //
+  // Um custo 'mes_fixo' PARCELADO também passa por aqui — não há conferência
+  // separada para ele: o alvo é a soma das parcelas, e o que sobra é parcela em
+  // mês fora do prazo. `custo_parcelas_fora_do_prazo` conta quantas são;
+  // esta diz quanto dinheiro ficou de fora.
   const naoLancados = custos
     .map((c, i) => ({
       c,
       i,
-      efetivo: ctx.resolucao.valores[i] ?? 0,
+      efetivo: alvoLancado(c, i),
       lancado: ctx.lancadoPorCusto[i] ?? 0,
     }))
     .filter(
@@ -540,7 +567,64 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
             )} de ${dinheiro(x.efetivo)}`,
         )
         .join('; ')}. O que não foi lançado NÃO é apagado — volta ao fluxo assim que o gatilho encontrar mês.`,
-      'Informe o mês âncora, ajuste o cronograma para que o evento caia dentro do prazo, ou declare o mês de venda das tipologias na aba Receita.',
+      'Informe o mês âncora, ajuste o cronograma para que o evento caia dentro do prazo, declare o mês de venda das tipologias na aba Receita, ou mova as parcelas para dentro do prazo.',
+    );
+  }
+
+  // ─── Parcelamento do gatilho 'mes_fixo' ────────────────────────────────────
+  // Restritas a custo COM parcela DE PROPÓSITO: nenhum custo anterior à migration
+  // 1763000000 tem parcela, então nenhuma modelagem já salva ganha item novo no
+  // painel. Sem parcela, as duas ficam inalcançáveis.
+  const parcelados = custos
+    .map((c, i) => ({ c, i, parcelas: parcelasDe(c) }))
+    .filter((x) => x.parcelas.length > 0);
+
+  if (parcelados.length > 0) {
+    // As parcelas é que lançam. O valor efetivo do custo vira REFERÊNCIA — não
+    // teto, não piso —, e a diferença é informação, não erro.
+    const divergentes = parcelados
+      .map((x) => ({
+        ...x,
+        somado: x.parcelas.reduce((a, p) => a + (p.valor || 0), 0),
+        alvo: ctx.resolucao.valores[x.i] ?? 0,
+      }))
+      .filter((x) => Math.abs(x.somado - x.alvo) > TOLERANCIA);
+    const difTotal = divergentes.reduce((a, x) => a + (x.somado - x.alvo), 0);
+    add(
+      'custo_parcelas_vs_alvo',
+      'Parcelas do custo vs valor do custo',
+      divergentes.length > 0 ? 'ambar' : 'verde',
+      dinheiro(difTotal),
+      divergentes.length > 0
+        ? `${divergentes
+            .map(
+              (x) =>
+                `${nomeDoCusto(x.c, x.i)}: ${x.parcelas.length} parcela(s) somando ${dinheiro(
+                  x.somado,
+                )} contra um valor de ${dinheiro(x.alvo)}`,
+            )
+            .join('; ')}.`
+        : 'As parcelas de cada custo fecham com o valor do custo.',
+      'As parcelas é que lançam no fluxo. Ajuste as parcelas ou o valor do custo.',
+    );
+
+    // Parcela além do prazo não é lançada em mês nenhum — o dinheiro não some do
+    // custo, mas não entra no fluxo. Mesma leitura de `aporte_parcela_fora_prazo`.
+    const fora = parcelados.flatMap((x) =>
+      x.parcelas
+        .filter((p) => !Number.isInteger(p.mes) || p.mes < 1 || p.mes > cronograma.prazoTotal)
+        .map((p) => ({ ...x, p })),
+    );
+    const valorFora = fora.reduce((a, x) => a + (x.p.valor || 0), 0);
+    add(
+      'custo_parcelas_fora_do_prazo',
+      'Parcelas de custo fora do prazo',
+      fora.length > 0 ? 'ambar' : 'verde',
+      `${fora.length}`,
+      fora.length > 0
+        ? `${fora.length} parcela(s) somando ${dinheiro(valorFora)} caem fora dos ${cronograma.prazoTotal} meses do cronograma: ficam guardadas, inativas, e não entram no fluxo.`
+        : 'Todas as parcelas caem dentro do cronograma.',
+      'Mova as parcelas para meses dentro do prazo ou aumente o cronograma. O sistema não apaga parcela nenhuma sozinho.',
     );
   }
 

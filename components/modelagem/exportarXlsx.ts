@@ -91,7 +91,9 @@ const LINHAS: DefinicaoLinha[] = [
   { chave: 'land', rotulo: 'Terrenos', valor: (m) => m.land, linha: 'land' },
   { chave: 'construction', rotulo: 'Obra', valor: (m) => m.construction, linha: 'construction' },
   { chave: 'property_tax', rotulo: 'Property taxes', valor: (m) => m.propertyTax, linha: 'property_tax' },
-  { chave: 'other_costs', rotulo: 'Outros custos', valor: (m) => m.otherCosts, linha: 'other_costs' },
+  // Sem as filhas do detalhamento, de propósito: aqui vai o TOTAL do mês, o
+  // mesmo número que a linha pai mostra na tela.
+  { chave: 'other_costs', rotulo: 'Custos', valor: (m) => m.otherCosts, linha: 'other_costs' },
   { chave: 'custo_fin', rotulo: 'Juros e taxas', valor: (m) => m.custoFinanceiroCaixa },
   { chave: 'pagamentos', rotulo: 'Total de pagamentos', valor: (m) => m.pagamentos, destaque: true },
   { chave: 'revenue', rotulo: 'Receita', valor: (m) => m.revenue, linha: 'revenue', separador: true },

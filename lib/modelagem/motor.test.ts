@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  agruparCustosPorCategoria,
   basesDeCalculo,
   calcular,
   fatorJurosDoMes,
@@ -16,7 +17,7 @@ import { bloqueiaSalvamento } from './conferencias';
 import { indiceMes, tirMensal, somarMeses } from './indicadores';
 import { comParcelaNoMes, curvaComoParcelas, editaPlanoDeAportes, semParcelaNoMes } from './aportes';
 import { apuracaoAnual, totalAnual } from './anual';
-import { mapearModelInput } from './mapear';
+import { mapearCustos, mapearModelInput } from './mapear';
 import { CATEGORIAS_CUSTO } from './tipos';
 import type { CustoAdicional, ModelInput, Override } from './tipos';
 
@@ -42,7 +43,7 @@ const casoBase = (): ModelInput => ({
     // `categoria: 'outros'` é o DEFAULT da coluna criada pela migration 1761200000
     // e é justamente o que toda linha já gravada recebe. O caso base continua
     // sendo, portanto, o mesmo caso base de antes da categorização.
-    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
   ],
   // Antes da migration 1761000000 esta premissa era a SOMA de
   // modelagem_unidades.aporte_base: 100.250 × 2 + 266.139 × 2 = 732.778. É
@@ -1200,7 +1201,7 @@ describe('11 — orçamento por categoria', () => {
     // Exatamente o que o mapeador entrega para uma linha gravada antes da
     // migration: `categoria` ausente no banco vira 'outros'.
     base.custosAdicionais = [
-      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     return base;
   };
@@ -1255,11 +1256,11 @@ describe('11 — orçamento por categoria', () => {
     // quatro categorias. A distribuição no tempo de cada linha é a mesma da
     // linha única original, então o fluxo tem de sair idêntico.
     base.custosAdicionais = [
-      { label: 'Sitework', valor: 20_000, distribuicao: 'linear_construction', categoria: 'sitework', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
-      { label: 'Mobilização', valor: 6_000, distribuicao: 'linear_construction', categoria: 'sitework', grupoPaiId: 1, baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
-      { label: 'Amenidades', valor: 10_000, distribuicao: 'linear_construction', categoria: 'amenidades', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
-      { label: 'Projeto', valor: 12_000, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
-      { label: 'Contingência', valor: 8_000, distribuicao: 'linear_construction', categoria: 'contingencia', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Sitework', valor: 20_000, distribuicao: 'linear_construction', categoria: 'sitework', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
+      { label: 'Mobilização', valor: 6_000, distribuicao: 'linear_construction', categoria: 'sitework', grupoPaiId: 1, baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
+      { label: 'Amenidades', valor: 10_000, distribuicao: 'linear_construction', categoria: 'amenidades', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
+      { label: 'Projeto', valor: 12_000, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
+      { label: 'Contingência', valor: 8_000, distribuicao: 'linear_construction', categoria: 'contingencia', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const out = calcular(base);
 
@@ -1282,7 +1283,7 @@ describe('11 — orçamento por categoria', () => {
     const base = casoBase();
     base.custosAdicionais = [
       // Input inconsistente vira resultado, nunca erro — e nunca chave nova.
-      { label: 'Ruído', valor: 9_000, distribuicao: 'linear_total', categoria: 'inexistente' as never, baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Ruído', valor: 9_000, distribuicao: 'linear_total', categoria: 'inexistente' as never, baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const out = calcular(base);
     expect(Object.keys(out.agregados.custosPorCategoria)).toEqual(CATEGORIAS_CUSTO);
@@ -1335,7 +1336,7 @@ describe('12 — base de cálculo do custo', () => {
   it("base 'total' produz exatamente o valor de antes", () => {
     const base = casoBase();
     base.custosAdicionais = [
-      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 999, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 999, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const out = calcular(base);
     // valorUnitario preenchido é INERTE quando a base é 'total': se vazasse para
@@ -1361,7 +1362,7 @@ describe('12 — base de cálculo do custo', () => {
       { nome: 'Casa', quantidade: 45, custoTerreno: 25_000, custoObra: 210_000, precoVenda: 320_000, propertyTaxAno: 850 },
     ];
     base.custosAdicionais = [
-      { label: 'Taxas', valor: 0, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200.93, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Taxas', valor: 0, distribuicao: 'linear_construction', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200.93, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const out = calcular(base);
     expect(out.agregados.unidadesTotal).toBe(45);
@@ -1374,7 +1375,7 @@ describe('12 — base de cálculo do custo', () => {
   it('por_sf multiplica pela área TOTAL: areaSf × quantidade', () => {
     const base = comArea();
     base.custosAdicionais = [
-      { label: 'Construção vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Construção vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const out = calcular(base);
     // 214 × 7.200 sf = 1.540.800. A área é POR UNIDADE e o motor multiplica pela
@@ -1388,11 +1389,11 @@ describe('12 — base de cálculo do custo', () => {
     // produzir fluxos idênticos.
     const porUnidade = comArea();
     porUnidade.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_unidade', valorUnitario: 385_200, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_unidade', valorUnitario: 385_200, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const porSf = comArea();
     porSf.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     expect(JSON.stringify(calcular(porSf).meses)).toBe(JSON.stringify(calcular(porUnidade).meses));
   });
@@ -1402,7 +1403,7 @@ describe('12 — base de cálculo do custo', () => {
     const de45 = casoBase();
     de45.unidades = [{ nome: 'Casa', quantidade: 45, custoTerreno: 0, custoObra: 0, precoVenda: 320_000, propertyTaxAno: 0 }];
     de45.custosAdicionais = [
-      { label: 'Taxas', valor: 0, distribuicao: 'linear_total', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Taxas', valor: 0, distribuicao: 'linear_total', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const de60 = { ...de45, unidades: [{ ...de45.unidades[0], quantidade: 60 }] };
     expect(calcular(de45).agregados.custosPorCategoria.soft).toBeCloseTo(45_000, 2);
@@ -1415,10 +1416,10 @@ describe('12 — base de cálculo do custo', () => {
     const base = casoBase();
     base.unidades = base.unidades.map((u) => ({ ...u, areaSf: 1_800 }));
     const comoTotal = { ...base, custosAdicionais: [
-      { label: 'X', valor: 56_000, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'total' as const, valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'X', valor: 56_000, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'total' as const, valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ] };
     const comoUnitario = { ...base, custosAdicionais: [
-      { label: 'X', valor: 0, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'por_unidade' as const, valorUnitario: 14_000, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'X', valor: 0, distribuicao: 'single_month' as const, mesAncora: 12, categoria: 'soft' as const, baseCalculo: 'por_unidade' as const, valorUnitario: 14_000, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ] };
     expect(JSON.stringify(calcular(comoUnitario).meses)).toBe(JSON.stringify(calcular(comoTotal).meses));
   });
@@ -1427,7 +1428,7 @@ describe('12 — base de cálculo do custo', () => {
     const base = casoBase();
     // Tipologias sem área: por_sf fica sem denominador.
     base.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     const out = calcular(base);
     expect(out.agregados.custosPorCategoria.vertical).toBe(0);
@@ -1440,7 +1441,7 @@ describe('12 — base de cálculo do custo', () => {
   it('não acende custo_base_zerada quando o denominador existe', () => {
     const base = comArea();
     base.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     expect(semaforo(calcular(base), 'custo_base_zerada')).toBeUndefined();
     // E o caso base, todo em 'total', tampouco ganha conferência nova.
@@ -1452,7 +1453,7 @@ describe('12 — base de cálculo do custo', () => {
     // linha; o override daquela célula ganha sempre.
     const base = comArea();
     base.custosAdicionais = [
-      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 214, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
     ];
     base.overrides = [{ mes: 12, linha: 'other_costs', valor: 1_234 }];
     const out = calcular(base);
@@ -1510,6 +1511,7 @@ const custo = (p: Partial<CustoAdicional> & { label: string }): CustoAdicional =
   grupoReferencia: null,
   percentual: 0,
   gatilho: 'cronograma',
+  parcelas: [],
   ...p,
 });
 
@@ -1732,7 +1734,7 @@ describe('14 — gatilho de vencimento do custo', () => {
   it("gatilho 'cronograma' produz o fluxo idêntico ao de antes", () => {
     const base = casoBase();
     base.custosAdicionais = [
-      custo({ label: 'Contingência', valor: 56_000, categoria: 'outros', gatilho: 'cronograma' }),
+      custo({ label: 'Contingência', valor: 56_000, categoria: 'outros', gatilho: 'cronograma', parcelas: [] }),
     ];
     const out = calcular(base);
     expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
@@ -1754,8 +1756,8 @@ describe('14 — gatilho de vencimento do custo', () => {
   it('lança 100% no início e no fim da obra', () => {
     const base = casoBase();
     base.custosAdicionais = [
-      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra' }),
-      custo({ label: 'Habite-se', valor: 30_000, categoria: 'soft', gatilho: 'fim_obra' }),
+      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra', parcelas: [] }),
+      custo({ label: 'Habite-se', valor: 30_000, categoria: 'soft', gatilho: 'fim_obra', parcelas: [] }),
     ];
     const out = calcular(base);
     // Caso base: 10 meses de aprovação, 8 de obra → obra do mês 11 ao 18.
@@ -1772,7 +1774,7 @@ describe('14 — gatilho de vencimento do custo', () => {
     base.custosAdicionais = [
       // distribuicao linear_construction seria diluída em 8 meses; o gatilho
       // mes_fixo manda tudo para o mês 3.
-      custo({ label: 'Impact fee', valor: 60_000, categoria: 'soft', distribuicao: 'linear_construction', mesAncora: 3, gatilho: 'mes_fixo' }),
+      custo({ label: 'Impact fee', valor: 60_000, categoria: 'soft', distribuicao: 'linear_construction', mesAncora: 3, gatilho: 'mes_fixo', parcelas: [] }),
     ];
     const out = calcular(base);
     expect(out.meses[2].otherCosts).toBeCloseTo(60_000, 2);
@@ -1796,7 +1798,7 @@ describe('14 — gatilho de vencimento do custo', () => {
     base.receita.modoVenda = 'per_unit';
     base.receita.vendasPorUnidade = levas.map((_n, k) => ({ unidadeIndex: k, mesVenda: 12 + k }));
     base.custosAdicionais = [
-      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200.93, gatilho: 'por_venda' }),
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200.93, gatilho: 'por_venda', parcelas: [] }),
     ];
     const out = calcular(base);
 
@@ -1817,7 +1819,7 @@ describe('14 — gatilho de vencimento do custo', () => {
   it('por_venda com saída única lança tudo no mês da saída', () => {
     const base = casoBase();
     base.custosAdicionais = [
-      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda' }),
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda', parcelas: [] }),
     ];
     // Caso base é single_exit com mesSaida 23: todas as unidades fecham ali.
     const out = calcular(base);
@@ -1829,11 +1831,11 @@ describe('14 — gatilho de vencimento do custo', () => {
     const base = casoBase();
     base.receita.modoVenda = 'manual'; // nenhuma venda declarada
     base.custosAdicionais = [
-      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda' }),
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda', parcelas: [] }),
       // mes_fixo sem âncora: não há onde lançar.
-      custo({ label: 'Taxa', valor: 5_000, categoria: 'soft', gatilho: 'mes_fixo' }),
+      custo({ label: 'Taxa', valor: 5_000, categoria: 'soft', gatilho: 'mes_fixo', parcelas: [] }),
       // Âncora além do prazo de 23 meses.
-      custo({ label: 'Tardia', valor: 7_000, categoria: 'soft', mesAncora: 99, gatilho: 'mes_fixo' }),
+      custo({ label: 'Tardia', valor: 7_000, categoria: 'soft', mesAncora: 99, gatilho: 'mes_fixo', parcelas: [] }),
     ];
     const out = calcular(base);
     const conf = out.conferencias.find((c) => c.chave === 'custo_gatilho_nao_lancado');
@@ -1851,7 +1853,7 @@ describe('14 — gatilho de vencimento do custo', () => {
     // A invariante do módulo: a regra nova é só a FONTE AUTOMÁTICA da linha.
     const base = casoBase();
     base.custosAdicionais = [
-      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra' }),
+      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra', parcelas: [] }),
     ];
     base.overrides = [{ mes: 11, linha: 'other_costs', valor: 1_234 }];
     const out = calcular(base);
@@ -1866,8 +1868,8 @@ describe('14 — gatilho de vencimento do custo', () => {
       data_inicio: '2025-12-01',
       custos: [
         { id: 1, ordem: 0, label: 'Antiga', valor: '56000.00', distribuicao: 'linear_construction', mes_ancora: null },
-        { id: 2, ordem: 1, label: 'Fee', valor: '0.00', distribuicao: 'manual', mes_ancora: null, gatilho: 'por_venda' },
-        { id: 3, ordem: 2, label: 'Torta', valor: '0.00', distribuicao: 'manual', mes_ancora: null, gatilho: 'zzz' },
+        { id: 2, ordem: 1, label: 'Fee', valor: '0.00', distribuicao: 'manual', mes_ancora: null, gatilho: 'por_venda', parcelas: [] },
+        { id: 3, ordem: 2, label: 'Torta', valor: '0.00', distribuicao: 'manual', mes_ancora: null, gatilho: 'zzz', parcelas: [] },
       ],
     } as never).custosAdicionais!;
     expect(custos[0].gatilho).toBe('cronograma');
@@ -2041,7 +2043,7 @@ describe('16 — takedown schedule', () => {
     // As duas leituras saem do mesmo mapa: se divergirem, é bug.
     const base = casoTakedown();
     base.custosAdicionais = [
-      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda' }),
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 1_000, gatilho: 'por_venda', parcelas: [] }),
     ];
     const out = calcular(base);
     out.meses.forEach((m, k) => {
@@ -2926,5 +2928,369 @@ describe('24 — o que a linha do tempo desenha', () => {
     // E a demonstração anual de um projeto sem mês é uma lista vazia, não um erro.
     expect(apuracaoAnual(out)).toEqual([]);
     expect(totalAnual(apuracaoAnual(out)).resultado).toBe(0);
+  });
+});
+
+describe('25 — detalhamento dos custos mês a mês', () => {
+  // A garantia do item: o detalhamento tem de FECHAR com a linha do fluxo. Se
+  // algum dia o lançamento ganhar uma regra que não passe por `lancar`, é aqui
+  // que quebra — e não em silêncio, numa tela que soma errado.
+  const fecha = (out: ReturnType<typeof calcular>) => {
+    for (let m = 0; m < out.meses.length; m++) {
+      const somaDetalhe = soma(out.detalhamentoCustos.map((d) => d.porMes[m]));
+      expect(somaDetalhe).toBeCloseTo(out.meses[m].otherCosts, 6);
+    }
+  };
+
+  it('para todo mês, Σ das linhas do detalhamento é o otherCosts do mês', () => {
+    const out = calcular(casoBase());
+    expect(out.detalhamentoCustos).toHaveLength(1);
+    fecha(out);
+  });
+
+  it('fecha com gatilhos e bases misturados, que é onde o laço poderia divergir', () => {
+    const base = casoBase();
+    base.receita.modoVenda = 'per_unit';
+    base.receita.vendasPorUnidade = [
+      { unidadeIndex: 0, mesVenda: 19 },
+      { unidadeIndex: 1, mesVenda: 20 },
+      { unidadeIndex: 2, mesVenda: 21 },
+      { unidadeIndex: 3, mesVenda: 22 },
+    ];
+    base.unidades = base.unidades.map((u) => ({ ...u, areaSf: 1_800 }));
+    base.custosAdicionais = [
+      custo({ label: 'Contingência', valor: 56_000, categoria: 'contingencia' }),
+      custo({ label: 'Sitework', valor: 120_000, categoria: 'sitework', distribuicao: 'linear_total' }),
+      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra', parcelas: [] }),
+      custo({ label: 'Habite-se', valor: 30_000, categoria: 'soft', gatilho: 'fim_obra', parcelas: [] }),
+      custo({ label: 'Impact fee', categoria: 'soft', baseCalculo: 'por_unidade', valorUnitario: 5_200, gatilho: 'por_venda', parcelas: [] }),
+      custo({ label: 'Marketing', categoria: 'soft', baseCalculo: 'por_sf', valorUnitario: 2, gatilho: 'mes_fixo', mesAncora: 15 }),
+      custo({ label: 'Taxa do banco', categoria: 'financeiro', baseCalculo: 'pct_de_grupo', grupoReferencia: 'vertical', percentual: 0.01 }),
+      // Mês âncora além do prazo: não lança, e o detalhamento fica todo em zero.
+      custo({ label: 'Pós-obra', valor: 10_000, categoria: 'outros', gatilho: 'mes_fixo', mesAncora: 99 }),
+    ];
+    const out = calcular(base);
+    fecha(out);
+    expect(out.detalhamentoCustos).toHaveLength(8);
+    // Ordem e endereço: o índice do detalhamento é o índice do input.
+    expect(out.detalhamentoCustos.map((d) => d.label)).toEqual(
+      base.custosAdicionais!.map((c) => c.label),
+    );
+    out.detalhamentoCustos.forEach((d, i) => {
+      expect(d.indice).toBe(i);
+      expect(d.porMes).toHaveLength(out.cronograma.prazoTotal);
+      expect(soma(d.porMes)).toBeCloseTo(d.total, 6);
+    });
+    // O custo fora do prazo é guardado como zero, não some da lista.
+    const fora = out.detalhamentoCustos[7];
+    expect(fora.total).toBe(0);
+    expect(fora.porMes.every((v) => v === 0)).toBe(true);
+    expect(semaforo(out, 'custo_gatilho_nao_lancado')).toBe('ambar');
+  });
+
+  it('o detalhamento é o AUTOMÁTICO: o override entra como diferença, não nele', () => {
+    const base = casoBase();
+    const comOverride: ModelInput = {
+      ...base,
+      overrides: [{ mes: 12, linha: 'other_costs', valor: 200_000 }],
+    };
+    const auto = calcular(base);
+    const out = calcular(comOverride);
+    // A linha do fluxo obedece ao override…
+    expect(out.meses[11].otherCosts).toBeCloseTo(200_000, 2);
+    // …e o detalhamento continua sendo o que o motor lançou.
+    expect(JSON.stringify(out.detalhamentoCustos)).toBe(JSON.stringify(auto.detalhamentoCustos));
+    // É esta diferença que a grade mostra como "Ajuste manual", e é ela que faz
+    // pai = Σ filhas + ajuste em todo mês.
+    const ajuste = out.meses.map(
+      (m, i) => m.otherCosts - soma(out.detalhamentoCustos.map((d) => d.porMes[i])),
+    );
+    expect(ajuste[11]).toBeCloseTo(200_000 - auto.meses[11].otherCosts, 6);
+    expect(soma(ajuste.filter((_, i) => i !== 11))).toBeCloseTo(0, 6);
+  });
+
+  it('lancadoPorCusto e o detalhamento contam a MESMA coisa', () => {
+    // `total` não é somado de novo: é o próprio escalar que a conferência lê.
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra', parcelas: [] }),
+      custo({ label: 'Fora do prazo', valor: 45_000, categoria: 'soft', gatilho: 'mes_fixo', mesAncora: 400 }),
+    ];
+    const out = calcular(base);
+    expect(out.detalhamentoCustos[0].total).toBeCloseTo(90_000, 6);
+    expect(out.detalhamentoCustos[1].total).toBe(0);
+    // O que o gatilho não lançou continua aparecendo na conferência, com o valor
+    // exato que ficou de fora.
+    expect(semaforo(out, 'custo_gatilho_nao_lancado')).toBe('ambar');
+  });
+
+  it('agruparCustosPorCategoria soma por categoria sem podar item nenhum', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Contingência', valor: 56_000, categoria: 'contingencia' }),
+      custo({ label: 'Alvará', valor: 90_000, categoria: 'soft', gatilho: 'inicio_obra', parcelas: [] }),
+      custo({ label: 'Habite-se', valor: 30_000, categoria: 'soft', gatilho: 'fim_obra', parcelas: [] }),
+      custo({ label: 'Nunca lançado', valor: 10_000, categoria: 'soft', gatilho: 'mes_fixo', mesAncora: 999 }),
+    ];
+    const out = calcular(base);
+    const grupos = agruparCustosPorCategoria(out.detalhamentoCustos, out.cronograma.prazoTotal);
+    // Ordem de CATEGORIAS_CUSTO: contingência vem antes de soft.
+    expect(grupos.map((g) => g.categoria)).toEqual(['contingencia', 'soft']);
+    expect(grupos[0].total).toBeCloseTo(56_000, 2);
+    // O item que não lançou continua no grupo — quem decide escondê-lo é a tela.
+    expect(grupos[1].itens).toHaveLength(3);
+    expect(grupos[1].total).toBeCloseTo(120_000, 2);
+    expect(grupos[1].porMes[10]).toBeCloseTo(90_000, 2);
+    expect(grupos[1].porMes[17]).toBeCloseTo(30_000, 2);
+    // E os grupos, somados, continuam fechando com a linha do fluxo.
+    for (let m = 0; m < out.meses.length; m++) {
+      expect(soma(grupos.map((g) => g.porMes[m]))).toBeCloseTo(out.meses[m].otherCosts, 6);
+    }
+  });
+
+  it('sem custo adicional nenhum o detalhamento é lista vazia, não undefined', () => {
+    const base = casoBase();
+    base.custosAdicionais = [];
+    const out = calcular(base);
+    expect(out.detalhamentoCustos).toEqual([]);
+    expect(agruparCustosPorCategoria(out.detalhamentoCustos, out.cronograma.prazoTotal)).toEqual([]);
+    fecha(out);
+  });
+});
+
+describe('26 — parcelamento do gatilho "mês fixo"', () => {
+  // Teste de NÃO-REGRESSÃO da migration 1763000000.
+  //
+  // Nenhum custo já gravado tem parcela, e ZERO parcelas é exatamente o
+  // comportamento anterior: 100% no mês âncora. O caminho novo é inalcançável
+  // para toda modelagem que já existe, e é (a) que prova isso.
+  const semParcelas = (): ModelInput => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({ label: 'Impact fee', valor: 56_000, categoria: 'soft', gatilho: 'mes_fixo', mesAncora: 12 }),
+    ];
+    return base;
+  };
+  const referencia = calcular(semParcelas());
+
+  it('(a) custo mes_fixo sem parcelas lança 100% no mês âncora, como hoje', () => {
+    const out = referencia;
+    expect(out.meses[11].otherCosts).toBeCloseTo(56_000, 2);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(56_000, 2);
+    // E nenhuma conferência nova aparece: as duas do parcelamento são
+    // inalcançáveis sem parcela.
+    expect(semaforo(out, 'custo_parcelas_vs_alvo')).toBeUndefined();
+    expect(semaforo(out, 'custo_parcelas_fora_do_prazo')).toBeUndefined();
+  });
+
+  it('lista de parcelas vazia produz o ModelOutput idêntico ao de campo ausente', () => {
+    const base = semParcelas();
+    // O objeto exatamente como o mapeador o entregava ANTES desta migration.
+    base.custosAdicionais = [
+      { label: 'Impact fee', valor: 56_000, distribuicao: 'linear_construction', mesAncora: 12, categoria: 'soft', grupoPaiId: null, baseCalculo: 'total', valorUnitario: 0, grupoReferencia: null, percentual: 0, gatilho: 'mes_fixo' } as never,
+    ];
+    const out = calcular(base);
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(referencia.meses));
+    expect(JSON.stringify(out.apuracao)).toBe(JSON.stringify(referencia.apuracao));
+    expect(out.conferencias.map((c) => c.chave)).toEqual(
+      referencia.conferencias.map((c) => c.chave),
+    );
+  });
+
+  it('$56.000 em 4 parcelas gera 4 lançamentos somando exatamente $56.000', () => {
+    const base = semParcelas();
+    base.custosAdicionais[0].parcelas = [
+      { ordem: 0, mes: 12, valor: 14_000 },
+      { ordem: 1, mes: 14, valor: 14_000 },
+      { ordem: 2, mes: 16, valor: 14_000 },
+      { ordem: 3, mes: 18, valor: 14_000 },
+    ];
+    const out = calcular(base);
+    for (const m of [12, 14, 16, 18]) expect(out.meses[m - 1].otherCosts).toBeCloseTo(14_000, 2);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(56_000, 2);
+    expect(soma(out.detalhamentoCustos[0].porMes)).toBeCloseTo(56_000, 2);
+    // Fecha com o alvo → conferência verde.
+    expect(semaforo(out, 'custo_parcelas_vs_alvo')).toBe('verde');
+    expect(semaforo(out, 'custo_parcelas_fora_do_prazo')).toBe('verde');
+    expect(semaforo(out, 'custo_gatilho_nao_lancado')).toBeUndefined();
+  });
+
+  it('mexer numa parcela lança $50.000 — não $56.000 — e acende âmbar com -$6.000', () => {
+    const base = semParcelas();
+    // Partindo das 4 parcelas de $14.000 que fechavam o alvo, a última desce
+    // para $8.000: a soma cai para $50.000 e a diferença é de -$6.000.
+    base.custosAdicionais[0].parcelas = [
+      { ordem: 0, mes: 12, valor: 10_000 },
+      { ordem: 1, mes: 14, valor: 14_000 },
+      { ordem: 2, mes: 16, valor: 18_000 },
+      { ordem: 3, mes: 18, valor: 8_000 },
+    ];
+    const out = calcular(base);
+    expect(out.meses[11].otherCosts).toBeCloseTo(10_000, 2);
+    // Quem manda no total lançado são as parcelas, não o valor do custo.
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(50_000, 2);
+    const c = out.conferencias.find((x) => x.chave === 'custo_parcelas_vs_alvo');
+    expect(c?.semaforo).toBe('ambar');
+    expect(c?.valor).toContain('6,000');
+    expect(c?.valor).toContain('-');
+    // E não há conferência duplicada dizendo a mesma coisa por outro caminho.
+    expect(semaforo(out, 'custo_gatilho_nao_lancado')).toBeUndefined();
+  });
+
+  it('com parcelas, o mês âncora é ignorado — e continua guardado', () => {
+    const base = semParcelas();
+    base.custosAdicionais[0].mesAncora = 12;
+    base.custosAdicionais[0].parcelas = [
+      { ordem: 0, mes: 20, valor: 28_000 },
+      { ordem: 1, mes: 21, valor: 28_000 },
+    ];
+    const out = calcular(base);
+    expect(out.meses[11].otherCosts).toBe(0);
+    expect(out.meses[19].otherCosts).toBeCloseTo(28_000, 2);
+    expect(out.meses[20].otherCosts).toBeCloseTo(28_000, 2);
+    // O input do usuário não é apagado: removendo as parcelas, a âncora volta.
+    base.custosAdicionais[0].parcelas = [];
+    expect(calcular(base).meses[11].otherCosts).toBeCloseTo(56_000, 2);
+  });
+
+  it('parcela no mês 99 de um projeto de 23 meses não é lançada e acende as duas conferências', () => {
+    const base = semParcelas();
+    base.custosAdicionais[0].parcelas = [
+      { ordem: 0, mes: 12, valor: 28_000 },
+      { ordem: 1, mes: 99, valor: 28_000 },
+    ];
+    const out = calcular(base);
+    expect(out.cronograma.prazoTotal).toBe(23);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(28_000, 2);
+    const fora = out.conferencias.find((x) => x.chave === 'custo_parcelas_fora_do_prazo');
+    expect(fora?.semaforo).toBe('ambar');
+    expect(fora?.valor).toBe('1');
+    // O alvo das parcelas é $56.000 e só $28.000 entrou: o dinheiro que ficou de
+    // fora aparece nomeado, em vez de sumir.
+    expect(semaforo(out, 'custo_gatilho_nao_lancado')).toBe('ambar');
+    // E as parcelas somam o valor do custo, então o alvo continua verde.
+    expect(semaforo(out, 'custo_parcelas_vs_alvo')).toBe('verde');
+  });
+
+  it('duas parcelas no mesmo mês somam, não se sobrescrevem', () => {
+    const base = semParcelas();
+    base.custosAdicionais[0].parcelas = [
+      { ordem: 0, mes: 12, valor: 20_000 },
+      { ordem: 1, mes: 12, valor: 36_000 },
+    ];
+    const out = calcular(base);
+    expect(out.meses[11].otherCosts).toBeCloseTo(56_000, 2);
+  });
+
+  it('mês fracionário ou zero não é lançado nem cria buraco no fluxo', () => {
+    const base = semParcelas();
+    base.custosAdicionais[0].parcelas = [
+      { ordem: 0, mes: 12.5, valor: 28_000 },
+      { ordem: 1, mes: 0, valor: 28_000 },
+    ];
+    const out = calcular(base);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBe(0);
+    expect(out.meses.every((m) => Number.isFinite(m.otherCosts))).toBe(true);
+    expect(semaforo(out, 'custo_parcelas_fora_do_prazo')).toBe('ambar');
+  });
+
+  it('base derivada: o alvo sai das unidades e as parcelas mandam no lançamento', () => {
+    const base = semParcelas();
+    // 4 unidades × $5.000 = $20.000 de alvo; as parcelas somam $18.000.
+    base.custosAdicionais = [
+      custo({
+        label: 'Impact fee',
+        categoria: 'soft',
+        baseCalculo: 'por_unidade',
+        valorUnitario: 5_000,
+        gatilho: 'mes_fixo',
+        mesAncora: 12,
+        parcelas: [
+          { ordem: 0, mes: 12, valor: 9_000 },
+          { ordem: 1, mes: 15, valor: 9_000 },
+        ],
+      }),
+    ];
+    const out = calcular(base);
+    expect(out.agregados.custosPorCategoria.soft).toBeCloseTo(20_000, 2);
+    expect(soma(out.meses.map((m) => m.otherCosts))).toBeCloseTo(18_000, 2);
+    const c = out.conferencias.find((x) => x.chave === 'custo_parcelas_vs_alvo');
+    expect(c?.semaforo).toBe('ambar');
+    expect(c?.detalhe).toContain('Impact fee');
+  });
+
+  it('parcela em custo com outro gatilho é ignorada, não lançada por acidente', () => {
+    const base = casoBase();
+    base.custosAdicionais = [
+      custo({
+        label: 'Contingência',
+        valor: 56_000,
+        categoria: 'outros',
+        gatilho: 'cronograma',
+        parcelas: [{ ordem: 0, mes: 3, valor: 999_999 }],
+      }),
+    ];
+    const out = calcular(base);
+    // Continua sendo a distribuição linear na obra do caso base.
+    expect(JSON.stringify(out.meses)).toBe(JSON.stringify(calcular(casoBase()).meses));
+    expect(semaforo(out, 'custo_parcelas_vs_alvo')).toBeUndefined();
+  });
+
+  it('o detalhamento mês a mês fecha também com parcelas', () => {
+    const base = semParcelas();
+    base.custosAdicionais[0].parcelas = [
+      { ordem: 0, mes: 12, valor: 14_000 },
+      { ordem: 1, mes: 14, valor: 14_000 },
+      { ordem: 2, mes: 99, valor: 28_000 },
+    ];
+    const out = calcular(base);
+    for (let m = 0; m < out.meses.length; m++) {
+      expect(soma(out.detalhamentoCustos.map((d) => d.porMes[m]))).toBeCloseTo(
+        out.meses[m].otherCosts,
+        6,
+      );
+    }
+  });
+
+  it('as parcelas não bloqueiam o salvamento em nenhum cenário', () => {
+    const base = semParcelas();
+    base.custosAdicionais[0].parcelas = [{ ordem: 0, mes: 99, valor: 1 }];
+    expect(bloqueiaSalvamento(calcular(base).conferencias)).toEqual([]);
+  });
+});
+
+describe('27 — mapeamento das parcelas de custo', () => {
+  it('DECIMAL como string vira número, e o sub-select nulo vira lista vazia', () => {
+    const custos = mapearCustos([
+      {
+        id: 7,
+        label: 'Impact fee',
+        valor: '56000.00',
+        gatilho: 'mes_fixo',
+        mes_ancora: '12',
+        categoria: 'soft',
+        base_calculo: 'total',
+        parcelas: [
+          { id: 3, ordem: '1', mes: '14', valor: '14000.00' },
+          { id: 2, ordem: '0', mes: '12', valor: '14000.00' },
+        ],
+      },
+      // Linha gravada antes da migration: sem a chave `parcelas`.
+      { id: 8, label: 'Alvará', valor: '9000.00', gatilho: 'mes_fixo', mes_ancora: '11' },
+    ]);
+    expect(custos[0].parcelas).toEqual([
+      { id: 2, ordem: 0, mes: 12, valor: 14_000 },
+      { id: 3, ordem: 1, mes: 14, valor: 14_000 },
+    ]);
+    // Somar as parcelas mapeadas dá número, não texto concatenado.
+    expect(custos[0].parcelas.reduce((a, p) => a + p.valor, 0)).toBe(28_000);
+    expect(custos[1].parcelas).toEqual([]);
+  });
+
+  it('mês nulo ou zero vira 1 em vez de sumir, e o valor ausente vira zero', () => {
+    const [c] = mapearCustos([
+      { id: 1, label: 'X', gatilho: 'mes_fixo', parcelas: [{ id: 9, mes: null, valor: null }] },
+    ]);
+    expect(c.parcelas).toEqual([{ id: 9, ordem: 0, mes: 1, valor: 0 }]);
   });
 });

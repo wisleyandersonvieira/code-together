@@ -16,7 +16,7 @@ const casoBase = (): ModelInput => ({
     { nome: 'B2', quantidade: 1, custoTerreno: 95_000, custoObra: 460_000, precoVenda: 825_000, propertyTaxAno: 1_800 },
   ],
   custosAdicionais: [
-    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' },
+    { label: 'Contingência', valor: 56_000, distribuicao: 'linear_construction', categoria: 'outros', baseCalculo: 'total', valorUnitario: 0, percentual: 0, gatilho: 'cronograma', parcelas: [] },
   ],
   // Antes da migration 1761000000 esta premissa era a SOMA de
   // modelagem_unidades.aporte_base: 100.250 × 2 + 266.139 × 2 = 732.778. É

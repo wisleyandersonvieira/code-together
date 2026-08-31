@@ -2,6 +2,7 @@ export * from './tipos';
 export * from './indicadores';
 export * from './conferencias';
 export {
+  agruparCustosPorCategoria,
   basesDeCalculo,
   calcular,
   fatorJurosDoMes,
@@ -9,7 +10,13 @@ export {
   resolverCustos,
   valorEfetivoCusto,
 } from './motor';
-export type { BasesDeCalculo, CustosDiretos, ReferenciasCategoria, ResolucaoCustos } from './motor';
+export type {
+  BasesDeCalculo,
+  CustosDiretos,
+  GrupoCustoCategoria,
+  ReferenciasCategoria,
+  ResolucaoCustos,
+} from './motor';
 export * from './mapear';
 export * from './aportes';
 export * from './anual';
