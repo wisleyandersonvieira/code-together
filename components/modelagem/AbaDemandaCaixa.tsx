@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { calcular } from '@/lib/modelagem';
+import { calcular, ROTULO_MODO_SAQUE } from '@/lib/modelagem';
 import type { ModelInput, ModelOutput } from '@/lib/modelagem';
 import { dinheiro, mesAno, multiplo, percentual } from './formato';
 
@@ -71,7 +71,11 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="text-sm text-slate-600">
-          Modo de saque atual: <strong className="text-slate-900">{rascunho.financiamento.modoSaque}</strong> ·
+          Modo de saque atual:{' '}
+          <strong className="text-slate-900">
+            {ROTULO_MODO_SAQUE[rascunho.financiamento.modoSaque] ?? rascunho.financiamento.modoSaque}
+          </strong>{' '}
+          ·
           teto de dívida:{' '}
           <strong className="text-slate-900">{Number.isFinite(teto) ? d(teto) : 'sem teto'}</strong>
         </div>
@@ -197,17 +201,28 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[900px]">
+        <table className="w-full min-w-[1180px]">
           <thead className="bg-slate-50">
             <tr>
               {[
                 'Mês',
-                'Demanda bruta',
                 'Caixa de abertura',
-                'Saque',
+                // A demanda DIMENSIONADA, e não a bruta: é a conta que o motor
+                // usou para calcular o saque, e é ela que as três colunas
+                // seguintes decompõem — coberto por aporte, coberto por saque,
+                // descoberto. Com a bruta as três não fechariam com nada.
+                'Demanda',
+                'Coberto por aporte',
+                'Coberto por saque',
+                'Descoberto',
+                // Lançado ≠ cobertura, e a distinção é o que esta tela existe
+                // para mostrar: o saque do modo equity_first pode passar da
+                // demanda (sobra em caixa) e o aporte do plano pode entrar num
+                // mês sem demanda nenhuma.
+                'Saque lançado',
+                'Aporte lançado',
                 ...(planoLigado ? ['Plano de aportes'] : []),
-                'Aporte',
-                'Caixa de fechamento',
+                'Caixa acumulado',
                 'Folga vs colchão',
                 '',
               ].map((h, i) => (
@@ -227,16 +242,34 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
                   <td className="px-3 py-2 text-sm text-slate-800">
                     {m.mes} <span className="text-slate-400">{mesAno(m.data)}</span>
                   </td>
-                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.demandaBruta)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-600">{d(m.caixaAbertura)}</td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.demandaDimensionada)}</td>
+                  {/* Coberto por aporte é o RESTO da demanda depois do saque e do
+                      descoberto: é o que faz as três colunas somarem exatamente a
+                      demanda, em qualquer modo. O aporte que sobrar além da
+                      demanda do mês não é cobertura — vira caixa, e aparece na
+                      coluna de caixa acumulado. */}
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">
+                    {d(Math.max(0, m.demandaDimensionada - m.demandaCoberta - m.demandaDescoberta))}
+                  </td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.demandaCoberta)}</td>
+                  <td
+                    className={cn(
+                      'px-3 py-2 text-right text-sm tabular-nums',
+                      m.demandaDescoberta > 0.01 ? 'font-semibold text-red-600' : 'text-slate-400',
+                    )}
+                  >
+                    {d(m.demandaDescoberta)}
+                  </td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.draw)}</td>
+                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.equityCall)}</td>
                   {planoLigado ? (
                     <td
                       className={cn(
                         'px-3 py-2 text-right text-sm tabular-nums',
                         // O plano previu menos capital do que o mês pediu: é a
-                        // origem do buraco de caixa que a coluna à direita mostra.
-                        m.demandaBruta - m.draw > (parcelaPorMes.get(m.mes) ?? 0) + 0.01
+                        // origem do descoberto que a coluna à esquerda mostra.
+                        m.demandaDescoberta > 0.01
                           ? 'font-semibold text-amber-700'
                           : 'text-slate-600',
                       )}
@@ -244,7 +277,6 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
                       {d(parcelaPorMes.get(m.mes) ?? 0)}
                     </td>
                   ) : null}
-                  <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-700">{d(m.equityCall)}</td>
                   <td className="px-3 py-2 text-right text-sm tabular-nums text-slate-900">{d(m.caixaAcumulado)}</td>
                   <td className={cn('px-3 py-2 text-right text-sm tabular-nums', abaixoColchao ? 'font-semibold text-red-600' : 'text-slate-600')}>
                     {d(folga)}

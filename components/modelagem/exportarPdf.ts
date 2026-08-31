@@ -28,6 +28,7 @@ import {
   gradeSensibilidade,
   LINHAS_ANUAL,
   pontosDeEquilibrio,
+  ROTULO_MODO_SAQUE,
   sensibilidadePrazo,
   totalAnual,
   VARIACOES_CUSTO,
@@ -49,11 +50,9 @@ function mesAnoLongo(dataIso: string | null | undefined): string {
 /** Indicador ausente vira travessão no relatório — nunca NaN, nunca 0. */
 const ouTraco = (texto: string) => (texto === 'n/d' ? '—' : texto);
 
-const ROTULO_SAQUE: Record<string, string> = {
-  equity_first: 'Equity primeiro',
-  cash_demand: 'Demanda de caixa',
-  manual: 'Manual',
-};
+// Rótulos vêm de tipos.ts: um modo de saque novo aparece no relatório sem que
+// ninguém precise lembrar de vir aqui — era o que acontecia com este mapa local.
+const ROTULO_SAQUE: Record<string, string> = ROTULO_MODO_SAQUE;
 const ROTULO_AMORTIZACAO: Record<string, string> = {
   at_exit: 'Integral na saída',
   manual: 'Manual',

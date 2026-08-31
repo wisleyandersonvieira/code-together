@@ -9,8 +9,8 @@
  * três realimentam o próprio loop:
  *
  *   1. o fee de estruturação depende do TOTAL sacado;
- *   2. no modo cash_demand o saque depende do caixa, que depende do custo
- *      financeiro, que depende do saque;
+ *   2. nos modos cash_demand e equity_first_demanda o saque depende do caixa,
+ *      que depende do custo financeiro, que depende do saque;
  *   3. a distribuição automática depende do equity total, e uma distribuição
  *      lançada antes do fim muda o caixa de abertura dos meses seguintes, que
  *      muda o equity.
@@ -369,6 +369,22 @@ interface EstadoPonto {
   /** Custo financeiro de caixa por mês, indexado de 1 a prazoTotal. */
   custoFinPorMes: number[];
   distribuicaoAutomatica: number;
+}
+
+/**
+ * O que uma passada do loop mensal devolve.
+ *
+ * O corte pelo teto é acumulado DENTRO do passe, e não recomputado depois a
+ * partir de `meses`: a conferência tem de cobrar exatamente o número que o
+ * cálculo usou — a mesma razão de `bases` e `resolucao` chegarem prontos às
+ * conferências.
+ */
+interface ResultadoPasse {
+  meses: MesFluxo[];
+  /** Meses em que a demanda existia e a capacidade foi o limite do saque. */
+  mesesNoTeto: number;
+  /** Σ (demanda − saque) nesses meses: o que ficou sem cobertura. */
+  descobertoPorTeto: number;
 }
 
 export function calcular(input: ModelInput): ModelOutput {
@@ -899,9 +915,46 @@ export function calcular(input: ModelInput): ModelOutput {
     return 0;
   };
 
+  // ─── Aporte previsto de cada mês (migration 1763200000) ────────────────────
+  // O que o passo 5 VAI lançar de equity em cada mês, resolvido ANTES do loop
+  // porque o passo 1 precisa dele: é o desconto do aporte do PRÓPRIO mês que
+  // impede o modo 'equity_first_demanda' de sacar no mês 1 quando o aporte já
+  // cobriria tudo.
+  //
+  // A ordem espelha EXATAMENTE a do passo 5, e não a invariante geral "override
+  // sempre vence": em 'cronograma_socio' o passo 5 ignora o override de
+  // equity_call, porque ali o equity do mês é a soma de aportes de sócios
+  // NOMEADOS e o override não diz de quem é o dinheiro. Uma previsão que não
+  // bate com o que vai ser lançado faz o saque descontar dinheiro que não entra,
+  // e o mês fecha abaixo do colchão exatamente nessa diferença.
+  //
+  // No modo de aporte 'demanda' o previsto é ZERO em todo mês, e isso é
+  // DELIBERADO: ali o aporte é o RESÍDUO do caixa, calculado no passo 5 DEPOIS
+  // do saque. Se o saque o descontasse, os dois se anulariam — "aporte = demanda
+  // − saque" e "saque = demanda − aporte" são a mesma equação escrita duas
+  // vezes, sem solução única, e o ponto fixo passaria a oscilar entre "tudo
+  // saque" e "tudo aporte". É a primeira coisa que alguém vai tentar consertar
+  // aqui; não conserte.
+  const aportePrevisto = zeros();
+  for (let m = 1; m <= prazoTotal; m++) {
+    aportePrevisto[m] =
+      regraCapital === 'cronograma_socio'
+        ? (aporteSociosPorMes.get(m) ?? 0)
+        : temOverride(m, 'equity_call')
+          ? valorOverride(m, 'equity_call')
+          : modoAporte === 'plano'
+            ? (parcelaPorMes.get(m) ?? 0)
+            : 0;
+  }
+
   // ─── Uma passada do loop mensal ────────────────────────────────────────────
-  const passe = (estado: EstadoPonto): MesFluxo[] => {
+  const passe = (estado: EstadoPonto): ResultadoPasse => {
     const meses: MesFluxo[] = [];
+    // Quanto da demanda do mês o TETO impediu de sacar, acumulado no passe
+    // inteiro. Alimenta `teto_divida`, que só assim consegue dizer quanto de
+    // aporte a mais fecharia o caixa.
+    let mesesNoTeto = 0;
+    let descobertoPorTeto = 0;
     let saldoAnterior = 0;
     let caixaAcumulado = 0;
     let obraAcumulada = 0;
@@ -930,7 +983,23 @@ export function calcular(input: ModelInput): ModelOutput {
       const amortPrevista =
         fin.modoAmortizacao === 'at_exit' && m === mesSaida ? saldoAbertura : 0;
 
+      // Demanda de caixa do mês, nas duas leituras que os modos usam. Calculadas
+      // aqui em cima, fora do if, é o que garante que a tela mostre a MESMA conta
+      // que dimensionou o saque — recomputá-la depois abriria espaço para as duas
+      // divergirem.
+      //
+      // `custoFinEstimado` vem do ponto fixo: é o custo financeiro que a passada
+      // anterior apurou para ESTE mês. Com a flag desligada é zero, e aí os juros
+      // do mês saem do caixa sem ter entrado no dimensionamento.
+      const custoFinEstimado = fin.custoFinanceiroNaDemanda ? (estado.custoFinPorMes[m] ?? 0) : 0;
+      const demandaSemAporte =
+        pagamentosOperacionais + custoFinEstimado + amortPrevista + colchao - revenue[m] - caixaAbertura;
+      const demandaLiquidaDeAporte = demandaSemAporte - aportePrevisto[m];
+
       let draw: number;
+      // A demanda que DIMENSIONOU o saque neste mês. Nos modos que não
+      // dimensionam por demanda ela é só leitura da aba Demanda de Caixa.
+      let demandaDoSaque = demandaLiquidaDeAporte;
       if (temOverride(m, 'draw')) {
         // Override de saque vence sempre, inclusive acima do teto: nesse caso a
         // conferência acende vermelho, mas o cálculo segue.
@@ -938,19 +1007,65 @@ export function calcular(input: ModelInput): ModelOutput {
       } else if (fin.modoSaque === 'equity_first') {
         // Regra clássica: o capital próprio entra primeiro na obra. Só há saque
         // depois que a obra acumulada ultrapassa o equity disponível para obra.
+        //
+        // O teto `construction[m]` é o que deixa terreno, property tax, custos do
+        // orçamento e custo financeiro sem cobertura de dívida — e é exatamente
+        // isso que o modo 'equity_first_demanda' abaixo resolve. Aqui não se
+        // mexe: é o resultado de toda modelagem já gravada.
         draw = dentroJanela
           ? clamp(obraAcumulada - equityDisponivelObraAte(m), 0, Math.min(construction[m], capacidade))
           : 0;
       } else if (fin.modoSaque === 'cash_demand') {
-        // Dimensiona a dívida pela necessidade real de caixa do mês.
-        const custoFinEstimado = fin.custoFinanceiroNaDemanda ? (estado.custoFinPorMes[m] ?? 0) : 0;
-        const demanda =
-          pagamentosOperacionais + custoFinEstimado + amortPrevista + colchao - revenue[m] - caixaAbertura;
-        draw = dentroJanela ? clamp(demanda, 0, capacidade) : 0;
+        // Dimensiona a dívida pela necessidade real de caixa do mês. Ignora o
+        // aporte do próprio mês de propósito — ver o modo abaixo.
+        demandaDoSaque = demandaSemAporte;
+        draw = dentroJanela ? clamp(demandaSemAporte, 0, capacidade) : 0;
+      } else if (fin.modoSaque === 'equity_first_demanda') {
+        // O capital próprio entra primeiro porque é descontado da demanda: só
+        // sobra saque quando o aporte do mês, a receita e o caixa de abertura não
+        // cobrem os pagamentos mais o colchão.
+        //
+        // Diferente do 'cash_demand', que ignora o aporte do próprio mês e por
+        // isso saca no mês 1 mesmo quando o aporte já cobriria tudo — deixando
+        // dinheiro parado em caixa pagando juros.
+        //
+        // clamp(…, 0, capacidade): mês superavitário não gera saque NEGATIVO (o
+        // saque não é devolução de principal — quem devolve é a amortização), e o
+        // teto continua sendo o teto. Quando a demanda passa da capacidade o
+        // caixa fica negativo de novo — e é justamente isso que `teto_divida`
+        // conta logo abaixo, com o valor de aporte que fecharia o buraco.
+        //
+        // Fora da janela de saque o saque é ZERO e o buraco fica. É correto:
+        // janela é contrato, não preferência — o banco não libera dinheiro em mês
+        // nenhum fora dela, e inventar saque ali esconderia um problema de
+        // cronograma que `caixa_minimo` tem de mostrar.
+        draw = dentroJanela ? clamp(demandaLiquidaDeAporte, 0, capacidade) : 0;
       } else {
         draw = 0; // 'manual' → só overrides
       }
       sacadoAte += draw;
+
+      // Cobertura do mês, para a aba Demanda de Caixa não ter de recalcular nada.
+      // O clamp no coberto: saque ACIMA da demanda — override, ou o saque do
+      // equity_first quando a obra do mês passa da necessidade — sobra em caixa,
+      // não é cobertura.
+      const demandaDimensionada = Math.max(0, demandaDoSaque);
+      const demandaCoberta = clamp(draw, 0, demandaDimensionada);
+      const demandaDescoberta = Math.max(0, demandaDimensionada - draw);
+
+      // O teto BINDOU neste mês: havia demanda, o mês estava dentro da janela e a
+      // capacidade foi o limite. Contado só no modo novo — nos outros o saque não
+      // é dimensionado por esta demanda, e contá-los mudaria o texto de
+      // `teto_divida` em modelagem já gravada.
+      if (
+        fin.modoSaque === 'equity_first_demanda' &&
+        !temOverride(m, 'draw') &&
+        dentroJanela &&
+        demandaDoSaque > capacidade + TOL_CONVERGENCIA
+      ) {
+        mesesNoTeto += 1;
+        descobertoPorTeto += demandaDoSaque - draw;
+      }
 
       // 1b. RESERVA DE JUROS — constituída no PRIMEIRO SAQUE, um único mês.
       //     Sacada: sai do próprio empréstimo, soma ao principal e rende juros
@@ -1117,13 +1232,16 @@ export function calcular(input: ModelInput): ModelOutput {
         caixaMes,
         caixaAcumulado,
         demandaBruta: pagamentos + amortization - revenue[m],
+        demandaDimensionada,
+        demandaCoberta,
+        demandaDescoberta,
         capacidadeSaque: capacidade,
         taxaEfetivaAno,
         unidadesVendidas: vendasPorMes.get(m) ?? 0,
         equityDisponivelAcumulado: equityDisponivelObraAte(m),
       });
     }
-    return meses;
+    return { meses, mesesNoTeto, descobertoPorTeto };
   };
 
   // ─── Ponto fixo ────────────────────────────────────────────────────────────
@@ -1133,6 +1251,8 @@ export function calcular(input: ModelInput): ModelOutput {
     distribuicaoAutomatica: 0,
   };
   let meses: MesFluxo[] = [];
+  let mesesNoTeto = 0;
+  let descobertoPorTeto = 0;
   let iteracoes = 0;
   let convergiu = false;
 
@@ -1140,7 +1260,9 @@ export function calcular(input: ModelInput): ModelOutput {
 
   for (let it = 0; it < MAX_ITERACOES; it++) {
     iteracoes = it + 1;
-    meses = passe(estado);
+    // O corte pelo teto vale o da ÚLTIMA passada, como todo o resto: é a passada
+    // convergida que vira resultado.
+    ({ meses, mesesNoTeto, descobertoPorTeto } = passe(estado));
 
     // Inclui o saque destinado à reserva de juros: é principal sacado do
     // empréstimo como qualquer outro, rende juros e volta pela amortização. Com
@@ -1455,6 +1577,8 @@ export function calcular(input: ModelInput): ModelOutput {
     vendasPorMes,
     releaseTotal,
     rateioSocios,
+    mesesNoTeto,
+    descobertoPorTeto,
   });
 
   return {

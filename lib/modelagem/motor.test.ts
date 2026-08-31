@@ -3729,3 +3729,274 @@ describe('29 — mapeamento do capital por sócio', () => {
     );
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modo de saque 'equity_first_demanda' (migration 1763200000)
+//
+// O que o modo resolve: no 'equity_first' o saque não passa da OBRA do mês, e
+// terreno, property tax, custos do orçamento e custo financeiro ficam sem
+// cobertura — com aporte por PLANO (que não é resíduo de caixa) o caixa fica
+// negativo. Aqui o saque cobre a demanda do mês descontado o aporte do próprio
+// mês, e o caixa fecha no colchão.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('modo de saque equity_first_demanda', () => {
+  const COLCHAO = 50_000;
+
+  /** Caso base com janela de saque no projeto inteiro e aporte por plano. */
+  const casoDemanda = (patch: Partial<ModelInput> = {}): ModelInput => {
+    const b = casoBase();
+    return {
+      ...b,
+      aportes: {
+        modoAporte: 'plano',
+        aporteBaseTotal: 732_778,
+        valorTotalAlvo: 0,
+        regraRateioCapital: 'participacao' as const,
+        parcelas: [{ mes: 1, valor: 300_000 }],
+      },
+      financiamento: {
+        ...b.financiamento,
+        modoSaque: 'equity_first_demanda',
+        custoFinanceiroNaDemanda: true,
+        colchaoMinimoCaixa: COLCHAO,
+        mesInicioSaque: 1,
+        mesFimSaque: 23,
+      },
+      ...patch,
+    };
+  };
+
+  it('com teto folgado, o caixa fecha EXATAMENTE no colchão em todo mês deficitário', () => {
+    const out = calcular(casoDemanda());
+    for (const m of out.meses) {
+      // Nunca abaixo do colchão: é o que o modo existe para garantir.
+      expect(m.caixaAcumulado).toBeGreaterThan(COLCHAO - DOLAR);
+      // E nunca ACIMA dele por saque a mais: mês com demanda fecha no colchão,
+      // sem dinheiro parado pagando juros. Mês superavitário (aporte do plano,
+      // receita da venda) fecha acima, e isso é o caixa do projeto, não saque.
+      if (m.demandaDimensionada > DOLAR) {
+        expect(m.caixaAcumulado).toBeCloseTo(COLCHAO, 0);
+      }
+    }
+    expect(semaforo(out, 'caixa_minimo')).toBe('verde');
+    expect(semaforo(out, 'teto_divida')).toBe('ambar'); // sem teto declarado
+    expect(out.convergiu).toBe(true);
+  });
+
+  it('não saca no mês 1 quando o aporte do mês já cobre tudo — o cash_demand saca', () => {
+    const novo = calcular(casoDemanda());
+    expect(novo.meses[0].draw).toBe(0);
+    expect(novo.meses[0].demandaDimensionada).toBe(0);
+
+    // Mesmo input, só trocando o modo: o cash_demand ignora o aporte do próprio
+    // mês e saca dinheiro que fica parado em caixa pagando juros.
+    const base = casoDemanda();
+    const antigo = calcular({
+      ...base,
+      financiamento: { ...base.financiamento, modoSaque: 'cash_demand' },
+    });
+    expect(antigo.meses[0].draw).toBeGreaterThan(0);
+    expect(novo.apuracao.custoFinanceiro).toBeLessThan(antigo.apuracao.custoFinanceiro);
+  });
+
+  it('desconta o aporte previsto do mês em cada uma das origens do plano', () => {
+    const semParcela = calcular(casoDemanda());
+    const demanda14 = semParcela.meses[13].demandaDimensionada;
+    expect(demanda14).toBeGreaterThan(0);
+
+    // Plano: uma parcela que cobre a demanda do mês 14 zera o saque do mês 14.
+    // Não se compara o saque com "o de antes menos a parcela": o aporte muda a
+    // dívida, e a dívida muda os juros dos meses seguintes.
+    const comParcela = calcular(
+      casoDemanda({
+        aportes: {
+          modoAporte: 'plano',
+          aporteBaseTotal: 0,
+          valorTotalAlvo: 0,
+          regraRateioCapital: 'participacao' as const,
+          parcelas: [{ mes: 1, valor: 300_000 }, { mes: 14, valor: demanda14 + 10_000 }],
+        },
+      }),
+    );
+    expect(comParcela.meses[13].draw).toBe(0);
+    // E uma parcela PARCIAL abate quase exatamente o que aporta — a diferença é
+    // só o custo financeiro que ela mesma evitou.
+    const metade = calcular(
+      casoDemanda({
+        aportes: {
+          modoAporte: 'plano',
+          aporteBaseTotal: 0,
+          valorTotalAlvo: 0,
+          regraRateioCapital: 'participacao' as const,
+          parcelas: [{ mes: 1, valor: 300_000 }, { mes: 14, valor: demanda14 / 2 }],
+        },
+      }),
+    );
+    expect(metade.meses[13].draw).toBeCloseTo(demanda14 / 2, -4);
+
+    // Cronograma por sócio: a soma dos aportes do mês faz o mesmo papel.
+    const base = casoDemanda();
+    const porSocio = calcular({
+      ...base,
+      aportes: {
+        modoAporte: 'demanda',
+        aporteBaseTotal: 0,
+        valorTotalAlvo: 0,
+        regraRateioCapital: 'cronograma_socio' as const,
+      },
+      socios: [
+        { nome: 'S1', participacaoPct: 0.5, cotaDisponivel: false, aportes: [{ mes: 1, valor: 300_000 }] },
+        { nome: 'S2', participacaoPct: 0.5, cotaDisponivel: false, aportes: [{ mes: 1, valor: 200_000 }] },
+      ],
+    });
+    // Mês 1: 500.000 de aporte contra 240.000 de terreno — nada a sacar.
+    expect(porSocio.meses[0].draw).toBe(0);
+
+    // Override de equity_call: entra no desconto como qualquer aporte previsto,
+    // porque é o que o passo 5 vai lançar.
+    const comOverride = calcular({
+      ...base,
+      overrides: [{ mes: 14, linha: 'equity_call', valor: 150_000 }],
+    });
+    // Mesmo abatimento da parcela do plano, a menos do custo financeiro que o
+    // próprio aporte evita nos meses seguintes.
+    expect(comOverride.meses[13].draw).toBeCloseTo(demanda14 - 150_000, -4);
+    expect(comOverride.meses[13].equityCall).toBe(150_000);
+  });
+
+  it('no modo de aporte "demanda" o saque cobre tudo e o aporte residual fica zero', () => {
+    const base = casoDemanda();
+    const out = calcular({
+      ...base,
+      aportes: {
+        modoAporte: 'demanda',
+        aporteBaseTotal: 732_778,
+        valorTotalAlvo: 0,
+        regraRateioCapital: 'participacao' as const,
+      },
+    });
+    // Sem laço infinito e sem oscilação: o ponto fixo fecha, e bem antes do
+    // limite de 50 passadas. Custa mais passadas que o equity_first (3) porque o
+    // saque realimenta o custo financeiro, como no cash_demand.
+    expect(out.convergiu).toBe(true);
+    expect(out.iteracoes).toBeLessThanOrEqual(15);
+    // aportePrevisto é ZERO nesse modo (o aporte é resíduo do caixa), então o
+    // saque cobre a demanda inteira e não sobra resíduo nenhum para o equity.
+    for (const m of out.meses) expect(m.equityCall).toBeCloseTo(0, 0);
+    expect(out.apuracao.equityTotal).toBeCloseTo(0, 0);
+  });
+
+  it('fora da janela de saque o buraco fica — janela é contrato', () => {
+    const base = casoDemanda();
+    const out = calcular({
+      ...base,
+      financiamento: { ...base.financiamento, mesInicioSaque: 13, mesFimSaque: 23 },
+    });
+    // Obra começa no mês 11, saque só no 13: os meses 11 e 12 ficam descobertos.
+    expect(out.meses[10].draw).toBe(0);
+    expect(out.meses[10].demandaDescoberta).toBeGreaterThan(0);
+    expect(semaforo(out, 'caixa_minimo')).toBe('vermelho');
+  });
+
+  it('teto que binda acende teto_divida em vermelho e diz quanto de aporte falta', () => {
+    const base = casoDemanda();
+    // Teto apertado: 20% do custo direto de 1.580.000 = 316.000.
+    const out = calcular({
+      ...base,
+      financiamento: { ...base.financiamento, maxLtcPct: 0.2 },
+    });
+    const conf = out.conferencias.find((c) => c.chave === 'teto_divida')!;
+    expect(conf.semaforo).toBe('vermelho');
+    expect(conf.detalhe).toMatch(/O saque bateu no teto em \d+ (mês|meses)\./);
+    expect(conf.detalhe).toMatch(/Faltaram \$[\d.,]+ de cobertura/);
+    expect(conf.detalhe).toMatch(/elevar o teto de dívida para [\d.,]+% do custo direto/);
+    // O saque respeita o teto, e o que ele cortou vira caixa descoberto.
+    expect(out.apuracao.dividaSacada).toBeLessThan(out.apuracao.tetoDivida + DOLAR);
+    expect(semaforo(out, 'caixa_minimo')).toBe('vermelho');
+
+    // Sem teto que binde, a mesma conferência não fala em corte nenhum.
+    const folgado = calcular(base);
+    expect(
+      folgado.conferencias.find((c) => c.chave === 'teto_divida')!.detalhe,
+    ).not.toMatch(/bateu no teto/);
+  });
+
+  it('custo_financeiro_fora_da_demanda só existe no modo novo com a flag desligada', () => {
+    const base = casoDemanda();
+    const chave = 'custo_financeiro_fora_da_demanda';
+    const desligada = calcular({
+      ...base,
+      financiamento: { ...base.financiamento, custoFinanceiroNaDemanda: false },
+    });
+    const conf = desligada.conferencias.find((c) => c.chave === chave)!;
+    expect(conf.semaforo).toBe('ambar');
+    expect(conf.detalhe).toContain('o caixa não fecha no colchão');
+    // E o caixa realmente não fecha no colchão: os juros saem sem cobertura.
+    expect(Math.min(...desligada.meses.map((m) => m.caixaAcumulado))).toBeLessThan(COLCHAO - DOLAR);
+
+    // Com a flag ligada, e em qualquer outro modo, a conferência NEM APARECE —
+    // o painel de toda modelagem já gravada continua com as de sempre.
+    expect(calcular(base).conferencias.some((c) => c.chave === chave)).toBe(false);
+    for (const modo of ['equity_first', 'cash_demand', 'manual'] as const) {
+      const outro = calcular({
+        ...base,
+        financiamento: { ...base.financiamento, modoSaque: modo, custoFinanceiroNaDemanda: false },
+      });
+      expect(outro.conferencias.some((c) => c.chave === chave)).toBe(false);
+    }
+  });
+
+  it('a decomposição da demanda fecha: coberto por saque + descoberto ≤ demanda', () => {
+    const base = casoDemanda();
+    for (const out of [calcular(base), calcular({ ...base, financiamento: { ...base.financiamento, maxLtcPct: 0.2 } })]) {
+      for (const m of out.meses) {
+        expect(m.demandaCoberta + m.demandaDescoberta).toBeCloseTo(m.demandaDimensionada, 6);
+        expect(m.demandaCoberta).toBeGreaterThanOrEqual(0);
+        expect(m.demandaDescoberta).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('override de saque continua vencendo, inclusive acima do teto', () => {
+    const base = casoDemanda();
+    const out = calcular({
+      ...base,
+      financiamento: { ...base.financiamento, maxLtcPct: 0.2 },
+      overrides: [{ mes: 5, linha: 'draw', valor: 900_000 }],
+    });
+    expect(out.meses[4].draw).toBe(900_000);
+    expect(out.apuracao.dividaSacada).toBeGreaterThan(out.apuracao.tetoDivida);
+  });
+
+  it('modelagem em equity_first, cash_demand e manual não muda de resultado', () => {
+    // Os três modos de sempre não enxergam nem o aporte previsto nem a demanda
+    // líquida: o saque de cada um é exatamente o de antes desta migration.
+    const b = casoBase();
+    const comPlano = {
+      ...b,
+      aportes: {
+        modoAporte: 'plano' as const,
+        aporteBaseTotal: 732_778,
+        valorTotalAlvo: 0,
+        regraRateioCapital: 'participacao' as const,
+        parcelas: [{ mes: 1, valor: 300_000 }, { mes: 14, valor: 150_000 }],
+      },
+    };
+    const equityFirst = calcular(comPlano);
+    // Saque limitado à obra do mês — o teto que o modo novo remove.
+    for (const m of equityFirst.meses) {
+      expect(m.draw).toBeLessThan(m.construction + DOLAR);
+    }
+    // E o caixa fica negativo, que é o problema de origem.
+    expect(Math.min(...equityFirst.meses.map((m) => m.caixaAcumulado))).toBeLessThan(0);
+    // Número fixado: é o que o modo produz hoje e o que ele tem de continuar
+    // produzindo depois desta migration.
+    expect(equityFirst.apuracao.dividaSacada).toBeCloseTo(1_005_000, 0);
+
+    const manual = calcular({
+      ...comPlano,
+      financiamento: { ...b.financiamento, modoSaque: 'manual' as const },
+    });
+    expect(manual.apuracao.dividaSacada).toBe(0);
+  });
+});

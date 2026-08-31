@@ -286,7 +286,49 @@ export interface DetalheCusto {
   total: number;
 }
 
-export type ModoSaque = 'equity_first' | 'cash_demand' | 'manual';
+/**
+ * Como o saque de cada mês é dimensionado.
+ *
+ * 'equity_first', 'cash_demand' e 'manual' são os modos de sempre.
+ * 'equity_first_demanda' é o modo NOVO da migration 1763200000 — nenhuma
+ * modelagem já salva o tem, então o caminho novo é inalcançável para ela.
+ *
+ * A diferença entre os dois modos "equity primeiro" é o TETO do saque, e é ela
+ * que decide se o caixa fecha:
+ *   'equity_first'         — o saque não passa da OBRA do mês. Terreno, property
+ *                            tax, custos do orçamento e custo financeiro ficam
+ *                            sem cobertura de dívida.
+ *   'equity_first_demanda' — o saque cobre a DEMANDA do mês descontado o aporte
+ *                            previsto para o mesmo mês.
+ */
+export type ModoSaque = 'equity_first' | 'cash_demand' | 'manual' | 'equity_first_demanda';
+
+/** Chaves estáveis: são o CHECK de `modelagem_financiamento.modo_saque`. */
+export const MODOS_SAQUE: ModoSaque[] = [
+  'equity_first',
+  'equity_first_demanda',
+  'cash_demand',
+  'manual',
+];
+
+export const ROTULO_MODO_SAQUE: Record<ModoSaque, string> = {
+  // O rótulo diz o TETO de cada um: é a única diferença entre os dois modos
+  // "equity primeiro", e sem ela na tela a escolha vira adivinhação.
+  equity_first: 'Equity primeiro, saque limitado à obra',
+  equity_first_demanda: 'Equity primeiro, saque pela demanda de caixa',
+  cash_demand: 'Demanda de caixa',
+  manual: 'Manual',
+};
+
+export const EXPLICACAO_MODO_SAQUE: Record<ModoSaque, string> = {
+  equity_first:
+    'O capital próprio entra primeiro na obra; a dívida só começa quando a obra acumulada passa do aporte base disponível, e o saque do mês não passa da obra do mês.',
+  equity_first_demanda:
+    'O capital próprio entra primeiro; o saque cobre exatamente o que falta para pagar o mês e manter o colchão. O caixa fecha no colchão em vez de ficar negativo.',
+  cash_demand:
+    'A dívida é dimensionada pela necessidade real de caixa de cada mês, respeitando o teto.',
+  manual: 'Nenhum saque automático — só o que for lançado à mão no fluxo.',
+};
 
 /**
  * 'at_exit' e 'manual' são os modos de sempre. 'price' (prestação constante) e
@@ -697,6 +739,28 @@ export interface MesFluxo {
   caixaAcumulado: number;
   /** pagamentos + amortização − receita. Alimenta a tela de Demanda de Caixa. */
   demandaBruta: number;
+  /**
+   * Demanda do mês DIMENSIONADA pelo modo de saque — o número que o motor de
+   * fato usou para calcular o saque: pagamentos + amortização + colchão −
+   * receita − caixa de abertura, e no modo 'equity_first_demanda' também menos o
+   * aporte previsto do mês. Zero quando o mês é superavitário.
+   *
+   * NÃO é `demandaBruta`: aquela ignora colchão, caixa de abertura e aporte, e
+   * existe só como leitura comparável entre meses.
+   */
+  demandaDimensionada: number;
+  /**
+   * Parte de `demandaDimensionada` coberta pelo saque do mês. Nunca maior que a
+   * demanda: um saque acima dela (override, ou saque do modo equity_first que
+   * passa da necessidade) sobra em caixa e não é "cobertura".
+   */
+  demandaCoberta: number;
+  /**
+   * O que sobrou sem cobertura: demanda − saque, quando positivo. É o buraco que
+   * o caixa do mês vai mostrar — por teto de dívida, por janela de saque fechada
+   * ou por aporte insuficiente. Zero quando o mês fecha.
+   */
+  demandaDescoberta: number;
   /** Capacidade de saque restante no início do mês. */
   capacidadeSaque: number;
   /** Taxa ao ano efetivamente aplicada no mês. Com `tipoTaxa = 'fixa'` é constante. */

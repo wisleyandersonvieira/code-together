@@ -16,9 +16,12 @@ import type {
 } from '@/lib/modelagem';
 import {
   CONVENCOES_JUROS,
+  EXPLICACAO_MODO_SAQUE,
   fatorJurosDoMes,
+  MODOS_SAQUE,
   prestacaoPrice,
   ROTULO_CONVENCAO_JUROS,
+  ROTULO_MODO_SAQUE,
 } from '@/lib/modelagem';
 import { dinheiro, percentual } from './formato';
 
@@ -28,18 +31,31 @@ interface Props {
   resultado: ModelOutput;
 }
 
-const EXPLICACAO_SAQUE: Record<ModoSaque, string> = {
-  equity_first: 'O capital próprio entra primeiro na obra; a dívida só começa quando a obra acumulada passa do aporte base disponível.',
-  cash_demand: 'A dívida é dimensionada pela necessidade real de caixa de cada mês, respeitando o teto.',
-  manual: 'Nenhum saque automático — só o que for lançado à mão no fluxo.',
-};
-
 export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
   const fin = rascunho.financiamento;
   const mudar = (patch: Partial<Financiamento>) =>
     alterar({ financiamento: { ...fin, ...patch } });
 
   const numeroOuNulo = (v: string) => (v === '' ? null : Number(v));
+
+  /**
+   * Trocar de modo de saque pode ligar a flag junto — e só neste sentido.
+   *
+   * 'equity_first_demanda' dimensiona o saque pela demanda do mês; com o custo
+   * financeiro FORA dessa demanda, os juros continuam saindo do caixa sem terem
+   * sido cobertos, e o caixa fecha abaixo do colchão em toda a janela de saque —
+   * que é exatamente o que o modo existe para resolver. Ligar a flag é o default
+   * útil, e o aviso abaixo do seletor diz que ela foi ligada.
+   *
+   * Nenhum outro modo mexe na flag: sair do modo novo NÃO a desliga, porque a
+   * essa altura ela pode ter sido escolhida de propósito.
+   */
+  const trocarModoSaque = (modo: ModoSaque) =>
+    mudar(
+      modo === 'equity_first_demanda' && !fin.custoFinanceiroNaDemanda
+        ? { modoSaque: modo, custoFinanceiroNaDemanda: true }
+        : { modoSaque: modo },
+    );
 
   const usaPrestacao = fin.modoAmortizacao === 'price' || fin.modoAmortizacao === 'sac';
   const curva = fin.benchmarkCurva ?? [];
@@ -155,21 +171,31 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
           </div>
           <div className="space-y-2">
             <Label>Modo de saque</Label>
-            <Select value={fin.modoSaque} onValueChange={(v) => mudar({ modoSaque: v as ModoSaque })}>
+            <Select value={fin.modoSaque} onValueChange={(v) => trocarModoSaque(v as ModoSaque)}>
               <SelectTrigger className={financeDetailFieldClassName}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="equity_first">Equity primeiro</SelectItem>
-                <SelectItem value="cash_demand">Demanda de caixa</SelectItem>
-                <SelectItem value="manual">Manual</SelectItem>
+                {MODOS_SAQUE.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {ROTULO_MODO_SAQUE[m]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </div>
         <p className="mt-3 rounded-xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600">
-          {EXPLICACAO_SAQUE[fin.modoSaque]}
+          {EXPLICACAO_MODO_SAQUE[fin.modoSaque]}
         </p>
+        {fin.modoSaque === 'equity_first_demanda' && fin.custoFinanceiroNaDemanda ? (
+          <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+            <strong className="font-semibold">Custo financeiro na demanda ligado.</strong> Neste modo
+            os juros e o fee entram no dimensionamento do saque. Sem isso eles continuariam saindo do
+            caixa sem cobertura, e o caixa fecharia abaixo do colchão justamente nos meses de saque.
+            A opção está em <em>Amortização e juros</em>, logo abaixo.
+          </p>
+        ) : null}
 
         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="space-y-2">
@@ -247,7 +273,7 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
               <span className="text-sm">
                 <span className="font-medium text-slate-800">Financiar o custo financeiro</span>
                 <span className="mt-0.5 block text-xs text-slate-500">
-                  No modo demanda de caixa, faz a dívida cobrir também juros e fee. Sem isso, eles ficam por conta do equity.
+                  Nos modos dimensionados por demanda, faz a dívida cobrir também juros e fee. Sem isso, eles ficam por conta do equity.
                 </span>
               </span>
             </label>

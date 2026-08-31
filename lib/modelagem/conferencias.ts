@@ -66,6 +66,15 @@ interface Contexto {
    * usou, e recomputar abriria espaço para as duas contas divergirem.
    */
   rateioSocios: RateioSocio[];
+  /**
+   * Meses em que a demanda de caixa existia e o TETO de dívida foi o limite do
+   * saque. Contado pelo motor dentro do passe (só no modo
+   * 'equity_first_demanda') em vez de recomputado aqui: a conferência tem de
+   * cobrar exatamente o número que dimensionou o saque.
+   */
+  mesesNoTeto: number;
+  /** Σ (demanda − saque) nesses meses: o que ficou sem cobertura nenhuma. */
+  descobertoPorTeto: number;
 }
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
@@ -282,25 +291,71 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
   );
 
   // ─── Saque ≤ teto de dívida ────────────────────────────────────────────────
+  //
+  // Duas leituras opostas do mesmo teto, e as duas são vermelhas:
+  //   sacado ACIMA do teto — só com override manual de saque;
+  //   sacado NO teto com demanda sobrando — o teto foi o limite e o caixa ficou
+  //     descoberto. É o caso que o modo 'equity_first_demanda' expõe, porque nele
+  //     o saque é dimensionado pela demanda: o que a capacidade cortou é
+  //     exatamente o buraco de caixa do projeto, e o motor já o contou
+  //     (`mesesNoTeto`/`descobertoPorTeto`, zerados em todos os outros modos).
   const temTeto = Number.isFinite(apuracao.tetoDivida);
+  const cortadoPeloTeto = ctx.mesesNoTeto > 0 && ctx.descobertoPorTeto > TOLERANCIA;
+  // Quanto o teto precisaria valer, em LTC, para caber a demanda que ficou de
+  // fora. Custo direto zero devolve null e a frase simplesmente não menciona LTC
+  // — nunca NaN nem Infinity na tela.
+  const custoDireto = agregados.terrenosTotal + agregados.obraTotal;
+  const ltcNecessario =
+    custoDireto > 0 ? (apuracao.dividaSacada + ctx.descobertoPorTeto) / custoDireto : null;
   add(
     'teto_divida',
     'Saque dentro do teto de dívida',
-    !temTeto
-      ? 'ambar'
-      : apuracao.dividaSacada <= apuracao.tetoDivida + TOLERANCIA
-        ? 'verde'
-        : 'vermelho',
+    cortadoPeloTeto
+      ? 'vermelho'
+      : !temTeto
+        ? 'ambar'
+        : apuracao.dividaSacada <= apuracao.tetoDivida + TOLERANCIA
+          ? 'verde'
+          : 'vermelho',
     temTeto
       ? `${dinheiro(apuracao.dividaSacada)} de ${dinheiro(apuracao.tetoDivida)}`
       : dinheiro(apuracao.dividaSacada),
-    !temTeto
-      ? 'Nenhum teto definido: nem LTC máximo, nem valor contratado.'
-      : apuracao.dividaSacada <= apuracao.tetoDivida + TOLERANCIA
-        ? 'O total sacado respeita o teto.'
-        : 'O total sacado ultrapassa o teto — só acontece com override manual de saque.',
-    'Defina LTC máximo ou valor contratado na aba Financiamento, ou reverta os overrides de saque.',
+    cortadoPeloTeto
+      ? `O saque bateu no teto em ${ctx.mesesNoTeto} ${ctx.mesesNoTeto === 1 ? 'mês' : 'meses'}. ` +
+        `Faltaram ${dinheiro(ctx.descobertoPorTeto)} de cobertura — seria preciso esse valor a mais de aporte` +
+        (ltcNecessario == null
+          ? '.'
+          : `, ou elevar o teto de dívida para ${pct(ltcNecessario)} do custo direto.`)
+      : !temTeto
+        ? 'Nenhum teto definido: nem LTC máximo, nem valor contratado.'
+        : apuracao.dividaSacada <= apuracao.tetoDivida + TOLERANCIA
+          ? 'O total sacado respeita o teto.'
+          : 'O total sacado ultrapassa o teto — só acontece com override manual de saque.',
+    cortadoPeloTeto
+      ? 'Aumente o aporte, eleve o LTC máximo ou o valor contratado na aba Financiamento, ou reduza o colchão mínimo de caixa.'
+      : 'Defina LTC máximo ou valor contratado na aba Financiamento, ou reverta os overrides de saque.',
   );
+
+  // ─── Custo financeiro fora do dimensionamento do saque ─────────────────────
+  // Só existe no modo 'equity_first_demanda' e só com a flag desligada. Nos
+  // demais casos a conferência NÃO é acrescentada à lista — nem verde: o painel
+  // de toda modelagem já gravada continua com exatamente as conferências que
+  // sempre teve.
+  //
+  // Com a flag desligada o saque é dimensionado sem os juros do mês, mas os juros
+  // saem do caixa assim mesmo. O caixa fecha ABAIXO do colchão em toda a janela
+  // de saque, exatamente no valor dos juros — que é justamente o problema que
+  // este modo existe para resolver.
+  if (fin.modoSaque === 'equity_first_demanda' && !fin.custoFinanceiroNaDemanda) {
+    add(
+      'custo_financeiro_fora_da_demanda',
+      'Custo financeiro no dimensionamento do saque',
+      'ambar',
+      'desligado',
+      'Os juros não entram no dimensionamento do saque, então o caixa não fecha no colchão.',
+      'Ligue "custo financeiro na demanda" na aba Financiamento.',
+    );
+  }
 
   // ─── Caixa final = lucro do sponsor ────────────────────────────────────────
   // O lucro do sponsor não é distribuído: fica como caixa residual do projeto.
