@@ -11,6 +11,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['lib/**/*.test.ts'],
+    // Os exportadores moram em components/, e o teste de caracteres precisa
+    // varrer o fonte deles — continua sendo TypeScript puro, sem React nem DOM.
+    include: ['lib/**/*.test.ts', 'components/**/*.test.ts'],
   },
 });

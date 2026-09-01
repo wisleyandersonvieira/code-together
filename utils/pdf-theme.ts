@@ -9,6 +9,79 @@
  */
 import type jsPDF from 'jspdf';
 
+/**
+ * Caracteres de WinAnsi que moram na faixa 0x80–0x9F do CP1252. O resto da
+ * tabela é ASCII (0x20–0x7E) mais Latin-1 (0xA0–0xFF), que dá para checar por
+ * faixa; estes dezoito não, por isso a lista literal.
+ */
+const WINANSI_ALTO = new Set('\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178');
+
+/** Substituições explícitas: o que o relatório escreve e a tabela não tem. */
+const SUBSTITUICOES_WINANSI: Record<string, string> = {
+  '\u2212': '-',    // MINUS SIGN — o "Capital − pagamentos" que virou aspas
+  '\u2010': '-',    // HYPHEN
+  '\u2011': '-',    // NON-BREAKING HYPHEN
+  '\u2260': '!=',
+  '\u2265': '>=',
+  '\u2264': '<=',
+  '\u2248': '~=',
+  '\u00b1': '+/-',
+  '\u00d7': 'x',
+  '\u2044': '/',
+  '\u2026': '...',
+  '\u2192': '->',
+  '\u2190': '<-',
+  '\u2009': ' ',    // THIN SPACE
+  '\u200a': ' ',    // HAIR SPACE
+  '\u2007': ' ',    // FIGURE SPACE
+  '\u2008': ' ',    // PUNCTUATION SPACE
+  '\u202f': ' ',    // NARROW NO-BREAK SPACE
+  '\u00a0': ' ',    // NO-BREAK SPACE
+  '\u200b': '',     // ZERO WIDTH SPACE
+  '\u00ad': '',     // SOFT HYPHEN
+  '\u201c': '"',
+  '\u201d': '"',
+  '\u201e': '"',
+  '\u2018': "'",
+  '\u2019': "'",
+  '\u201a': "'",
+};
+
+const representavelEmWinAnsi = (ch: string): boolean => {
+  const cp = ch.charCodeAt(0);
+  if (cp === 0x0a || cp === 0x09) return true;
+  if (cp >= 0x20 && cp <= 0x7e) return true;
+  if (cp >= 0xa0 && cp <= 0xff) return true;
+  return WINANSI_ALTO.has(ch);
+};
+
+/**
+ * Sanitiza texto para WinAnsiEncoding, a tabela das fontes padrão do jsPDF.
+ * Caractere fora dela sai como lixo silencioso — foi o que aconteceu com
+ * U+2212 (MINUS SIGN), que virou aspas no relatório.
+ * Embutir uma fonte TTF resolveria de vez, mas custa 300 KB+ no bundle e não
+ * se justifica para meia dúzia de símbolos.
+ *
+ * O que sobra depois do mapa perde o acento (NFD sem as combinantes) e, se
+ * ainda assim não couber na tabela, vira '?'. Um '?' visível é reportável; o
+ * lixo silencioso não era.
+ */
+export function textoPdf(s: string): string {
+  if (!s) return s === '' ? '' : String(s ?? '');
+  let saida = '';
+  for (const ch of String(s)) {
+    const trocado = SUBSTITUICOES_WINANSI[ch];
+    if (trocado !== undefined) { saida += trocado; continue; }
+    if (representavelEmWinAnsi(ch)) { saida += ch; continue; }
+    const semAcento = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    saida += semAcento && [...semAcento].every(representavelEmWinAnsi) ? semAcento : '?';
+  }
+  return saida;
+}
+
+/** `textoPdf` sobre um array — a forma que `splitTextToSize` devolve. */
+const textosPdf = (linhas: string[]): string[] => linhas.map(textoPdf);
+
 export type RgbColor = [number, number, number];
 
 /** Paleta do sistema. Os valores são os mesmos desde o primeiro relatório. */
@@ -123,18 +196,18 @@ export function drawHeader(ctx: ContextoPdf, o: OpcoesCabecalho) {
   sf(C.navy); doc.roundedRect(marginX, ctx.y, contentWidth, h, 4, 4, 'F');
   drawLogo(doc, marginX + 5, ctx.y + 5, 18, C.white);
   st(C.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-  doc.text('PROVISION', marginX + 28, ctx.y + 10);
+  doc.text(textoPdf('PROVISION'), marginX + 28, ctx.y + 10);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-  doc.text(o.eyebrow ?? 'Relatório Financeiro', pageWidth - marginX - 4, ctx.y + 8, { align: 'right' });
+  doc.text(textoPdf(o.eyebrow ?? 'Relatório Financeiro'), pageWidth - marginX - 4, ctx.y + 8, { align: 'right' });
   doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
-  doc.text(o.titulo, marginX + 28, ctx.y + 18);
+  doc.text(textoPdf(o.titulo), marginX + 28, ctx.y + 18);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
-  doc.text(o.subtitulo, marginX + 28, ctx.y + 25);
+  doc.text(textoPdf(o.subtitulo), marginX + 28, ctx.y + 25);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-  doc.text(`Emitido em ${o.emitidoEm}`, marginX + 28, ctx.y + 30);
+  doc.text(textoPdf(`Emitido em ${o.emitidoEm}`), marginX + 28, ctx.y + 30);
   sf(C.white); doc.roundedRect(pageWidth - marginX - 42, ctx.y + 21, 38, 8, 3, 3, 'F');
   st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-  doc.text(o.badge, pageWidth - marginX - 23, ctx.y + 26.2, { align: 'center' });
+  doc.text(textoPdf(o.badge), pageWidth - marginX - 23, ctx.y + 26.2, { align: 'center' });
   ctx.y += h + 4;
   sd(C.border); doc.setLineWidth(0.4);
   doc.line(marginX, ctx.y, pageWidth - marginX, ctx.y);
@@ -152,12 +225,12 @@ export function drawSectionTitle(
   ctx.ensureSpace(16);
   if (modo !== 'title' && eyebrow) {
     st(C.slate); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text(eyebrow.toUpperCase(), marginX, ctx.y);
+    doc.text(textoPdf(eyebrow.toUpperCase()), marginX, ctx.y);
     ctx.y += 4;
   }
   if (modo !== 'eyebrow' && titulo) {
     st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-    doc.text(titulo, marginX, ctx.y);
+    doc.text(textoPdf(titulo), marginX, ctx.y);
     ctx.y += 4.5;
   }
   sd(C.border); doc.setLineWidth(0.35);
@@ -175,7 +248,7 @@ export function drawInfoBlock(ctx: ContextoPdf, pares: ParInfo[]) {
   const rowHeights: number[] = [];
   for (let i = 0; i < pares.length; i += 2) {
     const par = pares.slice(i, i + 2);
-    rowHeights.push(par.reduce((rh, item) => Math.max(rh, 10 + doc.splitTextToSize(item.value, colWidth - 8).length * 4.2), 16));
+    rowHeights.push(par.reduce((rh, item) => Math.max(rh, 10 + doc.splitTextToSize(textoPdf(item.value), colWidth - 8).length * 4.2), 16));
   }
   ctx.ensureSpace(rowHeights.reduce((s, rh) => s + rh + 4, 0));
   let localY = ctx.y;
@@ -186,9 +259,9 @@ export function drawInfoBlock(ctx: ContextoPdf, pares: ParInfo[]) {
     const boxH = rowHeights[rowIndex];
     sf(C.light); sd(C.border); doc.roundedRect(x, localY, colWidth, boxH, 3, 3, 'FD');
     st(C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-    doc.text(item.label.toUpperCase(), x + 4, localY + 5);
+    doc.text(textoPdf(item.label.toUpperCase()), x + 4, localY + 5);
     st(C.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
-    doc.text(doc.splitTextToSize(item.value, colWidth - 8), x + 4, localY + 10.5);
+    doc.text(textosPdf(doc.splitTextToSize(textoPdf(item.value), colWidth - 8)), x + 4, localY + 10.5);
     if (colIndex === 1) localY += boxH + 4;
   });
   // Contagem ímpar: a última linha não fechou no laço acima.
@@ -228,9 +301,9 @@ export function drawIndicatorCards(
     sf(palette.bg); sd(palette.border); doc.roundedRect(cx, localY, cardWidth, cardHeight, 3, 3, 'FD');
     if ((card.tone ?? 'default') === 'highlight') { sf(C.navy); doc.roundedRect(cx, localY, cardWidth, 3, 3, 3, 'F'); }
     st(C.slate); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-    doc.text(card.label.toUpperCase(), cx + 4, localY + 7);
+    doc.text(textoPdf(card.label.toUpperCase()), cx + 4, localY + 7);
     st(palette.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(tamanhoValor);
-    doc.text(doc.splitTextToSize(card.value, cardWidth - 8), cx + 4, localY + 14);
+    doc.text(textosPdf(doc.splitTextToSize(textoPdf(card.value), cardWidth - 8)), cx + 4, localY + 14);
     if (index % cols === cols - 1) localY += cardHeight + gap;
   });
   if (cards.length % cols !== 0) localY += cardHeight + gap;
@@ -257,12 +330,13 @@ export function drawBadge(
   const { doc, sf, st } = ctx;
   const palette = paletaDoTom(tom);
   const tamanho = opcoes.tamanho ?? 7;
+  const rotulo = textoPdf(texto);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(tamanho);
-  const largura = opcoes.largura ?? doc.getTextWidth(texto) + 4;
+  const largura = opcoes.largura ?? doc.getTextWidth(rotulo) + 4;
   sf(opcoes.fundo ?? palette.bg);
   doc.roundedRect(x, y, largura, 5, 2, 2, 'F');
   st(opcoes.cor ?? palette.text);
-  doc.text(texto, x + largura / 2, y + 3.7, { align: 'center' });
+  doc.text(rotulo, x + largura / 2, y + 3.7, { align: 'center' });
   return largura;
 }
 
@@ -280,6 +354,8 @@ export interface CelulaTabela {
   cor?: RgbColor;
   fundo?: RgbColor;
   negrito?: boolean;
+  /** Custo sem descrição, nota de rodapé — o que é dito e não é dado. */
+  italico?: boolean;
   tamanho?: number;
 }
 
@@ -316,9 +392,26 @@ export interface OpcoesTabela {
 const alinhamentoJsPdf = (a: AlinhamentoColuna | undefined) =>
   a === 'right' ? 'right' : a === 'center' ? 'center' : 'left';
 
+/** Altura de uma linha de texto do jsPDF, em mm — 1,15 é o fator padrão. */
+const alturaLinhaTexto = (fonte: number) => (fonte * 1.15 * 25.4) / 72;
+
+/** Passos de redução de fonte antes de deixar estourar. Dois, e só. */
+const PASSOS_REDUCAO = [0, 0.5, 1];
+
+interface CelulaMedida {
+  celula: CelulaTabela;
+  align: AlinhamentoColuna | undefined;
+  linhasTexto: string[];
+  tamanho: number;
+}
+
 /**
  * Tabela do sistema: header navy, zebra clara, header repetido a cada página.
  * Devolve o `y` final (igual a `ctx.y` no modo normal).
+ *
+ * Texto NUNCA é cortado. A ordem é: quebrar em várias linhas (default), depois
+ * reduzir a fonte em 0,5 pt por passo, no máximo dois; o que ainda estourar
+ * estoura à vista. Layout feio o usuário reporta — dado escondido, não.
  */
 export function drawTabela(
   ctx: ContextoPdf,
@@ -329,16 +422,97 @@ export function drawTabela(
   const { doc, sf, sd, st } = ctx;
   const x0 = opcoes.x ?? ctx.marginX;
   const flutuante = opcoes.y !== undefined;
-  const fonte = opcoes.tamanhoFonte ?? 7.5;
-  const fonteCab = opcoes.tamanhoCabecalho ?? 7.5;
-  const alturaCab = opcoes.alturaCabecalho ?? 8;
+  const fonteBase = opcoes.tamanhoFonte ?? 7.5;
+  const fonteCabBase = opcoes.tamanhoCabecalho ?? 7.5;
+  const alturaCabBase = opcoes.alturaCabecalho ?? 8;
   const alturaBase = opcoes.alturaLinha ?? 7;
   const zebra = opcoes.zebra ?? true;
+  // Quebrar é o DEFAULT: cabeçalho e célula truncados eram o defeito mais
+  // reportado do relatório, e nenhuma tabela quer perder texto.
+  const quebrar = opcoes.quebrarTexto ?? true;
   const larguraTotal = colunas.reduce((a, c) => a + c.width, 0);
 
   const colX: number[] = [];
   let rx = x0;
   colunas.forEach(c => { colX.push(rx); rx += c.width; });
+
+  /**
+   * Mede uma célula com a fonte que ela vai usar de fato. Medir antes de
+   * `setFontSize` — o que o código fazia — quebrava o texto pela fonte da
+   * célula anterior, e era daí que vinha o estouro.
+   */
+  const estilo = (negrito: boolean, italico: boolean) =>
+    negrito ? (italico ? 'bolditalic' : 'bold') : (italico ? 'italic' : 'normal');
+
+  const medir = (texto: string, fonte: number, negrito: boolean, largura: number, quebrarAqui: boolean, italico = false) => {
+    doc.setFont('helvetica', estilo(negrito, italico));
+    doc.setFontSize(fonte);
+    const limpo = textoPdf(texto ?? '');
+    const linhasTexto: string[] = quebrarAqui
+      ? (doc.splitTextToSize(limpo, Math.max(1, largura)) as string[])
+      : limpo.split('\n');
+    // Duas formas de não caber. A linha que estoura é a óbvia; a outra é a
+    // PALAVRA que não cabe sozinha — aí o `splitTextToSize` quebra no meio dela
+    // ('Participaçã' / 'o') e o estouro fica escondido atrás de um corte pior.
+    const excedente = Math.max(
+      0,
+      ...linhasTexto.map(l => doc.getTextWidth(l) - largura),
+      ...limpo.split(/\s+/).map(palavra => doc.getTextWidth(palavra) - largura),
+    );
+    return { linhasTexto, excedente };
+  };
+
+  /** Mede a tabela inteira com a fonte reduzida em `reducao` pt. */
+  const preparar = (reducao: number) => {
+    const fonteCab = Math.max(4, fonteCabBase - reducao);
+    let estouro = false;
+
+    const cabecalho = colunas.map((col) => {
+      // O `\n` do rótulo é quebra declarada pelo chamador; o resto é medido.
+      const partes = String(col.label ?? '').split('\n');
+      const linhasTexto: string[] = [];
+      for (const parte of partes) {
+        const m = medir(parte, fonteCab, true, col.width - 4, true);
+        linhasTexto.push(...m.linhasTexto);
+        if (m.excedente > 0.05) estouro = true;
+      }
+      return linhasTexto;
+    });
+
+    const corpo = linhas.map((linha) => {
+      const colunasDaLinha = linha.linhaLarga
+        ? [{ label: '', width: larguraTotal, align: 'left' as const }]
+        : colunas;
+      const celulas: CelulaMedida[] = colunasDaLinha.map((col, i) => {
+        const bruta = linha.celulas[i];
+        const celula: CelulaTabela = typeof bruta === 'string' ? { texto: bruta } : (bruta ?? { texto: '' });
+        const align = celula.align ?? col.align;
+        const tamanho = Math.max(4, (celula.tamanho ?? fonteBase) - reducao);
+        const negrito = !!(celula.negrito ?? linha.negrito);
+        const m = medir(celula.texto ?? '', tamanho, negrito, col.width - 4, quebrar || !!linha.linhaLarga, !!celula.italico);
+        if (m.excedente > 0.05) estouro = true;
+        return { celula, align, linhasTexto: m.linhasTexto, tamanho };
+      });
+      // A altura da linha é a da célula MAIS ALTA, não a da primeira coluna.
+      const maxLinhas = Math.max(1, ...celulas.map(c => c.linhasTexto.length));
+      const alturaConteudo = maxLinhas * 4 + 3;
+      const rowH = maxLinhas > 1
+        ? Math.max(linha.altura ?? alturaBase, alturaConteudo)
+        : (linha.altura ?? Math.max(alturaBase, alturaConteudo));
+      return { linha, celulas, rowH };
+    });
+
+    const nCab = Math.max(1, ...cabecalho.map(l => l.length));
+    const alturaCab = Math.max(alturaCabBase, nCab * alturaLinhaTexto(fonteCab) + 3);
+    return { fonteCab, cabecalho, corpo, alturaCab, nCab, estouro };
+  };
+
+  let medida = preparar(PASSOS_REDUCAO[0]);
+  for (let passo = 1; passo < PASSOS_REDUCAO.length && medida.estouro; passo++) {
+    medida = preparar(PASSOS_REDUCAO[passo]);
+  }
+
+  const { fonteCab, cabecalho, corpo, alturaCab, nCab } = medida;
 
   const posX = (i: number, align: AlinhamentoColuna | undefined) =>
     align === 'right' ? colX[i] + colunas[i].width - 2
@@ -350,30 +524,22 @@ export function drawTabela(
   const desenharCabecalho = () => {
     sf(C.navy); doc.rect(x0, y, larguraTotal, alturaCab, 'F');
     st(C.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(fonteCab);
+    const lh = alturaLinhaTexto(fonteCab);
+    // Uma linha só: a base histórica. Várias: o bloco centraliza na faixa.
+    const base = nCab === 1 ? y + alturaCab / 2 + 1.4 : y + (alturaCab - nCab * lh) / 2 + lh * 0.78;
     colunas.forEach((col, i) => {
-      doc.text(col.label, posX(i, col.align), y + alturaCab / 2 + 1.4, { align: alinhamentoJsPdf(col.align) });
+      doc.text(cabecalho[i], posX(i, col.align), base, { align: alinhamentoJsPdf(col.align) });
     });
     y += alturaCab;
   };
 
-  if (!flutuante) ctx.ensureSpace(alturaCab + alturaBase);
-  if (!flutuante) y = ctx.y;
+  if (!flutuante) {
+    ctx.ensureSpace(alturaCab + (corpo[0]?.rowH ?? alturaBase));
+    y = ctx.y;
+  }
   desenharCabecalho();
 
-  linhas.forEach((linha, index) => {
-    const colunasDaLinha = linha.linhaLarga ? [{ label: '', width: larguraTotal, align: 'left' as const }] : colunas;
-    const textos = colunasDaLinha.map((col, i) => {
-      const bruta = linha.celulas[i];
-      const celula: CelulaTabela = typeof bruta === 'string' ? { texto: bruta } : (bruta ?? { texto: '' });
-      const align = celula.align ?? col.align;
-      const linhasTexto = (opcoes.quebrarTexto || linha.linhaLarga)
-        ? doc.splitTextToSize(celula.texto ?? '', col.width - 4)
-        : [celula.texto ?? ''];
-      return { celula, align, linhasTexto };
-    });
-    const rowH = linha.altura
-      ?? Math.max(alturaBase, Math.max(...textos.map(t => t.linhasTexto.length)) * 4 + 3);
-
+  corpo.forEach(({ linha, celulas, rowH }, index) => {
     if (!flutuante && y + rowH > ctx.pageHeight - ctx.bottomReserve) {
       ctx.y = y; ctx.addPage(); y = ctx.y;
       desenharCabecalho();
@@ -388,17 +554,21 @@ export function drawTabela(
     sd(C.border); doc.setLineWidth(0.15);
     doc.line(x0, y + rowH, x0 + larguraTotal, y + rowH);
 
-    textos.forEach((t, i) => {
+    celulas.forEach((t, i) => {
       const cx = linha.linhaLarga ? x0 : colX[i];
       const largura = linha.linhaLarga ? larguraTotal : colunas[i].width;
       if (t.celula.fundo) { sf(t.celula.fundo); doc.rect(cx, y, largura, rowH, 'F'); }
       st(t.celula.cor ?? linha.cor ?? C.graphite);
-      doc.setFont('helvetica', (t.celula.negrito ?? linha.negrito) ? 'bold' : 'normal');
-      doc.setFontSize(t.celula.tamanho ?? fonte);
+      doc.setFont('helvetica', estilo(!!(t.celula.negrito ?? linha.negrito), !!t.celula.italico));
+      doc.setFontSize(t.tamanho);
       const tx = linha.linhaLarga
         ? cx + 2
         : t.align === 'right' ? cx + largura - 2 : t.align === 'center' ? cx + largura / 2 : cx + 2;
-      doc.text(t.linhasTexto, tx, y + 4.7, { align: linha.linhaLarga ? 'left' : alinhamentoJsPdf(t.align) });
+      // 4,7 mm é a base histórica e vale para toda linha de altura normal. Numa
+      // linha baixa — as do anexo, que precisam caber 30 linhas numa página — a
+      // base desce junto, senão o texto vaza por baixo da própria linha.
+      const base = Math.min(4.7, Math.max(2.6, rowH - 1.5));
+      doc.text(t.linhasTexto, tx, y + base, { align: linha.linhaLarga ? 'left' : alinhamentoJsPdf(t.align) });
     });
     y += rowH;
   });
@@ -407,9 +577,23 @@ export function drawTabela(
   return y;
 }
 
+export interface OpcoesRodape {
+  /** Substitui 'Sistema de Gestão Financeira e Projetos' ao lado da marca. */
+  legenda?: string;
+  /**
+   * Nome da seção que a página está mostrando, 1-based. Entra antes da data,
+   * no centro — é o que faz o rodapé dizer onde o leitor está.
+   */
+  secaoDaPagina?: (pagina: number) => string | undefined;
+}
+
 /** Régua, marca e paginação em todas as páginas. Chamar depois de tudo pronto. */
-export function drawRodape(doc: jsPDF, emitidoEm: string, marginX = 14) {
+export function drawRodape(doc: jsPDF, emitidoEm: string, marginX = 14, rodape?: OpcoesRodape) {
   const pages = doc.getNumberOfPages();
+  const centro = (page: number) => {
+    const secao = rodape?.secaoDaPagina?.(page);
+    return secao ? `${secao} · Emitido em ${emitidoEm}` : `Emitido em ${emitidoEm}`;
+  };
   for (let page = 1; page <= pages; page++) {
     doc.setPage(page);
     const pageWidth = doc.internal.pageSize.width;
@@ -418,11 +602,11 @@ export function drawRodape(doc: jsPDF, emitidoEm: string, marginX = 14) {
     doc.line(marginX, pageHeight - 12.5, pageWidth - marginX, pageHeight - 12.5);
     doc.setTextColor(C.slate[0], C.slate[1], C.slate[2]);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text('PROVISION', marginX, pageHeight - 8);
+    doc.text(textoPdf('PROVISION'), marginX, pageHeight - 8);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-    doc.text('Sistema de Gestão Financeira e Projetos', marginX + 19, pageHeight - 8);
-    doc.text(`Emitido em ${emitidoEm}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
-    doc.text(`Página ${page} de ${pages}`, pageWidth - marginX, pageHeight - 8, { align: 'right' });
+    doc.text(textoPdf(rodape?.legenda ?? 'Sistema de Gestão Financeira e Projetos'), marginX + 19, pageHeight - 8);
+    doc.text(textoPdf(centro(page)), pageWidth / 2, pageHeight - 8, { align: 'center' });
+    doc.text(textoPdf(`Página ${page} de ${pages}`), pageWidth - marginX, pageHeight - 8, { align: 'right' });
   }
 }
 

@@ -12,6 +12,7 @@
 import type { ModelInput, ModelOutput } from '@/lib/modelagem';
 
 export { exportarModelagemPdf, nomeArquivoModelagem } from './exportarPdf';
+export { exportarPdfSocios, nomeArquivoSocios } from './exportarPdfSocios';
 export { exportarXlsx } from './exportarXlsx';
 
 const nomeArquivo = (input: ModelInput, extensao: string) =>

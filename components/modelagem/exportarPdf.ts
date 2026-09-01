@@ -40,7 +40,7 @@ import { dinheiro, dinheiroCurto, multiplo, numero, percentual } from './formato
 const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 /** 'YYYY-MM-DD' → 'dez/2025'. Sem `new Date()`: evita deslocamento por fuso. */
-function mesAnoLongo(dataIso: string | null | undefined): string {
+export function mesAnoLongo(dataIso: string | null | undefined): string {
   if (!dataIso) return '—';
   const [ano, mes] = String(dataIso).split('-').map(Number);
   if (!ano || !mes) return String(dataIso);
@@ -106,7 +106,7 @@ const TOM_SEMAFORO: Record<Semaforo, Tom> = {
 };
 
 /** Escala as larguras declaradas para preencher exatamente a largura útil. */
-function distribuir(colunas: ColunaTabela[], alvo: number): ColunaTabela[] {
+export function distribuir(colunas: ColunaTabela[], alvo: number): ColunaTabela[] {
   const soma = colunas.reduce((a, c) => a + c.width, 0);
   if (soma <= 0) return colunas;
   const fator = alvo / soma;
@@ -372,7 +372,7 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
     },
     {
       celulas: [
-        'Capital − pagamentos',
+        'Capital - pagamentos',
         { texto: dc(diferenca), cor: diferenca < 0 ? C.rose : C.graphite },
         '',
       ],
@@ -466,16 +466,16 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
   ], ctx.contentWidth);
   const dre: { rotulo: string; valor: number; negativo?: boolean; total?: boolean }[] = [
     { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta },
-    { rotulo: '(−) Comissões', valor: ap.comissoes, negativo: true },
-    { rotulo: '(−) Cartório / closing', valor: ap.cartorio, negativo: true },
+    { rotulo: '(-) Comissões', valor: ap.comissoes, negativo: true },
+    { rotulo: '(-) Cartório / closing', valor: ap.cartorio, negativo: true },
     { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
-    { rotulo: '(−) Terrenos', valor: ap.custoTerrenos, negativo: true },
-    { rotulo: '(−) Obra', valor: ap.custoObra, negativo: true },
-    { rotulo: '(−) Property taxes', valor: ap.custoPropertyTax, negativo: true },
-    { rotulo: '(−) Outros custos', valor: ap.custoOutros, negativo: true },
+    { rotulo: '(-) Terrenos', valor: ap.custoTerrenos, negativo: true },
+    { rotulo: '(-) Obra', valor: ap.custoObra, negativo: true },
+    { rotulo: '(-) Property taxes', valor: ap.custoPropertyTax, negativo: true },
+    { rotulo: '(-) Outros custos', valor: ap.custoOutros, negativo: true },
     { rotulo: '(=) Custo do empreendimento', valor: ap.custoEmpreendimento, negativo: true, total: true },
-    { rotulo: '(−) Juros', valor: ap.jurosTotais, negativo: true },
-    { rotulo: '(−) Fee de estruturação', valor: ap.feeTotal, negativo: true },
+    { rotulo: '(-) Juros', valor: ap.jurosTotais, negativo: true },
+    { rotulo: '(-) Fee de estruturação', valor: ap.feeTotal, negativo: true },
     { rotulo: '(=) Custo financeiro', valor: ap.custoFinanceiro, negativo: true, total: true },
     { rotulo: '(=) LUCRO DO PROJETO', valor: ap.lucroProjeto, total: true },
     { rotulo: `Lucro dos investidores (${percentual(rec.lucroInvestidoresPct, 0)})`, valor: ap.lucroInvestidores },

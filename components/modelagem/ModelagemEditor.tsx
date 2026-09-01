@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
-import { ChevronDown, Download, FileSpreadsheet, FileText, Loader2, Save, Table2 } from 'lucide-react';
+import { ChevronDown, Download, FileSpreadsheet, FileText, Loader2, Save, Table2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -91,7 +91,7 @@ import { AbaResultado } from './AbaResultado';
 import { AbaDemandaCaixa } from './AbaDemandaCaixa';
 import { AbaSensibilidade } from './AbaSensibilidade';
 import { PainelConferencias } from './PainelConferencias';
-import { exportarFluxoCsv, exportarModelagemPdf, exportarXlsx } from './exportar';
+import { exportarFluxoCsv, exportarModelagemPdf, exportarPdfSocios, exportarXlsx } from './exportar';
 import { dinheiro, multiplo, percentual } from './formato';
 
 const ABAS = [
@@ -123,7 +123,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [cenarioId, setCenarioId] = useState<number | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [aba, setAba] = useState('premissas');
-  const [exportando, setExportando] = useState<'pdf' | 'xlsx' | 'csv' | null>(null);
+  const [exportando, setExportando] = useState<'socios' | 'pdf' | 'xlsx' | 'csv' | null>(null);
 
   const [salvarPremissas] = useMutateAction(updateModelagemPremissasAction);
   const [criarUnidade] = useMutateAction(createModelagemUnidadeAction);
@@ -341,15 +341,16 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   };
 
   // ─── Exportação ───────────────────────────────────────────────────────────
-  const exportar = async (tipo: 'pdf' | 'xlsx' | 'csv') => {
+  const exportar = async (tipo: 'socios' | 'pdf' | 'xlsx' | 'csv') => {
     if (!rascunho || !resultado || exportando) return;
     setExportando(tipo);
     try {
-      // O PDF roda a sensibilidade (dezenas de passadas do motor) e o Excel
-      // formata 60 colunas: os dois travam a thread por alguns segundos. Este
-      // respiro deixa o React pintar o botão em estado de carregamento antes.
+      // Os dois PDFs rodam a sensibilidade (dezenas de passadas do motor) e o
+      // Excel formata 60 colunas: todos travam a thread por alguns segundos.
+      // Este respiro deixa o React pintar o botão em estado de carregamento antes.
       await new Promise((resolve) => setTimeout(resolve, 30));
-      if (tipo === 'pdf') exportarModelagemPdf(rascunho, resultado);
+      if (tipo === 'socios') exportarPdfSocios(rascunho, resultado);
+      else if (tipo === 'pdf') exportarModelagemPdf(rascunho, resultado);
       else if (tipo === 'xlsx') await exportarXlsx(rascunho, resultado);
       else exportarFluxoCsv(rascunho, resultado);
     } catch (erro) {
@@ -795,9 +796,13 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onSelect={() => exportar('socios')}>
+                <Users className="mr-2 h-4 w-4" />
+                Relatório para sócios (PDF)
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => exportar('pdf')}>
                 <FileText className="mr-2 h-4 w-4" />
-                Relatório PDF
+                Relatório técnico (PDF)
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => exportar('xlsx')}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
