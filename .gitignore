@@ -27,3 +27,8 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Motor antigo derivado pelo relatório de impacto do fee (scripts/motorAntigo.ts).
+# É gerado e apagado na mesma execução; a entrada aqui cobre o caso de a execução
+# morrer no meio e deixá-lo para trás.
+lib/modelagem/motor-antigo.gerado.ts

@@ -792,7 +792,11 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
       ['LTC por desembolso', ind.ltc ?? '–', ind.ltc == null ? undefined : FMT_PCT],
       ['LTC de pico', ind.ltcPico ?? '–', ind.ltcPico == null ? undefined : FMT_PCT],
       ['Alavancagem', ind.alavancagem ?? '–', ind.alavancagem == null ? undefined : FMT_PCT],
+      // Dois custos da dívida, pelo mesmo motivo dos dois LTC: sobre o principal
+      // sacado o denominador é o total desembolsado, que numa linha rotativa é um
+      // múltiplo da exposição real e subestima o custo.
       ['Custo total da dívida', ind.custoTotalDividaPct ?? '–', ind.custoTotalDividaPct == null ? undefined : FMT_PCT],
+      ['Custo da dívida sobre o pico', ind.custoTotalDividaPicoPct ?? '–', ind.custoTotalDividaPicoPct == null ? undefined : FMT_PCT],
       ['TIR mensal', ind.tirMensal ?? '–', ind.tirMensal == null ? undefined : FMT_PCT2],
       ['TIR anual', ind.tirAnual ?? '–', ind.tirAnual == null ? undefined : FMT_PCT],
       ['XIRR', ind.xirr ?? '–', ind.xirr == null ? undefined : FMT_PCT],
@@ -1093,6 +1097,13 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
       { numFmt: (input.financiamento.linhaRotativa ? ind.ltcPico : ind.ltc) == null ? undefined : FMT_PCT },
     );
     par(ws, r0 + 4, 5, 'Custo total da dívida', ind.custoTotalDividaPct ?? '–', { numFmt: ind.custoTotalDividaPct == null ? undefined : FMT_PCT });
+    // O mesmo custo financeiro sobre o PICO do saldo devedor. Vai junto do
+    // anterior, e não no lugar dele, porque os dois medem coisas diferentes:
+    // sobre o sacado o denominador é o total desembolsado na vida do empréstimo.
+    par(ws, r0 + 5, 5, 'Custo da dívida sobre o pico', ind.custoTotalDividaPicoPct ?? '–', { numFmt: ind.custoTotalDividaPicoPct == null ? undefined : FMT_PCT });
+    // A base sobre a qual o fee de estruturação de fato incidiu — o compromisso
+    // da linha, não o total sacado.
+    par(ws, r0 + 5, 2, 'Base do fee de estruturação', ap.baseFeeEstruturacao, { numFmt: MOEDA });
 
     nota(ws, r0 + 6, 2, ULT, input.financiamento.capitalizarJuros
       ? 'Capitalização de juros LIGADA: os juros do mês somam ao saldo devedor em vez de sair do caixa. Por isso a coluna "Juros do mês" não aparece no fluxo de caixa como pagamento.'

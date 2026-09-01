@@ -849,6 +849,15 @@ export interface Apuracao {
    * `dividaSacada`, o total desembolsado.
    */
   saldoDevedorMaximo: number;
+  /**
+   * Base sobre a qual o fee de estruturação incidiu, em dinheiro.
+   *
+   * É o COMPROMISSO da linha, não o giro: valor contratado, senão LTC máximo ×
+   * custo direto, senão — sem teto nenhum — o PICO do saldo devedor. Nunca é
+   * `dividaSacada`: numa linha rotativa o total desembolsado é um múltiplo do
+   * contratado, e o fee inflava junto. Ver `baseFeeEstruturacao` no motor.
+   */
+  baseFeeEstruturacao: number;
   totalPagamentos: number;
   totalDistribuido: number;
   tetoDivida: number;
@@ -868,6 +877,13 @@ export interface Indicadores {
   alavancagem: number | null;
   /** Custo acumulado da dívida sobre o principal sacado. NÃO é taxa a.a. */
   custoTotalDividaPct: number | null;
+  /**
+   * Custo acumulado da dívida sobre o PICO do saldo devedor. Mesma relação com
+   * `custoTotalDividaPct` que `ltcPico` tem com `ltc`: numa linha rotativa o
+   * total desembolsado é um múltiplo da exposição real e subestima o custo.
+   * Sem amortização antes do fim, coincide com `custoTotalDividaPct`.
+   */
+  custoTotalDividaPicoPct: number | null;
   tirMensal: number | null;
   tirAnual: number | null;
   xirr: number | null;

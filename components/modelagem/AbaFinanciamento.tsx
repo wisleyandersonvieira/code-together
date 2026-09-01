@@ -69,6 +69,19 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
     return Number.isFinite(minimo) ? dinheiro(minimo, rascunho.moeda) : 'sem teto';
   })();
 
+  /**
+   * Sem valor contratado e sem LTC máximo não há compromisso declarado, e o
+   * motor cai no PICO do saldo devedor como base do fee. Mesmo critério da
+   * conferência `fee_sem_base_contratada` — se as duas divergissem, a tela diria
+   * uma coisa e o painel outra.
+   */
+  const semBaseContratada = fin.valorContratado == null && fin.maxLtcPct == null;
+  const rotuloBaseFee = semBaseContratada
+    ? 'o pico do saldo devedor'
+    : fin.valorContratado != null
+      ? 'o valor contratado'
+      : 'o LTC máximo';
+
   const curva = fin.benchmarkCurva ?? [];
   const prazoTotal = resultado.cronograma.prazoTotal;
 
@@ -116,9 +129,26 @@ export function AbaFinanciamento({ rascunho, alterar, resultado }: Props) {
               value={fin.feeEstruturacaoPct * 100}
               onChange={(e) => mudar({ feeEstruturacaoPct: (Number(e.target.value) || 0) / 100 })}
             />
-            <p className="text-xs text-slate-500">
-              Incide sobre o total sacado: {dinheiro(resultado.apuracao.feeTotal, rascunho.moeda)}.
+            {/* O número e a SUA BASE lado a lado, na tela onde o percentual é
+                configurado. O fee incide sobre o compromisso da linha — valor
+                contratado, senão LTC máximo × custo direto —, nunca sobre o
+                total sacado: numa linha rotativa o mesmo dinheiro é sacado
+                várias vezes e o fee inflaria junto. Sem teto declarado a base
+                cai no pico do saldo devedor, e aí a linha vem em tom de
+                atenção com o mesmo texto da conferência `fee_sem_base_contratada`. */}
+            <p className={`text-xs ${semBaseContratada ? 'text-amber-700' : 'text-slate-500'}`}>
+              Fee estimado:{' '}
+              <strong className="font-semibold">
+                {dinheiro(resultado.apuracao.feeTotal, rascunho.moeda)}
+              </strong>{' '}
+              · {percentual(fin.feeEstruturacaoPct)} sobre {rotuloBaseFee} de{' '}
+              {dinheiro(resultado.apuracao.baseFeeEstruturacao, rascunho.moeda)}
             </p>
+            {semBaseContratada ? (
+              <p className="text-xs leading-5 text-amber-700">
+                Informe o valor contratado abaixo para o fee incidir sobre o compromisso da linha.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label>Quando o fee é cobrado</Label>

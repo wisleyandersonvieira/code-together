@@ -1165,6 +1165,8 @@ function desenharApuracao(
       { label: 'Margem sobre VGV', value: pct(ind.margemVgv) },
       { label: 'LTC por desembolso', value: pct(ind.ltc) },
       { label: 'LTC de pico', value: pct(ind.ltcPico) },
+      { label: 'Custo total da dívida', value: pct(ind.custoTotalDividaPct) },
+      { label: 'Custo sobre o pico', value: pct(ind.custoTotalDividaPicoPct) },
       { label: 'TIR mensal', value: pct(ind.tirMensal, 2), tone: 'accent' },
       { label: 'TIR anual', value: pct(ind.tirAnual), tone: 'accent' },
       { label: 'XIRR', value: pct(ind.xirr), tone: 'accent' },

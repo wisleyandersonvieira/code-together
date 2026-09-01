@@ -233,13 +233,19 @@ describe('caso base — projeto de 23 meses, equity_first', () => {
   });
 
   it('passa em todas as conferências', () => {
-    // O caso base não define teto de dívida (nem LTC, nem valor contratado), e a
-    // conferência de teto acende âmbar de propósito nessa situação: ela avisa que
-    // não há limite configurado, não que algo estourou.
+    // O caso base não define teto de dívida (nem LTC, nem valor contratado), e
+    // DUAS conferências acendem âmbar por causa disso — as duas avisando, não
+    // reprovando:
+    //   `teto_divida` — não há limite configurado;
+    //   `fee_sem_base_contratada` — sem compromisso declarado, o fee incidiu
+    //     sobre o pico do saldo devedor em vez do valor contratado.
     expect(out.conferencias.filter((c) => c.semaforo === 'vermelho')).toEqual([]);
     const ambares = out.conferencias.filter((c) => c.semaforo === 'ambar');
-    expect(ambares.map((c) => c.chave)).toEqual(['teto_divida']);
+    expect(ambares.map((c) => c.chave)).toEqual(['teto_divida', 'fee_sem_base_contratada']);
     expect(ambares[0].detalhe).toContain('Nenhum teto definido');
+    expect(ambares[1].detalhe).toContain('pico do saldo devedor');
+    // Nenhuma das duas bloqueia o salvamento: são avisos.
+    expect(bloqueiaSalvamento(out.conferencias)).toEqual([]);
   });
 
   it('converge', () => {
@@ -2669,13 +2675,16 @@ describe('22 — indicadores por unidade e por pé quadrado', () => {
   it('não muda nenhum número que já existia', () => {
     // Os indicadores antigos seguem idênticos; só há campos novos.
     // `ltcPico` é campo NOVO (migration 1763300000), como os cinco por-unidade.
-    const { custoPorUnidade, custoPorSf, precoMedioPorUnidade, receitaPorSf, margemPorUnidade, ltcPico, ...antigos } =
-      referencia.indicadores;
+    const {
+      custoPorUnidade, custoPorSf, precoMedioPorUnidade, receitaPorSf, margemPorUnidade,
+      ltcPico, custoTotalDividaPicoPct, ...antigos
+    } = referencia.indicadores;
     expect(Object.keys(antigos)).toEqual([
       'moic', 'roi', 'margemVgv', 'ltc', 'alavancagem', 'custoTotalDividaPct',
       'tirMensal', 'tirAnual', 'xirr',
     ]);
     expect(ltcPico).not.toBeNull();
+    expect(custoTotalDividaPicoPct).not.toBeNull();
     expect(custoPorUnidade).not.toBeNull();
     expect(precoMedioPorUnidade).not.toBeNull();
     expect(margemPorUnidade).not.toBeNull();
@@ -4190,5 +4199,174 @@ const cenarioRelease = (patch: Partial<ModelInput['financiamento']> = {}): Model
     expect(conf.semaforo).toBe('vermelho');
     expect(conf.detalhe).toContain('release de');
     expect(conf.detalhe).toContain('de preço líquido');
+  });
+
+  // ─── Base do fee de estruturação ────────────────────────────────────────────
+  //
+  // O fee incide sobre o COMPROMISSO da linha, não sobre o giro. Antes desta
+  // correção incidia sobre `dividaSacada` — o total sacado ao longo da vida —, e
+  // numa linha rotativa isso é um múltiplo do contratado, porque amortizar
+  // devolve limite e o mesmo dinheiro é sacado várias vezes.
+
+  it('fee é determinístico: o teto contratado manda, o giro não', () => {
+    // MESMO teto e MESMO percentual, dois cenários de saque deliberadamente
+    // distintos: um rotativo (que gira o limite e desembolsa muito mais que o
+    // contratado) e um não rotativo (que satura o teto e para). O fee tem de sair
+    // exatamente igual nos dois — é essa a definição de "incide sobre o
+    // contratado".
+    const contratado = { valorContratado: 1_000_000, feeEstruturacaoPct: 0.02 };
+    const gira = calcular(comPlanoDeAportes(cenarioRelease({ ...contratado, linhaRotativa: true })));
+    const naoGira = calcular(comPlanoDeAportes(cenarioRelease({ ...contratado, linhaRotativa: false })));
+
+    expect(gira.apuracao.feeTotal).toBeCloseTo(20_000, 2);
+    expect(naoGira.apuracao.feeTotal).toBeCloseTo(20_000, 2);
+    expect(gira.apuracao.baseFeeEstruturacao).toBeCloseTo(1_000_000, 2);
+    expect(naoGira.apuracao.baseFeeEstruturacao).toBeCloseTo(1_000_000, 2);
+
+    // E os dois cenários são de fato muito diferentes: se os saques coincidissem,
+    // o teste não estaria provando nada.
+    expect(gira.apuracao.dividaSacada).toBeGreaterThan(naoGira.apuracao.dividaSacada * 1.5);
+    // O giro é MÚLTIPLO do contratado — aqui o rotativo desembolsa 4× o limite —,
+    // e é exatamente por esse múltiplo que o fee inflava antes.
+    expect(gira.apuracao.dividaSacada).toBeGreaterThan(3 * 1_000_000);
+    expect(gira.apuracao.dividaSacada * 0.02).toBeGreaterThan(3 * gira.apuracao.feeTotal);
+
+    // O fee é lançado num mês só, e a soma do fluxo é a apuração.
+    expect(soma(gira.meses.map((m) => m.fee))).toBeCloseTo(20_000, 2);
+    expect(gira.meses.filter((m) => m.fee > 0)).toHaveLength(1);
+  });
+
+  it('linha rotativa com release: o fee para de crescer com o giro', () => {
+    // O caso que originou o chamado. Teto contratado de $10M, release price a
+    // 70%: cada venda amortiza, devolve limite e o mesmo dinheiro é sacado de
+    // novo. O desembolso da vida do empréstimo passa MUITO do contratado.
+    const out = calcular(
+      comPlanoDeAportes(cenarioRelease({ linhaRotativa: true, valorContratado: 10_000_000 })),
+    );
+
+    // A base é o contratado, e nada mais.
+    expect(out.apuracao.baseFeeEstruturacao).toBeCloseTo(10_000_000, 2);
+    expect(out.apuracao.feeTotal).toBeCloseTo(100_000, 2);
+
+    // O que o fee teria sido pela fórmula antiga, sobre o total desembolsado.
+    // Não é a mesma coisa nem de longe — e é essa diferença que o chamado
+    // enxergou na tela.
+    const feePelaFormulaAntiga = out.apuracao.dividaSacada * 0.01;
+    expect(feePelaFormulaAntiga).toBeGreaterThan(out.apuracao.feeTotal * 1.5);
+
+    // O giro é real: sacou-se bem mais que o contratado, e o PICO respeitou o
+    // teto o tempo todo. É exatamente por isso que cobrar fee sobre o desembolso
+    // estava errado — o banco nunca esteve exposto a mais que o contratado.
+    expect(out.apuracao.dividaSacada).toBeGreaterThan(10_000_000);
+    expect(out.apuracao.saldoDevedorMaximo).toBeLessThanOrEqual(10_000_000 + DOLAR);
+    expect(semaforo(out, 'teto_divida')).toBe('verde');
+    expect(out.convergiu).toBe(true);
+  });
+
+  it('sem teto nenhum: base é o pico, âmbar acende, e nada de NaN ou Infinity', () => {
+    // Os dois nulos: `tetoDivida` é Infinity, e Infinity NÃO pode virar base de
+    // cálculo. A base cai no pico do saldo devedor — a maior exposição que o
+    // banco de fato teve.
+    const out = calcular(
+      comPlanoDeAportes(cenarioRelease({ valorContratado: null, maxLtcPct: null })),
+    );
+
+    expect(out.apuracao.tetoDivida).toBe(Number.POSITIVE_INFINITY);
+    expect(out.apuracao.baseFeeEstruturacao).toBeCloseTo(out.apuracao.saldoDevedorMaximo, 2);
+    expect(out.apuracao.feeTotal).toBeCloseTo(out.apuracao.saldoDevedorMaximo * 0.01, 2);
+
+    // A guarda que este teste existe para dar: nenhum número do output é NaN nem
+    // Infinity por causa do teto infinito. `tetoDivida` é a ÚNICA exceção, e é
+    // deliberada — "sem teto" é a informação.
+    for (const [chave, v] of Object.entries(out.apuracao)) {
+      if (chave === 'tetoDivida') continue;
+      expect(Number.isFinite(v), `apuracao.${chave} = ${v}`).toBe(true);
+    }
+    for (const [chave, v] of Object.entries(out.indicadores)) {
+      expect(v === null || Number.isFinite(v), `indicadores.${chave} = ${v}`).toBe(true);
+    }
+    for (const m of out.meses) {
+      for (const [chave, v] of Object.entries(m)) {
+        if (typeof v !== 'number') continue;
+        // `capacidadeSaque` é Infinity por definição quando não há teto: é a
+        // leitura honesta de "pode sacar o que precisar", e a tela já a mostra
+        // como "sem teto" em vez de um número.
+        if (chave === 'capacidadeSaque') continue;
+        expect(Number.isFinite(v), `mes ${m.mes}.${chave} = ${v}`).toBe(true);
+      }
+    }
+
+    const conf = out.conferencias.find((c) => c.chave === 'fee_sem_base_contratada')!;
+    expect(conf.semaforo).toBe('ambar');
+    expect(conf.valor).toBe(dinheiroUsd(out.apuracao.baseFeeEstruturacao));
+    expect(conf.detalhe).toContain('pico do saldo devedor');
+    expect(conf.comoResolver).toContain('valor contratado');
+    // Aviso, não impedimento.
+    expect(bloqueiaSalvamento(out.conferencias)).toEqual([]);
+  });
+
+  it('fee zero não emite a conferência de base', () => {
+    // Sem fee não há base a discutir, e a conferência não entra na lista — nem
+    // verde. Toda modelagem sem fee segue com as conferências que sempre teve.
+    const semFee = calcular(
+      comPlanoDeAportes(cenarioRelease({ feeEstruturacaoPct: 0, valorContratado: null, maxLtcPct: null })),
+    );
+    expect(semFee.conferencias.some((c) => c.chave === 'fee_sem_base_contratada')).toBe(false);
+    expect(semFee.apuracao.feeTotal).toBe(0);
+
+    // Com fee e sem teto, entra.
+    const comFee = calcular(
+      comPlanoDeAportes(cenarioRelease({ feeEstruturacaoPct: 0.01, valorContratado: null, maxLtcPct: null })),
+    );
+    expect(comFee.conferencias.some((c) => c.chave === 'fee_sem_base_contratada')).toBe(true);
+  });
+
+  it('só o fee muda: base coincidindo com o sacado, o output é o de antes', () => {
+    // A prova de que nada mais foi tocado por acidente. Numa linha NÃO rotativa
+    // que satura o teto, o total desembolsado é exatamente o teto — ou seja, a
+    // base nova (`valorContratado`) e a base antiga (`dividaSacada`) são o MESMO
+    // número. Se a correção tivesse mexido em qualquer outra coisa, os números
+    // divergiriam aqui; como a única mudança é a base do fee, e ela coincide, o
+    // resultado é idêntico ao que o motor antigo produzia.
+    const contratado = calcular(
+      comPlanoDeAportes(cenarioRelease({ linhaRotativa: false, valorContratado: 14_000_000 })),
+    );
+    expect(contratado.apuracao.dividaSacada).toBeCloseTo(14_000_000, 2);
+    expect(contratado.apuracao.baseFeeEstruturacao).toBeCloseTo(contratado.apuracao.dividaSacada, 2);
+    expect(contratado.apuracao.feeTotal).toBeCloseTo(140_000, 2);
+
+    // Mesmo raciocínio pela via do LTC máximo: 60% do custo direto satura, e o
+    // sacado bate na base.
+    const porLtc = calcular(
+      comPlanoDeAportes(cenarioRelease({ linhaRotativa: false, maxLtcPct: 0.6 })),
+    );
+    const custoDireto = 45 * 55_000 + 45 * 430_000;
+    expect(porLtc.apuracao.baseFeeEstruturacao).toBeCloseTo(0.6 * custoDireto, 2);
+    expect(porLtc.apuracao.dividaSacada).toBeCloseTo(porLtc.apuracao.baseFeeEstruturacao, 2);
+
+    // E o caso base do arquivo inteiro é a outra metade da prova: ele não tem
+    // teto, então a base é o pico — e num projeto sem amortização antes da saída
+    // o pico É o total desembolsado. Por isso os ~260 números fixados no caso
+    // base, todos anteriores a esta correção, continuam batendo sem um ajuste.
+    const base = calcular(casoBase());
+    expect(base.apuracao.baseFeeEstruturacao).toBeCloseTo(base.apuracao.dividaSacada, 2);
+    expect(base.apuracao.feeTotal).toBeCloseTo(base.apuracao.dividaSacada * 0.015, 2);
+  });
+
+  it('com teto, o fee estabiliza na primeira passada e o ponto fixo encurta', () => {
+    // Com teto declarado `baseFeeEstruturacao` não lê `meses`: o fee não depende
+    // mais da passada, e uma das três realimentações do ponto fixo desaparece.
+    // No cenário do chamado isso se vê no contador de iterações.
+    const comTeto = calcular(
+      comPlanoDeAportes(cenarioRelease({ linhaRotativa: true, valorContratado: 14_000_000 })),
+    );
+    const semTeto = calcular(
+      comPlanoDeAportes(cenarioRelease({ linhaRotativa: true, valorContratado: null, maxLtcPct: null })),
+    );
+    expect(comTeto.convergiu).toBe(true);
+    expect(semTeto.convergiu).toBe(true);
+    // Sem teto o fee ainda realimenta — pelo pico, de forma amortecida —, e por
+    // isso consome mais passadas que o caso com teto.
+    expect(comTeto.iteracoes).toBeLessThan(semTeto.iteracoes);
   });
 });

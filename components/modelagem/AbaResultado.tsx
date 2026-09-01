@@ -163,10 +163,23 @@ export function AbaResultado({ rascunho, resultado }: Props) {
           }`}
         />
         <Indicador rotulo="Alavancagem" valor={percentual(ind.alavancagem)} nota="Dívida sobre o total de pagamentos" />
+        {/* Os dois custos da dívida lado a lado, pelo mesmo motivo dos dois LTC:
+            sobre o principal sacado o denominador é o total desembolsado na vida
+            do empréstimo, e numa linha rotativa isso é um múltiplo da exposição
+            real — o indicador SUBESTIMA o custo. Sobre o pico é a exposição
+            máxima que o banco de fato teve. Sem amortização antes do fim,
+            coincidem. */}
         <Indicador
           rotulo="Custo total da dívida"
           valor={percentual(ind.custoTotalDividaPct)}
           nota="Acumulado sobre o principal sacado — não é taxa a.a."
+        />
+        <Indicador
+          rotulo="Custo da dívida sobre o pico"
+          valor={percentual(ind.custoTotalDividaPicoPct)}
+          nota={`Mesmo custo financeiro sobre o pico do saldo devedor${
+            rascunho.financiamento.linhaRotativa ? ' — é a leitura da linha rotativa' : ''
+          }`}
         />
         <Indicador rotulo="XIRR" valor={percentual(ind.xirr)} nota="Com as datas reais, base actual/365" />
       </div>

@@ -359,6 +359,27 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
       : 'Defina LTC máximo ou valor contratado na aba Financiamento, ou reverta os overrides de saque.',
   );
 
+  // ─── Base do fee de estruturação ───────────────────────────────────────────
+  // O fee incide sobre o COMPROMISSO da linha: valor contratado, senão LTC
+  // máximo × custo direto. Sem nenhum dos dois não existe compromisso declarado,
+  // e o motor cai no PICO do saldo devedor — que é a maior exposição observada,
+  // não um número que o contrato tenha. É aviso, não impedimento: o cálculo sai,
+  // só não sai sobre o número que o banco cobraria.
+  //
+  // Fee zero não tem base nenhuma a discutir, e a conferência NÃO é acrescentada
+  // à lista — nem verde. Toda modelagem sem fee segue com exatamente as
+  // conferências que sempre teve.
+  if ((fin.feeEstruturacaoPct || 0) > 0 && fin.valorContratado == null && fin.maxLtcPct == null) {
+    add(
+      'fee_sem_base_contratada',
+      'Base do fee de estruturação',
+      'ambar',
+      dinheiro(apuracao.baseFeeEstruturacao),
+      `Sem valor contratado nem LTC máximo, o fee foi calculado sobre o pico do saldo devedor de ${dinheiro(apuracao.baseFeeEstruturacao)}.`,
+      'Informe o valor contratado na aba Financiamento para o fee incidir sobre o compromisso da linha.',
+    );
+  }
+
   // ─── Custo financeiro fora do dimensionamento do saque ─────────────────────
   // Só existe no modo 'equity_first_demanda' e só com a flag desligada. Nos
   // demais casos a conferência NÃO é acrescentada à lista — nem verde: o painel

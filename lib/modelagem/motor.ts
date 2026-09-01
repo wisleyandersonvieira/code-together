@@ -8,7 +8,9 @@
  * Três grandezas só são conhecidas depois que o loop mensal termina, e todas as
  * três realimentam o próprio loop:
  *
- *   1. o fee de estruturação depende do TOTAL sacado;
+ *   1. o fee de estruturação depende do compromisso da linha — e, só quando não
+ *      há teto contratado nenhum, do PICO do saldo devedor (ver
+ *      `baseFeeEstruturacao`);
  *   2. nos modos cash_demand e equity_first_demanda o saque depende do caixa,
  *      que depende do custo financeiro, que depende do saque;
  *   3. a distribuição automática depende do equity total, e uma distribuição
@@ -861,6 +863,31 @@ export function calcular(input: ModelInput): ModelOutput {
         ? fin.maxLtcPct * (terrenosTotal + obraTotal)
         : Number.POSITIVE_INFINITY;
 
+  /**
+   * Base do fee de estruturação: o COMPROMISSO do banco, não o giro.
+   *
+   * Antes desta correção o fee incidia sobre `dividaSacada` — o total sacado ao
+   * longo da vida. Numa linha rotativa isso é um múltiplo do contratado, porque
+   * amortizar devolve limite e o mesmo dinheiro é sacado várias vezes; o fee
+   * inflava junto e ainda realimentava o ponto fixo pelo custo financeiro.
+   *
+   * Resolve na mesma ordem de precedência do teto de dívida, porque é o mesmo
+   * compromisso: valor contratado primeiro, LTC máximo depois.
+   *
+   * Sem teto nenhum (os dois nulos) não existe valor contratado a que se referir,
+   * e `tetoDivida` é Infinity — que não pode virar base de cálculo. A base passa a
+   * ser o PICO do saldo devedor, a maior exposição que o banco teve, e a
+   * conferência `fee_sem_base_contratada` acende âmbar pedindo o valor contratado.
+   *
+   * PONTO DE EXTENSÃO: se algum contrato cobrar o fee por desembolso, é aqui que
+   * um campo `base_fee_estruturacao` entraria — e em lugar nenhum mais.
+   */
+  function baseFeeEstruturacao(picoSaldoDevedor: number): number {
+    if (fin.valorContratado != null) return fin.valorContratado;
+    if (fin.maxLtcPct != null) return fin.maxLtcPct * (terrenosTotal + obraTotal);
+    return picoSaldoDevedor;
+  }
+
   const colchao = fin.colchaoMinimoCaixa || 0;
 
   // ─── Taxa efetiva do mês ───────────────────────────────────────────────────
@@ -1312,10 +1339,9 @@ export function calcular(input: ModelInput): ModelOutput {
     // convergida que vira resultado.
     ({ meses, mesesNoTeto, descobertoPorTeto, releaseCortadoTotal } = passe(estado));
 
-    // Inclui o saque destinado à reserva de juros: é principal sacado do
-    // empréstimo como qualquer outro, rende juros e volta pela amortização. Com
-    // reserva 0 o termo some e o número é o de sempre.
-    const dividaSacada = soma(meses.map((x) => x.draw + x.saqueReservaJuros));
+    // `dividaSacada` NÃO é lida aqui desde que deixou de ser a base do fee: ela
+    // continua sendo apurada uma vez só, depois do ponto fixo, e alimentando
+    // apuração, LTC e conferências como sempre.
     const equityTotal = soma(meses.map((x) => x.equityCall));
     const jurosTotais = soma(meses.map((x) => x.juros));
     const feeLancado = soma(meses.map((x) => x.fee));
@@ -1326,7 +1352,21 @@ export function calcular(input: ModelInput): ModelOutput {
     const lucroProjeto = receitaLiquida - custoEmpreendimento - (jurosTotais + feeLancado);
     const lucroInvestidores = lucroProjeto * (rec.lucroInvestidoresPct || 0);
 
-    const novoFee = dividaSacada * (fin.feeEstruturacaoPct || 0);
+    // CONVERGÊNCIA. Com teto definido — valor contratado ou LTC máximo —
+    // `baseFeeEstruturacao` não lê `meses`: o fee deixa de depender da passada e
+    // estabiliza já na primeira iteração. Uma das três realimentações do ponto
+    // fixo simplesmente desaparece.
+    //
+    // Sem teto nenhum o fee ainda realimenta, agora pelo PICO do saldo devedor —
+    // mas de forma muito mais amortecida que pelo total desembolsado, porque o
+    // pico não soma o mesmo dinheiro duas vezes quando ele é sacado, amortizado e
+    // sacado de novo.
+    //
+    // O termo do fee CONTINUA no `delta` abaixo: com teto ele é zero da segunda
+    // passada em diante e não custa nada, e sem teto é justamente ele que cobra a
+    // convergência do pico.
+    const picoSaldoDevedor = meses.length ? Math.max(...meses.map((x) => x.saldoDevedor)) : 0;
+    const novoFee = baseFeeEstruturacao(picoSaldoDevedor) * (fin.feeEstruturacaoPct || 0);
     const novoCustoFin = zeros();
     for (const x of meses) novoCustoFin[x.mes] = x.custoFinanceiroCaixa;
     const novaDist = equityTotal + lucroInvestidores;
@@ -1380,6 +1420,11 @@ export function calcular(input: ModelInput): ModelOutput {
   // linha não rotativa quem manda é o total desembolsado (`dividaSacada`), e os
   // dois só coincidem quando nada é amortizado antes do fim.
   const saldoDevedorMaximo = meses.length ? Math.max(...meses.map((x) => x.saldoDevedor)) : 0;
+  // A base sobre a qual o fee de fato incidiu, resolvida com o MESMO pico da
+  // passada convergida — é literalmente o número que multiplicou o percentual.
+  // Sai daqui para a conferência e para a leitura da aba Financiamento em vez de
+  // ser recomputado nas duas, que é como as três contas divergiriam.
+  const baseFee = baseFeeEstruturacao(saldoDevedorMaximo);
   const totalPagamentos = soma(meses.map((x) => x.pagamentos));
   const totalDistribuido = equityTotal + lucroInvestidores;
 
@@ -1403,6 +1448,7 @@ export function calcular(input: ModelInput): ModelOutput {
     dividaSacada,
     dividaAmortizada,
     saldoDevedorMaximo,
+    baseFeeEstruturacao: baseFee,
     totalPagamentos,
     totalDistribuido,
     tetoDivida,
@@ -1428,7 +1474,15 @@ export function calcular(input: ModelInput): ModelOutput {
     ltcPico: razao(saldoDevedorMaximo, terrenosTotal + obraTotal),
     alavancagem: razao(dividaSacada, totalPagamentos),
     // Custo ACUMULADO da dívida sobre o principal sacado — não é taxa a.a.
+    // Fórmula intocada de propósito, pelo mesmo motivo do `ltc`: mudar o
+    // significado de um número já em uso quebra a comparação com modelagens
+    // antigas.
     custoTotalDividaPct: razao(custoFinanceiro, dividaSacada),
+    // Custo acumulado da dívida sobre o PICO do saldo devedor. Mesma relação que
+    // `ltcPico` tem com `ltc`: numa linha rotativa o total desembolsado é um
+    // múltiplo da exposição real, e dividir por ele SUBESTIMA o custo da dívida.
+    // Sem amortização antes do fim os dois coincidem.
+    custoTotalDividaPicoPct: razao(custoFinanceiro, saldoDevedorMaximo),
     tirMensal: tir,
     tirAnual: anualizar(tir),
     xirr: xirr(fluxoInvestidor, meses.map((x) => x.data)),

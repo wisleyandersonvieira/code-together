@@ -577,7 +577,11 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
     { label: 'LTC por desembolso', value: ouTraco(percentual(ind.ltc)), tone: 'default' },
     { label: 'LTC de pico', value: ouTraco(percentual(ind.ltcPico)), tone: 'default' },
     { label: 'Alavancagem', value: ouTraco(percentual(ind.alavancagem)), tone: 'default' },
+    // Dois custos da dívida, pelo mesmo motivo dos dois LTC: sobre o principal
+    // sacado o denominador é o total desembolsado, e numa linha rotativa isso
+    // subestima o custo; sobre o pico é a exposição máxima real.
     { label: 'Custo total da dívida', value: ouTraco(percentual(ind.custoTotalDividaPct)), tone: 'default' },
+    { label: 'Custo sobre o pico', value: ouTraco(percentual(ind.custoTotalDividaPicoPct)), tone: 'default' },
     { label: 'TIR mensal', value: ouTraco(percentual(ind.tirMensal, 4)), tone: 'accent' },
     { label: 'TIR anual', value: ouTraco(percentual(ind.tirAnual)), tone: 'accent' },
     { label: 'XIRR', value: ouTraco(percentual(ind.xirr)), tone: 'accent' },
