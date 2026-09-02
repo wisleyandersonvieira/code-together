@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
-import { ChevronDown, Download, FileSpreadsheet, FileText, Loader2, Save, Table2, Users } from 'lucide-react';
+import { ChevronDown, Copy, Download, FileSpreadsheet, FileText, Loader2, Save, Table2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -38,6 +38,7 @@ import type {
 
 import loadModelagemCompletaAction from '@/actions/loadModelagemCompleta';
 import updateModelagemPremissasAction from '@/actions/updateModelagemPremissas';
+import duplicarModelagemAction from '@/actions/duplicarModelagem';
 import createModelagemUnidadeAction from '@/actions/createModelagemUnidade';
 import updateModelagemUnidadeAction from '@/actions/updateModelagemUnidade';
 import deleteModelagemUnidadeAction from '@/actions/deleteModelagemUnidade';
@@ -124,7 +125,11 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [salvando, setSalvando] = useState(false);
   const [aba, setAba] = useState('premissas');
   const [exportando, setExportando] = useState<'socios' | 'pdf' | 'xlsx' | 'csv' | null>(null);
+  /** Natureza da linha, não premissa de cálculo — por isso fora do ModelInput. */
+  const [ehModelo, setEhModelo] = useState(false);
+  const [duplicando, setDuplicando] = useState(false);
 
+  const [duplicar] = useMutateAction(duplicarModelagemAction);
   const [salvarPremissas] = useMutateAction(updateModelagemPremissasAction);
   const [criarUnidade] = useMutateAction(createModelagemUnidadeAction);
   const [atualizarUnidade] = useMutateAction(updateModelagemUnidadeAction);
@@ -174,7 +179,39 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     setOriginal(JSON.parse(JSON.stringify(input)));
     const base = (linha.cenarios ?? []).find((c: any) => c.is_baseline) ?? (linha.cenarios ?? [])[0];
     setCenarioId(base?.id ?? null);
+    // `is_modelo` NÃO entra no ModelInput: não é premissa de cálculo, é natureza
+    // da linha. O motor não sabe nem precisa saber que esta modelagem é o modelo.
+    setEhModelo(!!linha.is_modelo);
   }, [linhas]);
+
+  /**
+   * Duplica a modelagem aberta. Na modelo é o caminho principal — é assim que o
+   * plano de contas vira projeto —, e leva direto ao editor da cópia.
+   */
+  const duplicarEsta = async () => {
+    const nome = window.prompt(
+      ehModelo ? 'Nome da nova modelagem' : 'Nome da cópia',
+      ehModelo ? 'Nova modelagem' : `Cópia de ${rascunho?.nome ?? ''}`,
+    );
+    if (!nome || !nome.trim()) return;
+    setDuplicando(true);
+    try {
+      const r = await duplicar({ origemId: modelagemId, nome: nome.trim() });
+      const id = Array.isArray(r) ? r[0]?.id : null;
+      if (id) {
+        toast({ title: 'Modelagem duplicada' });
+        // Volta para a lista: ela recarrega e a cópia aparece. Navegar para
+        // dentro da cópia daqui exigiria trocar o `modelagemId` do próprio
+        // editor, e o rascunho não salvo desta tela se perderia sem aviso.
+        onBack();
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: 'Erro ao duplicar', description: msg, variant: 'destructive' });
+    } finally {
+      setDuplicando(false);
+    }
+  };
 
   const alterar = useCallback((patch: Partial<ModelInput>) => {
     setRascunho((atual) => (atual ? { ...atual, ...patch } : atual));
@@ -735,10 +772,36 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         </div>
       </div>
 
-      {/* Notificação de uma linha, e nada quando está tudo verde. `bloqueios`
-          entra porque o motivo de o Salvar estar desabilitado precisa aparecer
-          ANTES de o usuário tentar salvar, não só no toast depois da tentativa. */}
-      <PainelConferencias conferencias={resultado.conferencias} compacto bloqueios={bloqueios} />
+      {/* A MODELO não mostra conferência nenhuma — nem a notificação compacta,
+          nem o painel completo lá embaixo.
+
+          O motivo: um plano de contas não tem unidades, receita nem cronograma,
+          então quase toda conferência acende vermelho. Isso não é informação, é
+          ruído — e ruído constante ensina o usuário a ignorar o painel
+          justamente nas modelagens em que ele importa. A modelo não é uma
+          modelagem inconsistente: é uma modelagem incompleta de propósito. */}
+      {ehModelo ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <span className="flex-1 leading-5">
+            <strong className="font-semibold">Esta é a modelagem modelo.</strong> Ela define o plano
+            de contas padrão dos custos e não é excluída. Para criar uma modelagem de verdade, use
+            Duplicar.
+          </span>
+          <Button type="button" variant="outline" onClick={duplicarEsta} disabled={duplicando}>
+            {duplicando ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Copy className="mr-2 h-4 w-4" />
+            )}
+            Duplicar
+          </Button>
+        </div>
+      ) : (
+        /* Notificação de uma linha, e nada quando está tudo verde. `bloqueios`
+           entra porque o motivo de o Salvar estar desabilitado precisa aparecer
+           ANTES de o usuário tentar salvar, não só no toast depois da tentativa. */
+        <PainelConferencias conferencias={resultado.conferencias} compacto bloqueios={bloqueios} />
+      )}
 
       {/* Controlado (e não `defaultValue`) porque a aba Linha do tempo navega:
           clicar numa fase leva a Premissas, clicar num takedown leva a Receita. */}
@@ -876,7 +939,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
 
       {/* Sem título acima: a barra já traz as contagens e o problema mais grave,
           e um cabeçalho gastaria a linha que este item veio recuperar. */}
-      <PainelConferencias conferencias={resultado.conferencias} />
+      {ehModelo ? null : <PainelConferencias conferencias={resultado.conferencias} />}
     </div>
   );
 }

@@ -1458,6 +1458,34 @@ describe('12 — base de cálculo do custo', () => {
     expect(bloqueiaSalvamento(out.conferencias)).toHaveLength(0);
   });
 
+  it('linha INTEIRAMENTE zerada não acende custo_base_zerada', () => {
+    // Um plano de contas em branco — valor, valor unitário e percentual todos
+    // zerados — não é inconsistência: é orçamento ainda não preenchido. É o
+    // estado da modelagem MODELO e o de qualquer modelagem recém-criada, e uma
+    // conferência âmbar permanente ali ensina a ignorar o painel.
+    const base = casoBase();
+    base.custosAdicionais = [
+      { label: 'Sitework', valor: 0, distribuicao: 'linear_construction', categoria: 'sitework', baseCalculo: 'por_unidade', valorUnitario: 0, percentual: 0, gatilho: 'mes_fixo' as const, parcelas: [] },
+      { label: 'Vertical', valor: 0, distribuicao: 'linear_construction', categoria: 'vertical', baseCalculo: 'por_sf', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
+      { label: 'Contingência', valor: 0, distribuicao: 'linear_construction', categoria: 'contingencia', baseCalculo: 'pct_de_grupo', grupoReferencia: 'sitework', valorUnitario: 0, percentual: 0, gatilho: 'cronograma' as const, parcelas: [] },
+    ];
+    const out = calcular(base);
+    expect(semaforo(out, 'custo_base_zerada')).toBeUndefined();
+    expect(Number.isFinite(out.apuracao.lucroProjeto)).toBe(true);
+
+    // E volta a acender assim que a linha ganha valor: aí o denominador zerado
+    // esconde dinheiro de verdade, que é o que a conferência existe para dizer.
+    // A linha usada é a 'por_sf' — o caso base tem unidades, então 'por_unidade'
+    // TEM denominador e não serviria para provar isto.
+    base.custosAdicionais[1] = { ...base.custosAdicionais[1], valorUnitario: 214 };
+    const comValor = calcular(base);
+    expect(semaforo(comValor, 'custo_base_zerada')).toBe('ambar');
+    // E nomeia só a linha que ganhou valor, não as que continuam zeradas.
+    const conf = comValor.conferencias.find((c) => c.chave === 'custo_base_zerada')!;
+    expect(conf.detalhe).toContain('Vertical');
+    expect(conf.detalhe).not.toContain('Contingência');
+  });
+
   it('não acende custo_base_zerada quando o denominador existe', () => {
     const base = comArea();
     base.custosAdicionais = [

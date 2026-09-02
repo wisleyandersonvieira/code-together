@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useLoadAction, useMutateAction } from '@uibakery/data';
-import { Archive, ArchiveRestore, Calculator, Loader2, Plus, Search, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Calculator, Copy, Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +35,7 @@ import loadModelagensAction from '@/actions/loadModelagens';
 import createModelagemAction from '@/actions/createModelagem';
 import updateModelagemPremissasAction from '@/actions/updateModelagemPremissas';
 import deleteModelagemAction from '@/actions/deleteModelagem';
+import duplicarModelagemAction from '@/actions/duplicarModelagem';
 
 const HOJE = () => new Date().toISOString().slice(0, 10);
 
@@ -46,6 +47,10 @@ export function ModelagensList() {
   const [novaAberta, setNovaAberta] = useState(false);
   const [nova, setNova] = useState({ nome: '', localizacao: '', dataInicio: HOJE(), aprovacao: 10, construcao: 8, posObra: 5 });
   const [criando, setCriando] = useState(false);
+  /** Duplicação: a linha de origem e o nome que o dialog vai gravar. */
+  const [duplicando, setDuplicando] = useState<{ id: number; nome: string; ehModelo: boolean } | null>(null);
+  const [nomeCopia, setNomeCopia] = useState('');
+  const [duplicandoAgora, setDuplicandoAgora] = useState(false);
 
   const [linhas, carregando, erro, recarregar] = useLoadAction(loadModelagensAction, [], {
     busca: buscaDebounced || null,
@@ -54,6 +59,7 @@ export function ModelagensList() {
   const [criarModelagem] = useMutateAction(createModelagemAction);
   const [atualizarPremissas] = useMutateAction(updateModelagemPremissasAction);
   const [removerModelagem] = useMutateAction(deleteModelagemAction);
+  const [duplicar] = useMutateAction(duplicarModelagemAction);
 
   /**
    * Os indicadores da lista saem do MESMO motor da tela de detalhe. É por isso
@@ -62,11 +68,16 @@ export function ModelagensList() {
    */
   const modelagens = useMemo(
     () =>
-      (Array.isArray(linhas) ? linhas : []).map((linha: any) => {
-        const input = mapearModelInput(linha);
-        const resultado = calcular(input);
-        return { linha, input, resultado };
-      }),
+      (Array.isArray(linhas) ? linhas : [])
+        .map((linha: any) => {
+          const input = mapearModelInput(linha);
+          const resultado = calcular(input);
+          return { linha, input, resultado };
+        })
+        // A MODELO sempre primeiro, seja qual for a ordenação da consulta: ela é
+        // o ponto de partida da lista, não mais uma linha no meio. `sort` é
+        // estável no ES2019+, então a ordem relativa das demais não muda.
+        .sort((a, b) => Number(!!b.linha.is_modelo) - Number(!!a.linha.is_modelo)),
     [linhas],
   );
 
@@ -128,9 +139,50 @@ export function ModelagensList() {
 
   const excluir = async (linha: any) => {
     if (!window.confirm(`Excluir a modelagem "${linha.nome}"? Unidades, custos, sócios e overrides vão junto.`)) return;
-    await removerModelagem({ id: linha.id });
+    const r = await removerModelagem({ id: linha.id });
+    // O action tem `AND is_modelo = FALSE` e devolve RETURNING id. Lista vazia
+    // significa que nada foi apagado — e o único motivo possível é ser a modelo.
+    // Sem esta leitura a tela diria "excluída" para uma linha que continua lá.
+    if (!Array.isArray(r) || r.length === 0) {
+      toast({
+        title: 'A modelagem modelo não pode ser excluída',
+        description: 'Ela define o plano de contas padrão. Use Duplicar para criar uma modelagem a partir dela.',
+        variant: 'destructive',
+      });
+      return;
+    }
     toast({ title: 'Modelagem excluída' });
     recarregar();
+  };
+
+  /** Abre o dialog com o nome já sugerido — duplicar quase nunca quer o nome cru. */
+  const abrirDuplicacao = (linha: { id: number | string; nome: string; is_modelo?: boolean }) => {
+    const ehModelo = !!linha.is_modelo;
+    setDuplicando({ id: Number(linha.id), nome: linha.nome, ehModelo });
+    setNomeCopia(ehModelo ? 'Nova modelagem' : `Cópia de ${linha.nome}`);
+  };
+
+  const confirmarDuplicacao = async () => {
+    if (!duplicando) return;
+    if (!nomeCopia.trim()) {
+      toast({ title: 'Informe um nome para a cópia', variant: 'destructive' });
+      return;
+    }
+    setDuplicandoAgora(true);
+    try {
+      const r = await duplicar({ origemId: duplicando.id, nome: nomeCopia.trim() });
+      const id = Array.isArray(r) ? r[0]?.id : null;
+      setDuplicando(null);
+      recarregar();
+      // Vai direto para o editor: duplicar é sempre o começo de uma edição, e
+      // obrigar o usuário a caçar a linha nova na lista é atrito à toa.
+      if (id) setAbertaId(Number(id));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: 'Erro ao duplicar modelagem', description: msg, variant: 'destructive' });
+    } finally {
+      setDuplicandoAgora(false);
+    }
   };
 
   if (abertaId != null) {
@@ -208,10 +260,23 @@ export function ModelagensList() {
                   <TableRow
                     key={linha.id}
                     className="cursor-pointer hover:bg-slate-50"
-                    onClick={() => setAbertaId(Number(linha.id))}
+                    // Na MODELO a ação principal é DUPLICAR, não abrir: o que se
+                    // faz com um plano de contas é partir dele. Editá-lo é
+                    // possível e continua a um clique — no botão de lápis ao
+                    // lado —, mas é a exceção, não o caminho comum.
+                    onClick={() =>
+                      linha.is_modelo ? abrirDuplicacao(linha) : setAbertaId(Number(linha.id))
+                    }
                   >
                     <TableCell className={listingTableCellClassName}>
-                      <div className="font-medium text-slate-900">{linha.nome}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-900">{linha.nome}</span>
+                        {linha.is_modelo ? (
+                          <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+                            Modelo
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="text-xs text-slate-500">
                         {resultado.cronograma.prazoTotal} meses · {resultado.agregados.unidadesTotal} unidades
                         {input.unidades.length !== resultado.agregados.unidadesTotal
@@ -244,16 +309,36 @@ export function ModelagensList() {
                     <TableCell className={`${listingTableCellClassName} text-right`} onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end gap-1">
                         <FinanceActionButton
+                          title={linha.is_modelo ? 'Duplicar para criar uma modelagem' : 'Duplicar'}
+                          icon={Copy}
+                          onClick={() => abrirDuplicacao(linha)}
+                        />
+                        {/* Só na modelo: como o clique da linha ali duplica, o
+                            acesso ao editor precisa de porta própria. A modelo é
+                            editável — é assim que o plano de contas evolui. */}
+                        {linha.is_modelo ? (
+                          <FinanceActionButton
+                            title="Editar o plano de contas"
+                            icon={Pencil}
+                            onClick={() => setAbertaId(Number(linha.id))}
+                          />
+                        ) : null}
+                        <FinanceActionButton
                           title={linha.status === 'arquivada' ? 'Reabrir' : 'Arquivar'}
                           icon={linha.status === 'arquivada' ? ArchiveRestore : Archive}
                           onClick={() => arquivar(linha)}
                         />
-                        <FinanceActionButton
-                          title="Excluir"
-                          tone="danger"
-                          icon={Trash2}
-                          onClick={() => excluir(linha)}
-                        />
+                        {/* Na modelo o excluir é AUSENTE, não desabilitado: um
+                            botão apagado convida a clicar e a descobrir que não
+                            funciona. O title do próprio card já diz o porquê. */}
+                        {linha.is_modelo ? null : (
+                          <FinanceActionButton
+                            title="Excluir"
+                            tone="danger"
+                            icon={Trash2}
+                            onClick={() => excluir(linha)}
+                          />
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -311,6 +396,45 @@ export function ModelagensList() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Duplicar. Vale para a modelo e para qualquer outra: o SQL é o mesmo, e
+          a cópia sempre nasce com is_modelo = FALSE e status 'rascunho'. */}
+      <Dialog open={duplicando != null} onOpenChange={(v) => !v && setDuplicando(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {duplicando?.ehModelo ? 'Nova modelagem a partir do modelo' : 'Duplicar modelagem'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Nome</Label>
+            <Input
+              className={listingFilterFieldClassName}
+              value={nomeCopia}
+              onChange={(e) => setNomeCopia(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !duplicandoAgora) confirmarDuplicacao();
+              }}
+              autoFocus
+            />
+            <p className="text-xs text-slate-500">
+              {duplicando?.ehModelo
+                ? 'A cópia nasce com o plano de contas do modelo, todas as linhas zeradas.'
+                : `Copia tudo de "${duplicando?.nome}": tipologias, fases, custos, sócios, takedowns, overrides e curva de benchmark.`}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDuplicando(null)} disabled={duplicandoAgora}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarDuplicacao} disabled={duplicandoAgora}>
+              {duplicandoAgora ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Duplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

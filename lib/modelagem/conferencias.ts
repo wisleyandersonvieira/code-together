@@ -697,7 +697,24 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
     return dinheiro(c.valor || 0);
   };
 
+  /**
+   * Linha inteiramente zerada: nada digitado em nenhuma das três grandezas que
+   * poderiam produzir valor.
+   *
+   * Não é inconsistência — é um plano de contas em branco, que é exatamente o
+   * que a modelagem MODELO é e o que qualquer usuário tem enquanto ainda não
+   * preencheu o orçamento. Cobrar denominador de uma linha que multiplicaria
+   * esse denominador por zero acusa um problema que não existe, e uma
+   * conferência âmbar permanente ensina a ignorar o painel.
+   *
+   * A linha volta a ser cobrada assim que ganhar qualquer valor — que é o
+   * momento em que o denominador zerado passa de fato a esconder dinheiro.
+   */
+  const inteiramenteZerada = (c: (typeof custos)[number]) =>
+    (c.valor || 0) === 0 && (c.valorUnitario || 0) === 0 && (c.percentual || 0) === 0;
+
   const semDenominador = custos.filter((c, i) => {
+    if (inteiramenteZerada(c)) return false;
     if (c.baseCalculo === 'por_unidade') return ctx.bases.unidades <= 0;
     if (c.baseCalculo === 'por_sf') return ctx.bases.areaSf <= 0;
     if (c.baseCalculo === 'pct_de_grupo') {
