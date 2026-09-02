@@ -20,6 +20,13 @@ function saveModelagemFinanciamento() {
         capitalizar_juros = COALESCE({{params.capitalizarJuros}}::boolean, FALSE),
         colchao_minimo_caixa = COALESCE({{params.colchaoMinimoCaixa}}::decimal, 0),
 
+        -- Linha de crédito rotativa (1763300000). Ficou de fora deste UPDATE
+        -- quando a migration entrou, então o switch da aba Financiamento nunca
+        -- chegava ao banco: gravava, relia o DEFAULT FALSE e voltava desmarcado.
+        -- O COALESCE cai em FALSE, que é o DEFAULT da coluna e o comportamento
+        -- da linha não rotativa — param ausente não pode ligar a rotativa.
+        linha_rotativa = COALESCE({{params.linhaRotativa}}::boolean, FALSE),
+
         -- Reserva de juros (1762100000). O DEFAULT de reserva_juros_sacada é
         -- TRUE, então COALESCE precisa cair em TRUE também.
         reserva_juros = COALESCE({{params.reservaJuros}}::decimal, 0),

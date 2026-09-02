@@ -13,6 +13,8 @@ export default defineConfig({
     environment: 'node',
     // Os exportadores moram em components/, e o teste de caracteres precisa
     // varrer o fonte deles — continua sendo TypeScript puro, sem React nem DOM.
-    include: ['lib/**/*.test.ts', 'components/**/*.test.ts'],
+    // As ações moram em actions/, e a guarda de colunas gravadas varre o SQL
+    // delas contra as migrations: também é TypeScript puro lendo arquivo.
+    include: ['lib/**/*.test.ts', 'components/**/*.test.ts', 'actions/**/*.test.ts'],
   },
 });
