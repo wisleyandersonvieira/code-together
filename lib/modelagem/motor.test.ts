@@ -498,11 +498,11 @@ describe('10 — quantidade por tipologia', () => {
     const rb = b as Record<string, unknown>;
     expect(Object.keys(rb)).toEqual(Object.keys(ra));
     for (const k of Object.keys(a)) {
-      const x = a[k];
+      const x = ra[k];
       if (typeof x === 'number' && Number.isFinite(x)) {
-        expect(Math.abs((b[k] as number) - x)).toBeLessThanOrEqual(1e-6);
+        expect(Math.abs((rb[k] as number) - x)).toBeLessThanOrEqual(1e-6);
       } else {
-        expect(b[k]).toEqual(x);
+        expect(rb[k]).toEqual(x);
       }
     }
   };
