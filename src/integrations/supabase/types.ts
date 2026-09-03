@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -1685,6 +1685,7 @@ export type Database = {
         Row: {
           color: string | null
           created_at: string | null
+          icon: string | null
           id: number
           name: string | null
           position: number | null
@@ -1693,6 +1694,7 @@ export type Database = {
         Insert: {
           color?: string | null
           created_at?: string | null
+          icon?: string | null
           id?: number
           name?: string | null
           position?: number | null
@@ -1701,6 +1703,7 @@ export type Database = {
         Update: {
           color?: string | null
           created_at?: string | null
+          icon?: string | null
           id?: number
           name?: string | null
           position?: number | null
@@ -1758,6 +1761,913 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      modelagem_aporte_parcelas: {
+        Row: {
+          created_at: string | null
+          id: number
+          mes: number
+          modelagem_id: number
+          observacao: string | null
+          valor: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          mes: number
+          modelagem_id: number
+          observacao?: string | null
+          valor?: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          mes?: number
+          modelagem_id?: number
+          observacao?: string | null
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_aporte_parcelas_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_aportes: {
+        Row: {
+          aporte_base_total: number
+          created_at: string | null
+          id: number
+          modelagem_id: number
+          modo_aporte: string
+          regra_rateio_capital: string
+          updated_at: string | null
+          valor_total_alvo: number
+        }
+        Insert: {
+          aporte_base_total?: number
+          created_at?: string | null
+          id?: number
+          modelagem_id: number
+          modo_aporte?: string
+          regra_rateio_capital?: string
+          updated_at?: string | null
+          valor_total_alvo?: number
+        }
+        Update: {
+          aporte_base_total?: number
+          created_at?: string | null
+          id?: number
+          modelagem_id?: number
+          modo_aporte?: string
+          regra_rateio_capital?: string
+          updated_at?: string | null
+          valor_total_alvo?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_aportes_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: true
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_benchmark_curva: {
+        Row: {
+          created_at: string | null
+          financiamento_id: number
+          id: number
+          mes: number
+          modelagem_id: number
+          valor: number
+        }
+        Insert: {
+          created_at?: string | null
+          financiamento_id: number
+          id?: number
+          mes: number
+          modelagem_id: number
+          valor?: number
+        }
+        Update: {
+          created_at?: string | null
+          financiamento_id?: number
+          id?: number
+          mes?: number
+          modelagem_id?: number
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_benchmark_curva_financiamento_id_fkey"
+            columns: ["financiamento_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_financiamento"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_benchmark_curva_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_cenarios: {
+        Row: {
+          created_at: string | null
+          id: number
+          input_snapshot: Json | null
+          is_baseline: boolean
+          modelagem_id: number
+          nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          input_snapshot?: Json | null
+          is_baseline?: boolean
+          modelagem_id: number
+          nome: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          input_snapshot?: Json | null
+          is_baseline?: boolean
+          modelagem_id?: number
+          nome?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_cenarios_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_custo_parcelas: {
+        Row: {
+          created_at: string | null
+          custo_id: number
+          id: number
+          mes: number
+          modelagem_id: number
+          ordem: number
+          valor: number
+        }
+        Insert: {
+          created_at?: string | null
+          custo_id: number
+          id?: number
+          mes: number
+          modelagem_id: number
+          ordem?: number
+          valor?: number
+        }
+        Update: {
+          created_at?: string | null
+          custo_id?: number
+          id?: number
+          mes?: number
+          modelagem_id?: number
+          ordem?: number
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_custo_parcelas_custo_id_fkey"
+            columns: ["custo_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_custos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_custo_parcelas_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_custos: {
+        Row: {
+          base_calculo: string
+          categoria: string
+          created_at: string | null
+          distribuicao: string
+          gatilho: string
+          grupo_pai: number | null
+          grupo_referencia: string | null
+          id: number
+          label: string
+          mes_ancora: number | null
+          modelagem_id: number
+          ordem: number
+          percentual: number
+          valor: number
+          valor_unitario: number
+        }
+        Insert: {
+          base_calculo?: string
+          categoria?: string
+          created_at?: string | null
+          distribuicao?: string
+          gatilho?: string
+          grupo_pai?: number | null
+          grupo_referencia?: string | null
+          id?: number
+          label: string
+          mes_ancora?: number | null
+          modelagem_id: number
+          ordem?: number
+          percentual?: number
+          valor?: number
+          valor_unitario?: number
+        }
+        Update: {
+          base_calculo?: string
+          categoria?: string
+          created_at?: string | null
+          distribuicao?: string
+          gatilho?: string
+          grupo_pai?: number | null
+          grupo_referencia?: string | null
+          id?: number
+          label?: string
+          mes_ancora?: number | null
+          modelagem_id?: number
+          ordem?: number
+          percentual?: number
+          valor?: number
+          valor_unitario?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_custos_grupo_pai_fkey"
+            columns: ["grupo_pai"]
+            isOneToOne: false
+            referencedRelation: "modelagem_custos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_custos_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_fases: {
+        Row: {
+          created_at: string | null
+          data_fim: string
+          data_inicio: string
+          id: number
+          modelagem_id: number
+          nome: string
+          ordem: number
+        }
+        Insert: {
+          created_at?: string | null
+          data_fim: string
+          data_inicio: string
+          id?: number
+          modelagem_id: number
+          nome: string
+          ordem?: number
+        }
+        Update: {
+          created_at?: string | null
+          data_fim?: string
+          data_inicio?: string
+          id?: number
+          modelagem_id?: number
+          nome?: string
+          ordem?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_fases_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_financiamento: {
+        Row: {
+          amortizacao_meses: number | null
+          balloon_no_vencimento: boolean
+          benchmark_nome: string | null
+          benchmark_padrao: number
+          capitalizar_juros: boolean
+          carencia_meses: number
+          colchao_minimo_caixa: number
+          convencao_juros: string
+          created_at: string | null
+          custo_financeiro_na_demanda: boolean
+          fee_estruturacao_pct: number
+          fee_mes: number | null
+          fee_timing: string
+          id: number
+          linha_rotativa: boolean
+          max_ltc_pct: number | null
+          mes_fim_saque: number
+          mes_inicio_saque: number
+          modelagem_id: number
+          modo_amortizacao: string
+          modo_saque: string
+          prazo_meses: number | null
+          release_price: number
+          release_price_pct: number | null
+          reserva_juros: number
+          reserva_juros_sacada: boolean
+          spread: number
+          taxa_anual: number
+          tipo_taxa: string
+          updated_at: string | null
+          valor_contratado: number | null
+        }
+        Insert: {
+          amortizacao_meses?: number | null
+          balloon_no_vencimento?: boolean
+          benchmark_nome?: string | null
+          benchmark_padrao?: number
+          capitalizar_juros?: boolean
+          carencia_meses?: number
+          colchao_minimo_caixa?: number
+          convencao_juros?: string
+          created_at?: string | null
+          custo_financeiro_na_demanda?: boolean
+          fee_estruturacao_pct?: number
+          fee_mes?: number | null
+          fee_timing?: string
+          id?: number
+          linha_rotativa?: boolean
+          max_ltc_pct?: number | null
+          mes_fim_saque?: number
+          mes_inicio_saque?: number
+          modelagem_id: number
+          modo_amortizacao?: string
+          modo_saque?: string
+          prazo_meses?: number | null
+          release_price?: number
+          release_price_pct?: number | null
+          reserva_juros?: number
+          reserva_juros_sacada?: boolean
+          spread?: number
+          taxa_anual?: number
+          tipo_taxa?: string
+          updated_at?: string | null
+          valor_contratado?: number | null
+        }
+        Update: {
+          amortizacao_meses?: number | null
+          balloon_no_vencimento?: boolean
+          benchmark_nome?: string | null
+          benchmark_padrao?: number
+          capitalizar_juros?: boolean
+          carencia_meses?: number
+          colchao_minimo_caixa?: number
+          convencao_juros?: string
+          created_at?: string | null
+          custo_financeiro_na_demanda?: boolean
+          fee_estruturacao_pct?: number
+          fee_mes?: number | null
+          fee_timing?: string
+          id?: number
+          linha_rotativa?: boolean
+          max_ltc_pct?: number | null
+          mes_fim_saque?: number
+          mes_inicio_saque?: number
+          modelagem_id?: number
+          modo_amortizacao?: string
+          modo_saque?: string
+          prazo_meses?: number | null
+          release_price?: number
+          release_price_pct?: number | null
+          reserva_juros?: number
+          reserva_juros_sacada?: boolean
+          spread?: number
+          taxa_anual?: number
+          tipo_taxa?: string
+          updated_at?: string | null
+          valor_contratado?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_financiamento_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: true
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_overrides: {
+        Row: {
+          cenario_id: number
+          created_at: string | null
+          created_by: number | null
+          id: number
+          limpar: boolean
+          linha: string
+          mes: number
+          modelagem_id: number
+          valor: number | null
+        }
+        Insert: {
+          cenario_id: number
+          created_at?: string | null
+          created_by?: number | null
+          id?: number
+          limpar?: boolean
+          linha: string
+          mes: number
+          modelagem_id: number
+          valor?: number | null
+        }
+        Update: {
+          cenario_id?: number
+          created_at?: string | null
+          created_by?: number | null
+          id?: number
+          limpar?: boolean
+          linha?: string
+          mes?: number
+          modelagem_id?: number
+          valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_overrides_cenario_id_fkey"
+            columns: ["cenario_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_cenarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_overrides_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_overrides_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_receita: {
+        Row: {
+          comissao_pct: number
+          created_at: string | null
+          custo_cartorio_pct: number
+          id: number
+          lucro_investidores_pct: number
+          lucro_sponsor_pct: number
+          mes_saida: number | null
+          modelagem_id: number
+          modo_venda: string
+          updated_at: string | null
+        }
+        Insert: {
+          comissao_pct?: number
+          created_at?: string | null
+          custo_cartorio_pct?: number
+          id?: number
+          lucro_investidores_pct?: number
+          lucro_sponsor_pct?: number
+          mes_saida?: number | null
+          modelagem_id: number
+          modo_venda?: string
+          updated_at?: string | null
+        }
+        Update: {
+          comissao_pct?: number
+          created_at?: string | null
+          custo_cartorio_pct?: number
+          id?: number
+          lucro_investidores_pct?: number
+          lucro_sponsor_pct?: number
+          mes_saida?: number | null
+          modelagem_id?: number
+          modo_venda?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_receita_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: true
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_socio_aportes: {
+        Row: {
+          created_at: string | null
+          id: number
+          mes: number
+          modelagem_id: number
+          observacao: string | null
+          ordem: number
+          socio_id: number
+          valor: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          mes: number
+          modelagem_id: number
+          observacao?: string | null
+          ordem?: number
+          socio_id: number
+          valor?: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          mes?: number
+          modelagem_id?: number
+          observacao?: string | null
+          ordem?: number
+          socio_id?: number
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_socio_aportes_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_socio_aportes_socio_id_fkey"
+            columns: ["socio_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_socios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_socios: {
+        Row: {
+          cota_disponivel: boolean
+          created_at: string | null
+          id: number
+          modelagem_id: number
+          nome: string
+          observacoes: string | null
+          ordem: number
+          participacao_pct: number
+          pct_capital: number | null
+        }
+        Insert: {
+          cota_disponivel?: boolean
+          created_at?: string | null
+          id?: number
+          modelagem_id: number
+          nome: string
+          observacoes?: string | null
+          ordem?: number
+          participacao_pct?: number
+          pct_capital?: number | null
+        }
+        Update: {
+          cota_disponivel?: boolean
+          created_at?: string | null
+          id?: number
+          modelagem_id?: number
+          nome?: string
+          observacoes?: string | null
+          ordem?: number
+          participacao_pct?: number
+          pct_capital?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_socios_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_takedowns: {
+        Row: {
+          created_at: string | null
+          fase_id: number | null
+          id: number
+          mes: number
+          modelagem_id: number
+          observacao: string | null
+          ordem: number
+          preco_unitario: number
+          quantidade: number
+          unidade_id: number
+        }
+        Insert: {
+          created_at?: string | null
+          fase_id?: number | null
+          id?: number
+          mes: number
+          modelagem_id: number
+          observacao?: string | null
+          ordem?: number
+          preco_unitario?: number
+          quantidade: number
+          unidade_id: number
+        }
+        Update: {
+          created_at?: string | null
+          fase_id?: number | null
+          id?: number
+          mes?: number
+          modelagem_id?: number
+          observacao?: string | null
+          ordem?: number
+          preco_unitario?: number
+          quantidade?: number
+          unidade_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_takedowns_fase_id_fkey"
+            columns: ["fase_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_fases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_takedowns_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_takedowns_unidade_id_fkey"
+            columns: ["unidade_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_unidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_unidade_fases: {
+        Row: {
+          created_at: string | null
+          fase_id: number
+          id: number
+          modelagem_id: number
+          quantidade: number
+          unidade_id: number
+        }
+        Insert: {
+          created_at?: string | null
+          fase_id: number
+          id?: number
+          modelagem_id: number
+          quantidade?: number
+          unidade_id: number
+        }
+        Update: {
+          created_at?: string | null
+          fase_id?: number
+          id?: number
+          modelagem_id?: number
+          quantidade?: number
+          unidade_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_unidade_fases_fase_id_fkey"
+            columns: ["fase_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_fases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_unidade_fases_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_unidade_fases_unidade_id_fkey"
+            columns: ["unidade_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_unidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_unidades: {
+        Row: {
+          aporte_base: number
+          area_sf: number | null
+          cidade: string | null
+          created_at: string | null
+          custo_obra: number
+          custo_terreno: number
+          id: number
+          modelagem_id: number
+          nome: string
+          observacoes: string | null
+          ordem: number
+          preco_venda: number
+          property_tax_ano: number
+          quantidade: number
+          updated_at: string | null
+        }
+        Insert: {
+          aporte_base?: number
+          area_sf?: number | null
+          cidade?: string | null
+          created_at?: string | null
+          custo_obra?: number
+          custo_terreno?: number
+          id?: number
+          modelagem_id: number
+          nome: string
+          observacoes?: string | null
+          ordem?: number
+          preco_venda?: number
+          property_tax_ano?: number
+          quantidade?: number
+          updated_at?: string | null
+        }
+        Update: {
+          aporte_base?: number
+          area_sf?: number | null
+          cidade?: string | null
+          created_at?: string | null
+          custo_obra?: number
+          custo_terreno?: number
+          id?: number
+          modelagem_id?: number
+          nome?: string
+          observacoes?: string | null
+          ordem?: number
+          preco_venda?: number
+          property_tax_ano?: number
+          quantidade?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_unidades_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_vendas_unidade: {
+        Row: {
+          created_at: string | null
+          id: number
+          mes_venda: number
+          modelagem_id: number
+          unidade_id: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          mes_venda: number
+          modelagem_id: number
+          unidade_id: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          mes_venda?: number
+          modelagem_id?: number
+          unidade_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_vendas_unidade_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_vendas_unidade_unidade_id_fkey"
+            columns: ["unidade_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_unidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagens: {
+        Row: {
+          created_at: string | null
+          data_base: string | null
+          data_inicio: string
+          empresa_id: number | null
+          horizonte_maximo: number
+          id: number
+          is_modelo: boolean
+          localizacao: string | null
+          meses_aprovacao: number
+          meses_construcao: number
+          meses_pos_obra: number
+          moeda: string
+          nome: string
+          projeto_id: number | null
+          revisao: string | null
+          status: string
+          terreno_por_fase: boolean
+          tipo_uso: string | null
+          updated_at: string | null
+          usa_fases: boolean
+        }
+        Insert: {
+          created_at?: string | null
+          data_base?: string | null
+          data_inicio: string
+          empresa_id?: number | null
+          horizonte_maximo?: number
+          id?: number
+          is_modelo?: boolean
+          localizacao?: string | null
+          meses_aprovacao?: number
+          meses_construcao?: number
+          meses_pos_obra?: number
+          moeda?: string
+          nome: string
+          projeto_id?: number | null
+          revisao?: string | null
+          status?: string
+          terreno_por_fase?: boolean
+          tipo_uso?: string | null
+          updated_at?: string | null
+          usa_fases?: boolean
+        }
+        Update: {
+          created_at?: string | null
+          data_base?: string | null
+          data_inicio?: string
+          empresa_id?: number | null
+          horizonte_maximo?: number
+          id?: number
+          is_modelo?: boolean
+          localizacao?: string | null
+          meses_aprovacao?: number
+          meses_construcao?: number
+          meses_pos_obra?: number
+          moeda?: string
+          nome?: string
+          projeto_id?: number | null
+          revisao?: string | null
+          status?: string
+          terreno_por_fase?: boolean
+          tipo_uso?: string | null
+          updated_at?: string | null
+          usa_fases?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagens_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagens_projeto_id_fkey"
+            columns: ["projeto_id"]
+            isOneToOne: false
+            referencedRelation: "projetos"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       obrigacoes_catalogo: {
         Row: {
@@ -2871,6 +3781,10 @@ export type Database = {
         Returns: Json
       }
       delete_obrigacao_cliente: { Args: { p_id: number }; Returns: Json }
+      duplicar_modelagem: {
+        Args: { p_nome: string; p_origem: number }
+        Returns: number
+      }
       gerar_obrigacoes_competencias: {
         Args: {
           p_meses_futuro?: number
@@ -2955,12 +3869,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2984,11 +3898,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3009,11 +3923,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3034,11 +3948,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3051,11 +3965,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
