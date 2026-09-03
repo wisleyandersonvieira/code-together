@@ -493,8 +493,10 @@ describe('10 — quantidade por tipologia', () => {
    * tolerância; o resto por igualdade estrita, porque tetoDivida pode ser
    * Infinity e indicadores podem ser null — e ambos têm de bater assim mesmo.
    */
-  const mesmosCampos = (a: Record<string, unknown>, b: Record<string, unknown>) => {
-    expect(Object.keys(b)).toEqual(Object.keys(a));
+  const mesmosCampos = (a: object, b: object) => {
+    const ra = a as Record<string, unknown>;
+    const rb = b as Record<string, unknown>;
+    expect(Object.keys(rb)).toEqual(Object.keys(ra));
     for (const k of Object.keys(a)) {
       const x = a[k];
       if (typeof x === 'number' && Number.isFinite(x)) {
