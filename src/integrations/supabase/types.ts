@@ -2070,6 +2070,7 @@ export type Database = {
       modelagem_financiamento: {
         Row: {
           amortizacao_meses: number | null
+          ativo: boolean
           balloon_no_vencimento: boolean
           benchmark_nome: string | null
           benchmark_padrao: number
@@ -2090,7 +2091,10 @@ export type Database = {
           modelagem_id: number
           modo_amortizacao: string
           modo_saque: string
+          nome: string
+          ordem: number
           prazo_meses: number | null
+          refinancia_facilidade_id: number | null
           release_price: number
           release_price_pct: number | null
           reserva_juros: number
@@ -2103,6 +2107,7 @@ export type Database = {
         }
         Insert: {
           amortizacao_meses?: number | null
+          ativo?: boolean
           balloon_no_vencimento?: boolean
           benchmark_nome?: string | null
           benchmark_padrao?: number
@@ -2123,7 +2128,10 @@ export type Database = {
           modelagem_id: number
           modo_amortizacao?: string
           modo_saque?: string
+          nome?: string
+          ordem?: number
           prazo_meses?: number | null
+          refinancia_facilidade_id?: number | null
           release_price?: number
           release_price_pct?: number | null
           reserva_juros?: number
@@ -2136,6 +2144,7 @@ export type Database = {
         }
         Update: {
           amortizacao_meses?: number | null
+          ativo?: boolean
           balloon_no_vencimento?: boolean
           benchmark_nome?: string | null
           benchmark_padrao?: number
@@ -2156,7 +2165,10 @@ export type Database = {
           modelagem_id?: number
           modo_amortizacao?: string
           modo_saque?: string
+          nome?: string
+          ordem?: number
           prazo_meses?: number | null
+          refinancia_facilidade_id?: number | null
           release_price?: number
           release_price_pct?: number | null
           reserva_juros?: number
@@ -2171,7 +2183,128 @@ export type Database = {
           {
             foreignKeyName: "modelagem_financiamento_modelagem_id_fkey"
             columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "modelagem_financiamento_refinancia_facilidade_id_fkey"
+            columns: ["refinancia_facilidade_id"]
+            isOneToOne: false
+            referencedRelation: "modelagem_financiamento"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_locacao: {
+        Row: {
+          cap_rate_saida: number
+          created_at: string | null
+          custo_venda_pct: number
+          id: number
+          modelagem_id: number
+          noi_referencia: string
+          ocupacao_estabilizada_pct: number
+          perda_credito_pct: number
+          taxa_reembolso_pct: number
+          updated_at: string | null
+        }
+        Insert: {
+          cap_rate_saida?: number
+          created_at?: string | null
+          custo_venda_pct?: number
+          id?: number
+          modelagem_id: number
+          noi_referencia?: string
+          ocupacao_estabilizada_pct?: number
+          perda_credito_pct?: number
+          taxa_reembolso_pct?: number
+          updated_at?: string | null
+        }
+        Update: {
+          cap_rate_saida?: number
+          created_at?: string | null
+          custo_venda_pct?: number
+          id?: number
+          modelagem_id?: number
+          noi_referencia?: string
+          ocupacao_estabilizada_pct?: number
+          perda_credito_pct?: number
+          taxa_reembolso_pct?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_locacao_modelagem_id_fkey"
+            columns: ["modelagem_id"]
             isOneToOne: true
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_ocupacao: {
+        Row: {
+          id: number
+          mes: number
+          modelagem_id: number
+          ocupacao_pct: number
+        }
+        Insert: {
+          id?: number
+          mes: number
+          modelagem_id: number
+          ocupacao_pct?: number
+        }
+        Update: {
+          id?: number
+          mes?: number
+          modelagem_id?: number
+          ocupacao_pct?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_ocupacao_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
+            referencedRelation: "modelagens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modelagem_opex: {
+        Row: {
+          created_at: string | null
+          id: number
+          label: string
+          modelagem_id: number
+          ordem: number
+          reembolsavel: boolean
+          valor_sf_ano: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          label: string
+          modelagem_id: number
+          ordem?: number
+          reembolsavel?: boolean
+          valor_sf_ano?: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          label?: string
+          modelagem_id?: number
+          ordem?: number
+          reembolsavel?: boolean
+          valor_sf_ano?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modelagem_opex_modelagem_id_fkey"
+            columns: ["modelagem_id"]
+            isOneToOne: false
             referencedRelation: "modelagens"
             referencedColumns: ["id"]
           },
@@ -2486,6 +2619,7 @@ export type Database = {
       }
       modelagem_unidades: {
         Row: {
+          aluguel_sf_ano: number
           aporte_base: number
           area_sf: number | null
           cidade: string | null
@@ -2503,6 +2637,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          aluguel_sf_ano?: number
           aporte_base?: number
           area_sf?: number | null
           cidade?: string | null
@@ -2520,6 +2655,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          aluguel_sf_ano?: number
           aporte_base?: number
           area_sf?: number | null
           cidade?: string | null
@@ -2604,6 +2740,7 @@ export type Database = {
           revisao: string | null
           status: string
           terreno_por_fase: boolean
+          tipo_modelagem: string
           tipo_uso: string | null
           updated_at: string | null
           usa_fases: boolean
@@ -2626,6 +2763,7 @@ export type Database = {
           revisao?: string | null
           status?: string
           terreno_por_fase?: boolean
+          tipo_modelagem?: string
           tipo_uso?: string | null
           updated_at?: string | null
           usa_fases?: boolean
@@ -2648,6 +2786,7 @@ export type Database = {
           revisao?: string | null
           status?: string
           terreno_por_fase?: boolean
+          tipo_modelagem?: string
           tipo_uso?: string | null
           updated_at?: string | null
           usa_fases?: boolean
