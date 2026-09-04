@@ -24,7 +24,14 @@ function loadModelagens() {
         (SELECT json_agg(pa ORDER BY pa.mes) FROM modelagem_aporte_parcelas pa WHERE pa.modelagem_id = m.id) AS aporte_parcelas,
         (SELECT json_agg(fa ORDER BY fa.ordem, fa.id) FROM modelagem_fases fa WHERE fa.modelagem_id = m.id) AS fases,
         (SELECT json_agg(uf) FROM modelagem_unidade_fases uf WHERE uf.modelagem_id = m.id) AS unidade_fases,
-        (SELECT row_to_json(f) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id) AS financiamento,
+        -- json_agg desde a migration 1764200000: a tabela deixou de ser 1:1.
+        -- A ordem é a mesma do loadModelagemCompleta — a posição define qual
+        -- facilidade um override "draw:N" endereça, e as duas cargas não podem
+        -- discordar sobre isso.
+        (SELECT json_agg(f ORDER BY f.ordem, f.id) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id) AS financiamentos,
+        (SELECT row_to_json(l) FROM modelagem_locacao l WHERE l.modelagem_id = m.id) AS locacao,
+        (SELECT json_agg(op ORDER BY op.ordem, op.id) FROM modelagem_opex op WHERE op.modelagem_id = m.id) AS opex,
+        (SELECT json_agg(oc ORDER BY oc.mes) FROM modelagem_ocupacao oc WHERE oc.modelagem_id = m.id) AS ocupacao,
         (SELECT json_agg(s ORDER BY s.ordem, s.id) FROM modelagem_socios s WHERE s.modelagem_id = m.id) AS socios,
         (SELECT row_to_json(r) FROM modelagem_receita r WHERE r.modelagem_id = m.id) AS receita,
         (SELECT json_agg(v) FROM modelagem_vendas_unidade v WHERE v.modelagem_id = m.id) AS vendas_unidade,

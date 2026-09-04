@@ -25,14 +25,17 @@ import type {
   Agregados,
   Apuracao,
   CategoriaCusto,
+  ChaveOverride,
+  ConfigLocacao,
   ConvencaoJuros,
   Conferencia,
   CustoAdicional,
   Cronograma,
   DetalheCusto,
+  FacilidadeMes,
   FaseCronograma,
+  Financiamento,
   Indicadores,
-  LinhaFluxo,
   MesFluxo,
   ModelInput,
   ModelOutput,
@@ -40,9 +43,10 @@ import type {
   RateioSocio,
   RegraRateioCapital,
   ResultadoUnidade,
+  TipoModelagem,
   Unidade,
 } from './tipos';
-import { CATEGORIAS_CUSTO } from './tipos';
+import { CATEGORIAS_CUSTO, chaveFacilidade } from './tipos';
 import { montarConferencias } from './conferencias';
 import { anualizar, diasDoMes, indiceMes, razao, somarMeses, tirMensal, xirr } from './indicadores';
 
@@ -51,7 +55,84 @@ const TOL_CONVERGENCIA = 0.01;
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 const soma = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-const chave = (mes: number, linha: LinhaFluxo) => `${mes}:${linha}`;
+const chave = (mes: number, linha: ChaveOverride) => `${mes}:${linha}`;
+
+/**
+ * As facilidades de crédito do input, na ordem de precedência.
+ *
+ * Aceita as DUAS formas de entrada e a razão está no comentário de
+ * `ModelInput.financiamento`: `financiamentos` é o campo canônico desde a
+ * migration 1764200000, e o singular continua aceito porque é sobre ele que o
+ * teste de não-regressão inteiro está escrito.
+ *
+ * `financiamentos` VENCE quando os dois vêm preenchidos — input inconsistente
+ * vira conferência (`financiamento_duplicado`), nunca exceção e nunca escolha
+ * silenciosa.
+ *
+ * Lista vazia é um projeto SEM DÍVIDA, e é um input legítimo: o motor calcula
+ * normalmente, com saque, juros e fee zerados o projeto inteiro.
+ *
+ * A ordenação é por `ordem` e, no empate, pela posição de entrada — estável, e a
+ * mesma do SELECT e do mapeador. Ordenar aqui também é o que garante que a
+ * posição 1-based das chaves de override (`draw:1`) signifique a mesma
+ * facilidade venha o input de onde vier.
+ */
+export function normalizarFacilidades(input: ModelInput): Financiamento[] {
+  const lista =
+    input.financiamentos && input.financiamentos.length > 0
+      ? input.financiamentos
+      : input.financiamento
+        ? [input.financiamento]
+        : [];
+  return lista
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => (a.f.ordem ?? a.i) - (b.f.ordem ?? b.i) || a.i - b.i)
+    .map((x) => x.f);
+}
+
+/**
+ * Índices das facilidades que participam de um CICLO de refinanciamento.
+ *
+ * A → B → A é a forma óbvia; A → A, uma facilidade que refinancia a si mesma, é
+ * a forma que passa despercebida e é igualmente destrutiva — o saque quitaria o
+ * próprio saldo que acabou de criar, num laço sem fim dentro do mesmo mês.
+ *
+ * A detecção acontece ANTES do loop mensal e sobre o grafo completo, não durante
+ * a travessia: fosse durante, qual das duas facilidades do par sobraria
+ * dependeria da ordem de visita, e o resultado deixaria de ser determinístico.
+ *
+ * Cada nó tem no MÁXIMO uma aresta de saída (`refinanciaIndex` é um só), então o
+ * grafo é um funcional: basta caminhar de cada nó até repetir alguém. Os que
+ * participam do ciclo valem `null` — param de refinanciar — e
+ * `refinanciamento_circular` acende vermelho.
+ */
+export function ciclosDeRefinanciamento(facilidades: Financiamento[]): Set<number> {
+  const emCiclo = new Set<number>();
+  const destino = facilidades.map((f) => {
+    const alvo = f.refinanciaIndex;
+    return alvo != null && Number.isInteger(alvo) && alvo >= 0 && alvo < facilidades.length
+      ? alvo
+      : null;
+  });
+
+  for (let inicio = 0; inicio < facilidades.length; inicio++) {
+    const visitados = new Map<number, number>();
+    let atual: number | null = inicio;
+    let passo = 0;
+    while (atual != null && !visitados.has(atual)) {
+      visitados.set(atual, passo++);
+      atual = destino[atual];
+    }
+    // Fechou num nó já visitado NESTA caminhada: tudo dali para a frente é ciclo.
+    // Um nó visitado antes do fecho é só a "cauda" que leva até ele, e não está
+    // em ciclo nenhum.
+    if (atual != null) {
+      const entrada = visitados.get(atual)!;
+      for (const [no, ordem] of visitados) if (ordem >= entrada) emCiclo.add(no);
+    }
+  }
+  return emCiclo;
+}
 
 /**
  * Denominadores das tipologias usados pelas bases de cálculo de custo.
@@ -354,7 +435,15 @@ export function fatorJurosDoMes(
 }
 
 interface EstadoPonto {
-  feeTotal: number;
+  /**
+   * Fee de estruturação de CADA facilidade, alinhado com a lista completa de
+   * facilidades (inclusive as inativas, que valem zero).
+   *
+   * É por facilidade, e não um total do projeto, porque cada uma incide sobre o
+   * próprio valor contratado e é lançada no próprio mês de fee — duas
+   * facilidades podem ter `feeTiming` diferentes e cobrar em meses diferentes.
+   */
+  feePorFacilidade: number[];
   /** Custo financeiro de caixa por mês, indexado de 1 a prazoTotal. */
   custoFinPorMes: number[];
   distribuicaoAutomatica: number;
@@ -376,14 +465,56 @@ interface ResultadoPasse {
   descobertoPorTeto: number;
   /** Σ do release que o teto do saldo de abertura cortou no projeto inteiro. */
   releaseCortadoTotal: number;
+  /**
+   * Refinanciamento que o TETO da facilidade que refinancia não cobriu, por
+   * facilidade refinanciada: quanto de saldo devedor ficou de pé porque a nova
+   * dívida não deu para quitar a velha.
+   *
+   * Vem do passe pelo mesmo motivo dos três acima: é o número que a amortização
+   * de fato usou, e recomputá-lo na conferência abriria espaço para as duas
+   * contas divergirem. Alimenta `refinanciamento_insuficiente`.
+   */
+  refinanciamentoDescoberto: { refinanciadora: number; refinanciada: number; falta: number }[];
 }
 
 export function calcular(input: ModelInput): ModelOutput {
-  const fin = input.financiamento;
+  // ─── O SWITCH (migration 1764000000) ───────────────────────────────────────
+  // Ausente = 'venda', que é o default do banco e o comportamento anterior a
+  // esta versão. TODO caminho de locação abaixo está atrás desta flag, e é por
+  // isso que nenhuma modelagem já gravada pode mudar de resultado: para ela,
+  // `ehLocacao` é constante false e os blocos novos são inalcançáveis.
+  const tipoModelagem: TipoModelagem = input.tipoModelagem ?? 'venda';
+  const ehLocacao = tipoModelagem === 'locacao';
+
   const rec = input.receita;
   const unidades = input.unidades ?? [];
   const custosAdicionais = input.custosAdicionais ?? [];
   const socios = input.socios ?? [];
+
+  // ─── As facilidades de crédito (migration 1764200000) ──────────────────────
+  // A lista COMPLETA, inclusive as inativas: a posição aqui é o endereço das
+  // chaves de override (`draw:2` é a segunda desta lista), e filtrar as
+  // inativas antes remapearia os overrides das que sobraram para outra
+  // facilidade — em silêncio, e com número diferente.
+  const facilidades = normalizarFacilidades(input);
+  const facilidadeAtiva = facilidades.map((f) => f.ativo !== false);
+  const emCicloRefin = ciclosDeRefinanciamento(facilidades);
+
+  /**
+   * Padrão neutro da locação: tudo zerado, ocupação estabilizada em 100%.
+   *
+   * Lido mesmo no modo venda porque as expressões abaixo o referenciam, mas ali
+   * ele nunca chega a multiplicar nada — a receita de aluguel e o OPEX são
+   * zerados na origem.
+   */
+  const loc: ConfigLocacao = input.locacao ?? {
+    taxaReembolsoPct: 0,
+    perdaCreditoPct: 0,
+    capRateSaida: 0,
+    custoVendaPct: 0,
+    noiReferencia: 'estabilizado',
+    ocupacaoEstabilizadaPct: 1,
+  };
 
   // ─── Cronograma ────────────────────────────────────────────────────────────
   const prazoTotal = Math.max(
@@ -453,6 +584,21 @@ export function calcular(input: ModelInput): ModelOutput {
   const taxAnoTotal = soma(unidades.map((u) => (u.propertyTaxAno || 0) * qtd(u)));
   const unidadesTotal = soma(unidades.map(qtd));
   const propertyTaxTotal = (taxAnoTotal / 12) * prazoTotal;
+
+  // ─── O ativo locável (migration 1764050000) ────────────────────────────────
+  // `ablSf` é a mesma conta de `areaTotalSf` — Σ (areaSf × quantidade) — exposta
+  // com o nome que a pro forma de locação usa. Sai da MESMA expressão para as
+  // duas leituras não terem como divergir.
+  //
+  // `receitaBrutaAnual100` é o TETO da receita, não a receita: o que entra em
+  // cada mês é ela dividida por 12, multiplicada pela ocupação daquele mês e
+  // líquida de perda de crédito.
+  //
+  // As duas são calculadas nos dois modos, e no modo venda `aluguelSfAno` é 0
+  // em toda tipologia — logo `receitaBrutaAnual100` é 0 e nada muda.
+  const receitaBrutaAnual100 = soma(
+    unidades.map((u) => (u.areaSf || 0) * (u.aluguelSfAno || 0) * qtd(u)),
+  );
 
   // ─── Custo por fase ────────────────────────────────────────────────────────
   // A obra e o terreno de cada fase saem da ALOCAÇÃO de tipologias por fase:
@@ -604,6 +750,9 @@ export function calcular(input: ModelInput): ModelOutput {
     aportePlanejadoTotal,
     custosPorCategoria,
     areaTotalSf: bases.areaSf,
+    // Mesma conta de `areaTotalSf`, nome da locação. Ver o comentário acima.
+    ablSf: bases.areaSf,
+    receitaBrutaAnual100,
   };
 
   // ─── Overrides ─────────────────────────────────────────────────────────────
@@ -611,17 +760,34 @@ export function calcular(input: ModelInput): ModelOutput {
   // e voltam a valer se o prazo aumentar de novo.
   const ativos = new Map<string, number | null>();
   const orfaos: Override[] = [];
+  /**
+   * Canonicaliza a chave da linha para o formato POR FACILIDADE.
+   *
+   * `draw` e `amortization` SEM sufixo são a forma anterior à migration
+   * 1764200000, quando só existia uma facilidade, e significam exatamente o que
+   * sempre significaram: a facilidade 1. A migration converteu o que estava
+   * gravado, mas a leitura tolerante tem de ficar — réplica atrasada, restore de
+   * backup e snapshot de cenário antigo ainda trazem a forma velha, e ignorá-la
+   * faria o override do usuário DESAPARECER do fluxo em silêncio, que é
+   * exatamente o desfecho que este módulo não admite.
+   *
+   * Canonicalizar na ENTRADA, e não na consulta, é o que garante que
+   * `celulasManuais` conte uma célula só quando as duas formas coexistirem —
+   * como acontece num banco em que a migration rodou pela metade.
+   */
+  const canonica = (linha: ChaveOverride): ChaveOverride =>
+    linha === 'draw' || linha === 'amortization' ? chaveFacilidade(linha, 1) : linha;
   for (const o of input.overrides ?? []) {
     if (!Number.isInteger(o.mes) || o.mes < 1 || o.mes > prazoTotal) {
       orfaos.push(o);
       continue;
     }
-    ativos.set(chave(o.mes, o.linha), o.limpar ? null : (o.valor ?? 0));
+    ativos.set(chave(o.mes, canonica(o.linha)), o.limpar ? null : (o.valor ?? 0));
   }
-  const temOverride = (m: number, l: LinhaFluxo) => ativos.has(chave(m, l));
+  const temOverride = (m: number, l: ChaveOverride) => ativos.has(chave(m, l));
   // `null` (célula forçada a vazio) não contribui com nada na aritmética, mas
   // continua distinta de zero para a interface.
-  const valorOverride = (m: number, l: LinhaFluxo) => ativos.get(chave(m, l)) ?? 0;
+  const valorOverride = (m: number, l: ChaveOverride) => ativos.get(chave(m, l)) ?? 0;
 
   // ─── Linhas de custo e receita (não dependem da iteração) ──────────────────
   const zeros = () => new Array<number>(prazoTotal + 1).fill(0);
@@ -630,9 +796,27 @@ export function calcular(input: ModelInput): ModelOutput {
   const propertyTax = zeros();
   const otherCosts = zeros();
   const revenue = zeros();
+  // ─── Linhas do modo locação ────────────────────────────────────────────────
+  // Zeradas o projeto inteiro no modo venda: os laços que as preenchem estão
+  // todos atrás de `ehLocacao`.
+  const ocupacaoMes = zeros();
+  const rentalRevenue = zeros();
+  const opexBruto = zeros();
+  const opexReembolso = zeros();
+  const opex = zeros();
+  const noiMes = zeros();
 
   const mesesConstrucao = Math.trunc(input.mesesConstrucao);
-  const fatorLiquido = 1 - (rec.comissaoPct || 0) - (rec.custoCartorioPct || 0);
+  /**
+   * Fator líquido da venda: 1 − comissão − cartório.
+   *
+   * NÃO se aplica no modo locação, e a razão é dupla. Primeiro, não há venda de
+   * unidade nenhuma para corretar. Segundo — e é o erro que produziria número
+   * errado em silêncio —, quem faz o papel dos dois na locação é
+   * `custoVendaPct`, que já é a corretagem da venda do ATIVO; aplicar os três
+   * contaria comissão duas vezes sobre o mesmo negócio.
+   */
+  const fatorLiquido = ehLocacao ? 1 : 1 - (rec.comissaoPct || 0) - (rec.custoCartorioPct || 0);
 
   // ─── Terreno e obra ────────────────────────────────────────────────────────
   // Sem fases — o caminho de toda modelagem anterior a esta versão, e o que
@@ -658,7 +842,16 @@ export function calcular(input: ModelInput): ModelOutput {
     // Property tax ainda não conhece fase: continua rateado linearmente pelo
     // prazo inteiro. O próximo passo natural é o property tax por fase,
     // começando no mês de início de cada uma — quem for mexer, mexe aqui.
-    propertyTax[m] = taxAnoTotal / 12;
+    //
+    // NO MODO LOCAÇÃO A LINHA É ZERO, e isto é o ponto que produziria número
+    // errado em silêncio se fosse esquecido: lá o property tax vem de uma LINHA
+    // DE OPEX, que entra na base do reembolso NNN. Lançar os dois cobraria o
+    // imposto DUAS VEZES — uma aqui, pela coluna da tipologia, outra pelo OPEX.
+    //
+    // A coluna `propertyTaxAno` da tipologia não é apagada nem zerada: fica
+    // guardada e inativa, e `property_tax_duplicado` acende âmbar se estiver
+    // preenchida, dizendo que só a linha de OPEX entra na conta.
+    propertyTax[m] = ehLocacao ? 0 : taxAnoTotal / 12;
   }
 
   // ─── Unidades vendidas por mês (gatilho 'por_venda') ───────────────────────
@@ -678,7 +871,16 @@ export function calcular(input: ModelInput): ModelOutput {
     vendasPorMes.set(mes, (vendasPorMes.get(mes) ?? 0) + n);
     valorVendidoPorMes.set(mes, (valorVendidoPorMes.get(mes) ?? 0) + precoUnitario * n);
   };
-  if (rec.modoVenda === 'single_exit') {
+  // NO MODO LOCAÇÃO NÃO HÁ VENDA DE UNIDADE NENHUMA: `modoVenda`, os takedowns
+  // e a venda por unidade não são usados, e nenhuma unidade "fecha" em mês
+  // nenhum. Consequências, todas desejadas: `unidadesVendidas` é zero em todo
+  // mês, o release price nunca dispara e o gatilho de custo 'por_venda' não
+  // lança nada — e `custo_gatilho_nao_lancado` acusa, como já faz no modo
+  // 'manual'. O que vende, uma vez só, é o ATIVO, e isso é a linha `revenue` do
+  // mês de saída, montada mais abaixo.
+  if (ehLocacao) {
+    // Nada a fazer: o mapa fica vazio de propósito.
+  } else if (rec.modoVenda === 'single_exit') {
     // Saída única: todas as unidades fecham no mês da venda do projeto. O preço
     // médio é o único disponível aqui — o VGV dividido pelas unidades.
     venderNoMes(mesSaida, unidadesTotal, unidadesTotal > 0 ? vgv / unidadesTotal : 0);
@@ -817,7 +1019,23 @@ export function calcular(input: ModelInput): ModelOutput {
     total: lancadoPorCusto[i],
   }));
 
-  if (rec.modoVenda === 'single_exit') {
+  // ─── A RECEITA BIFURCA AQUI ────────────────────────────────────────────────
+  //
+  // Venda: a receita é o preço das unidades, lançado conforme o modo de venda —
+  // tudo no mês da saída, por tipologia, ou em lotes (takedown).
+  //
+  // Locação: a receita tem DUAS origens e nenhuma delas é preço de unidade —
+  //   o ALUGUEL, mês a mês, na linha `rental_revenue` (montada logo abaixo);
+  //   a VENDA DO ATIVO, um único lançamento em `revenue`, no mês de saída,
+  //   valendo o NOI de referência dividido pelo cap rate, menos o custo de
+  //   venda.
+  // `modoVenda`, `vendasPorUnidade` e `takedowns` NÃO são lidos: a linha
+  // `revenue` da locação tem exatamente um lançamento, e ele não depende de
+  // cronograma de venda nenhum.
+  if (ehLocacao) {
+    // Preenchida mais abaixo, depois da curva de ocupação e do OPEX: o valor de
+    // saída depende do NOI, e o NOI depende dos dois.
+  } else if (rec.modoVenda === 'single_exit') {
     if (mesSaida >= 1 && mesSaida <= prazoTotal) revenue[mesSaida] = vgv * fatorLiquido;
   } else if (rec.modoVenda === 'per_unit') {
     for (const venda of rec.vendasPorUnidade ?? []) {
@@ -847,74 +1065,303 @@ export function calcular(input: ModelInput): ModelOutput {
   }
   // 'manual' → só overrides.
 
+  // ─── Operação: ocupação, aluguel, OPEX e NOI (migration 1764100000) ────────
+  //
+  // Tudo aqui é DETERMINÍSTICO a partir do input: nada depende do saque, do
+  // caixa ou do custo financeiro. Por isso o bloco fica FORA do ponto fixo — a
+  // locação não acrescenta nenhuma realimentação nova às três que já existiam.
+  const linhasOpex = input.opex ?? [];
+  // O OPEX é uma taxa anual por pé quadrado de ABL. Os dois totais anuais saem
+  // daqui e são usados em dois lugares — o lançamento mês a mês e o NOI de
+  // referência —, sempre os mesmos números.
+  const opexBrutoAnual = ehLocacao
+    ? soma(linhasOpex.map((l) => (l.valorSfAno || 0) * bases.areaSf))
+    : 0;
+  const opexBrutoReembolsavelAnual = ehLocacao
+    ? soma(
+        linhasOpex
+          .filter((l) => l.reembolsavel !== false)
+          .map((l) => (l.valorSfAno || 0) * bases.areaSf),
+      )
+    : 0;
+
+  // Mês SEM ponto na curva é ocupação ZERO, não a ocupação do mês anterior e não
+  // um padrão — o oposto da curva do benchmark. Ocupação é um fato do lease-up,
+  // e inventar valor para o mês não declarado criaria receita que ninguém
+  // projetou. `sem_curva_ocupacao` acende vermelho quando não há ponto nenhum.
+  const curvaOcupacao = new Map<number, number>();
+  for (const ponto of input.ocupacao ?? []) {
+    const mes = Math.trunc(ponto.mes);
+    if (!Number.isInteger(ponto.mes) || mes < 1) continue;
+    // Duas ocupações no mesmo mês NÃO somam — 85% + 85% não é 170%, seriam
+    // contraditórias. O banco tem UNIQUE (modelagem_id, mes); aqui a última
+    // vence, que é a única leitura determinística possível para dado em
+    // trânsito. É a exceção deliberada à regra "duplicado soma" que vale para
+    // parcelas, takedowns e aportes.
+    curvaOcupacao.set(mes, clamp(ponto.ocupacaoPct || 0, 0, 1));
+  }
+
+  if (ehLocacao) {
+    const perdaCredito = loc.perdaCreditoPct || 0;
+    const taxaReembolso = loc.taxaReembolsoPct || 0;
+    for (let m = 1; m <= prazoTotal; m++) {
+      const ocupacao = curvaOcupacao.get(m) ?? 0;
+      ocupacaoMes[m] = ocupacao;
+
+      // A PERDA DE CRÉDITO INCIDE SOBRE A RECEITA FATURADA, não sobre a receita
+      // a 100% de ocupação — inquilino que não existe não deixa de pagar. É por
+      // isso que ela multiplica DEPOIS da ocupação, e não ao lado dela.
+      //
+      // E é por isso, também, que ela NÃO é vacância: a vacância física já está
+      // na curva de ocupação. Somar as duas contaria o mesmo buraco duas vezes,
+      // e é o erro clássico de quem escreve esta linha de memória.
+      const receitaBrutaMes = (receitaBrutaAnual100 / 12) * ocupacao;
+      rentalRevenue[m] = receitaBrutaMes * (1 - perdaCredito);
+
+      // O OPEX BRUTO NÃO VARIA COM A OCUPAÇÃO. Prédio vazio custa property tax,
+      // seguro e manutenção igual — a conta do síndico não cai porque não há
+      // inquilino. O que varia é o REEMBOLSO, porque só quem está lá paga.
+      //
+      // É exatamente daí que sai o comportamento mais importante do modelo: o
+      // NOI é NEGATIVO em ocupação baixa, e só vira positivo quando o reembolso
+      // mais o aluguel passam do OPEX bruto. Na pro forma de referência isso
+      // acontece acima de 27,8% de ocupação — ver `ocupacaoBreakevenNoi`.
+      opexBruto[m] = opexBrutoAnual / 12;
+      opexReembolso[m] = (opexBrutoReembolsavelAnual / 12) * taxaReembolso * ocupacao;
+      opex[m] = opexBruto[m] - opexReembolso[m];
+      noiMes[m] = rentalRevenue[m] - opex[m];
+    }
+  }
+
+  // ─── O valor de saída ──────────────────────────────────────────────────────
+  //
+  // O NOI de REFERÊNCIA é anual e não se confunde com `Apuracao.noiTotal`, que é
+  // o NOI acumulado do fluxo inteiro. Ver `NoiReferencia` em tipos.ts para por
+  // que o padrão de mercado (forward 12m) não está implementado.
+  const noiReferencia = !ehLocacao
+    ? 0
+    : loc.noiReferencia === 'ultimos_12m'
+      ? // Trailing do fluxo efetivamente modelado: os 12 meses que TERMINAM no
+        // mês de saída. O `max(1, …)` corta a janela quando a saída acontece
+        // antes do 12º mês — somar meses que não existem daria um NOI menor sem
+        // nada explicando por quê, e cortar deixa a soma coerente com o prazo.
+        soma(
+          Array.from(
+            { length: Math.min(12, Math.max(0, Math.min(mesSaida, prazoTotal))) },
+            (_, k) => noiMes[Math.min(mesSaida, prazoTotal) - k] ?? 0,
+          ),
+        )
+      : // 'estabilizado' (default): a conta da pro forma de referência. Não
+        // depende de o fluxo ter chegado a estabilizar — é o ativo maduro.
+        receitaBrutaAnual100 * (loc.ocupacaoEstabilizadaPct || 0) * (1 - (loc.perdaCreditoPct || 0)) -
+        (opexBrutoAnual -
+          opexBrutoReembolsavelAnual *
+            (loc.taxaReembolsoPct || 0) *
+            (loc.ocupacaoEstabilizadaPct || 0));
+
+  // ESTA É A DIVISÃO QUE DERRUBA A MODELAGEM INTEIRA SE PASSAR.
+  //
+  // Cap rate ZERO devolve valor de saída ZERO, nunca Infinity — e nunca NaN,
+  // porque a guarda é `> 0` e não `!== 0`. Um Infinity aqui contaminaria receita,
+  // lucro, MOIC, TIR e o rateio de todos os sócios, e a tela mostraria "∞" sem
+  // uma linha dizendo de onde veio. `cap_rate_zerado` acende vermelho.
+  const valorSaida =
+    ehLocacao && (loc.capRateSaida || 0) > 0 ? noiReferencia / loc.capRateSaida : 0;
+
+  if (ehLocacao && mesSaida >= 1 && mesSaida <= prazoTotal) {
+    // Um único lançamento, no mês da saída. `custoVendaPct` faz aqui o papel que
+    // comissão e cartório fazem no modo venda — e por isso os três nunca
+    // coexistem.
+    revenue[mesSaida] = valorSaida * (1 - (loc.custoVendaPct || 0));
+  }
+
   for (let m = 1; m <= prazoTotal; m++) {
     if (temOverride(m, 'land')) land[m] = valorOverride(m, 'land');
     if (temOverride(m, 'construction')) construction[m] = valorOverride(m, 'construction');
     if (temOverride(m, 'property_tax')) propertyTax[m] = valorOverride(m, 'property_tax');
     if (temOverride(m, 'other_costs')) otherCosts[m] = valorOverride(m, 'other_costs');
     if (temOverride(m, 'revenue')) revenue[m] = valorOverride(m, 'revenue');
+    // Override VENCE também nas duas linhas novas, como em toda linha do fluxo.
+    // Forçar `opex` não muda `opexBruto` nem `opexReembolso`: aqueles continuam
+    // mostrando a conta que o motor fez, e a diferença para `opex` é justamente
+    // o ajuste manual que a grade exibe.
+    if (temOverride(m, 'rental_revenue')) rentalRevenue[m] = valorOverride(m, 'rental_revenue');
+    if (temOverride(m, 'opex')) opex[m] = valorOverride(m, 'opex');
+    // O NOI acompanha o que ficou de pé depois dos overrides: é uma leitura
+    // derivada, não uma linha editável — como "Total de pagamentos".
+    noiMes[m] = rentalRevenue[m] - opex[m];
   }
 
-  // ─── Teto de dívida ────────────────────────────────────────────────────────
-  const tetoDivida =
-    fin.valorContratado != null
-      ? fin.valorContratado
-      : fin.maxLtcPct != null
-        ? fin.maxLtcPct * (terrenosTotal + obraTotal)
-        : Number.POSITIVE_INFINITY;
+  // ─── Contexto de cada facilidade ───────────────────────────────────────────
+  //
+  // Tudo que depende só do CONTRATO — teto, base do fee, convenção de juros,
+  // curva do benchmark, reserva e release — é resolvido UMA vez aqui, por
+  // facilidade, e reusado no loop mensal e nas conferências. Resolver dentro do
+  // loop refaria a mesma conta em todo mês de toda passada do ponto fixo, e —
+  // pior — abriria espaço para a conferência cobrar um número diferente do que
+  // o cálculo usou.
+  //
+  // O array é PARALELO a `facilidades`, inclusive nas inativas: o índice é o
+  // endereço das chaves de override, e compactá-lo remapearia `draw:2` para
+  // outra facilidade em silêncio.
+  const ctxFacilidades = facilidades.map((f, i) => {
+    const teto =
+      f.valorContratado != null
+        ? f.valorContratado
+        : f.maxLtcPct != null
+          ? f.maxLtcPct * (terrenosTotal + obraTotal)
+          : Number.POSITIVE_INFINITY;
+
+    /**
+     * Base do fee de estruturação DESTA facilidade: o COMPROMISSO do banco, não
+     * o giro.
+     *
+     * Antes desta correção o fee incidia sobre `dividaSacada` — o total sacado
+     * ao longo da vida. Numa linha rotativa isso é um múltiplo do contratado,
+     * porque amortizar devolve limite e o mesmo dinheiro é sacado várias vezes;
+     * o fee inflava junto e ainda realimentava o ponto fixo pelo custo
+     * financeiro.
+     *
+     * Resolve na mesma ordem de precedência do teto de dívida, porque é o mesmo
+     * compromisso: valor contratado primeiro, LTC máximo depois.
+     *
+     * Sem teto nenhum (os dois nulos) não existe valor contratado a que se
+     * referir, e o teto é Infinity — que não pode virar base de cálculo. A base
+     * passa a ser o PICO do saldo devedor DESTA facilidade, a maior exposição
+     * que este banco teve, e `fee_sem_base_contratada` acende âmbar pedindo o
+     * valor contratado.
+     *
+     * O fee é POR FACILIDADE, sobre o valor contratado de CADA UMA: duas
+     * facilidades de $5M com fee de 1% custam $50.000 e $50.000, não $100.000
+     * sobre um contratado somado que não existe em contrato nenhum.
+     *
+     * PONTO DE EXTENSÃO: se algum contrato cobrar o fee por desembolso, é aqui
+     * que um campo `base_fee_estruturacao` entraria — e em lugar nenhum mais.
+     */
+    const baseFee = (picoSaldoDevedor: number): number => {
+      if (f.valorContratado != null) return f.valorContratado;
+      if (f.maxLtcPct != null) return f.maxLtcPct * (terrenosTotal + obraTotal);
+      return picoSaldoDevedor;
+    };
+
+    // ─── Taxa efetiva do mês ─────────────────────────────────────────────────
+    // Com taxa fixa é `taxaAnual`, constante, e o resultado é o de sempre. Com
+    // taxa variável é (curva do benchmark naquele mês, ou o padrão) + spread — e
+    // mês sem ponto na curva NÃO é benchmark zero: cai no padrão, e a
+    // conferência `benchmark_incompleto` diz quantos meses caíram nele.
+    //
+    // A curva é POR FACILIDADE: duas dívidas indexadas ao mesmo benchmark ainda
+    // podem ter spreads diferentes, e uma pode ser fixa enquanto a outra é
+    // variável.
+    const curvaBenchmark = new Map<number, number>();
+    for (const ponto of f.benchmarkCurva ?? []) {
+      if (Number.isInteger(ponto.mes) && ponto.mes >= 1) {
+        curvaBenchmark.set(ponto.mes, ponto.valor || 0);
+      }
+    }
+    const taxaEfetivaDoMes = (m: number) =>
+      f.tipoTaxa === 'variavel'
+        ? (curvaBenchmark.get(m) ?? f.benchmarkPadrao ?? 0) + (f.spread || 0)
+        : f.taxaAnual || 0;
+
+    // ─── Release price ───────────────────────────────────────────────────────
+    // Valor fixo tem precedência sobre o percentual — ver o COMMENT da coluna. O
+    // percentual incide sobre o preço BRUTO das unidades que fecham no mês, não
+    // sobre a receita líquida: é assim que o contrato é escrito, e a comissão do
+    // corretor não reduz o que o banco leva.
+    //
+    // Alvo PRETENDIDO do mês, antes de qualquer teto. É a ÚNICA fonte do
+    // release: a previsão do passo 1, a amortização do passo 3 e o total que a
+    // conferência examina saem todos daqui, e por isso não têm como divergir.
+    // `vendasPorMes` é a mesma série que alimenta o gatilho de custo 'por_venda'
+    // e `MesFluxo.unidadesVendidas` — e é VAZIA no modo locação, onde não há
+    // unidade fechando em mês nenhum.
+    const releasePrice = Math.max(0, f.releasePrice || 0);
+    const releasePct = f.releasePricePct ?? null;
+    const releaseBrutoDoMes = (m: number, unidadesNoMes = vendasPorMes.get(m) ?? 0) => {
+      if (releasePrice > 0) return releasePrice * unidadesNoMes;
+      // Valor bruto REAL das unidades que fecham no mês, não o preço médio vezes
+      // a contagem: com tipologias de preços diferentes a média cobraria release
+      // a mais nas baratas e a menos nas caras. Num projeto de preço uniforme os
+      // dois são o mesmo número.
+      if (releasePct != null) return releasePct * (valorVendidoPorMes.get(m) ?? 0);
+      return 0;
+    };
+
+    // Facilidade em ciclo de refinanciamento PARA de refinanciar. Não é
+    // "escolher uma das duas": as duas param, e `refinanciamento_circular`
+    // acende vermelho. Quebrar o laço em silêncio faria o resultado depender da
+    // ordem de visita do grafo.
+    const alvoRefin = f.refinanciaIndex;
+    const refinancia =
+      alvoRefin != null &&
+      Number.isInteger(alvoRefin) &&
+      alvoRefin >= 0 &&
+      alvoRefin < facilidades.length &&
+      !emCicloRefin.has(i)
+        ? alvoRefin
+        : null;
+
+    return {
+      indice: i,
+      fin: f,
+      ativa: facilidadeAtiva[i],
+      nome: f.nome || 'Financiamento',
+      teto,
+      baseFee,
+      convencao: (f.convencaoJuros ?? 'mensal_12') as ConvencaoJuros,
+      taxaEfetivaDoMes,
+      reservaJuros: Math.max(0, f.reservaJuros || 0),
+      reservaSacada: f.reservaJurosSacada !== false,
+      releaseBrutoDoMes,
+      refinancia,
+    };
+  });
+
+  /** Só as ativas, na ordem de precedência. É esta lista que o mês percorre. */
+  const ativas = ctxFacilidades.filter((c) => c.ativa);
 
   /**
-   * Base do fee de estruturação: o COMPROMISSO do banco, não o giro.
+   * Teto de dívida do PROJETO: a soma dos tetos das facilidades ativas.
    *
-   * Antes desta correção o fee incidia sobre `dividaSacada` — o total sacado ao
-   * longo da vida. Numa linha rotativa isso é um múltiplo do contratado, porque
-   * amortizar devolve limite e o mesmo dinheiro é sacado várias vezes; o fee
-   * inflava junto e ainda realimentava o ponto fixo pelo custo financeiro.
-   *
-   * Resolve na mesma ordem de precedência do teto de dívida, porque é o mesmo
-   * compromisso: valor contratado primeiro, LTC máximo depois.
-   *
-   * Sem teto nenhum (os dois nulos) não existe valor contratado a que se referir,
-   * e `tetoDivida` é Infinity — que não pode virar base de cálculo. A base passa a
-   * ser o PICO do saldo devedor, a maior exposição que o banco teve, e a
-   * conferência `fee_sem_base_contratada` acende âmbar pedindo o valor contratado.
-   *
-   * PONTO DE EXTENSÃO: se algum contrato cobrar o fee por desembolso, é aqui que
-   * um campo `base_fee_estruturacao` entraria — e em lugar nenhum mais.
+   * Uma facilidade sem teto nenhum torna a soma Infinity, exatamente como já
+   * acontecia quando havia só uma. Com uma facilidade o número é idêntico ao de
+   * antes.
    */
-  function baseFeeEstruturacao(picoSaldoDevedor: number): number {
-    if (fin.valorContratado != null) return fin.valorContratado;
-    if (fin.maxLtcPct != null) return fin.maxLtcPct * (terrenosTotal + obraTotal);
-    return picoSaldoDevedor;
-  }
+  const tetoDivida = ativas.length
+    ? ativas.reduce((a, c) => a + c.teto, 0)
+    : Number.POSITIVE_INFINITY;
 
-  const colchao = fin.colchaoMinimoCaixa || 0;
+  /**
+   * Colchão mínimo de caixa do PROJETO: o MAIOR entre os das facilidades ativas.
+   *
+   * É um piso de saldo em conta, não uma soma: dois bancos exigindo $200.000 e
+   * $500.000 de colchão são atendidos mantendo $500.000, não $700.000. Somar
+   * inflaria a demanda de caixa e, com ela, o saque e o juro do projeto inteiro.
+   *
+   * Com uma facilidade é o valor dela, como sempre foi. Sem nenhuma é zero.
+   */
+  const colchao = ativas.length
+    ? Math.max(0, ...ativas.map((c) => c.fin.colchaoMinimoCaixa || 0))
+    : 0;
 
-  // ─── Taxa efetiva do mês ───────────────────────────────────────────────────
-  // Com taxa fixa é `taxaAnual`, constante, e o resultado é o de sempre. Com taxa
-  // variável é (curva do benchmark naquele mês, ou o padrão) + spread — e mês sem
-  // ponto na curva NÃO é benchmark zero: cai no padrão, e a conferência
-  // `benchmark_incompleto` diz quantos meses caíram nele.
-  const convencao: ConvencaoJuros = fin.convencaoJuros ?? 'mensal_12';
-  const curvaBenchmark = new Map<number, number>();
-  for (const p of fin.benchmarkCurva ?? []) {
-    if (Number.isInteger(p.mes) && p.mes >= 1) curvaBenchmark.set(p.mes, p.valor || 0);
-  }
-  const taxaEfetivaDoMes = (m: number) =>
-    fin.tipoTaxa === 'variavel'
-      ? (curvaBenchmark.get(m) ?? fin.benchmarkPadrao ?? 0) + (fin.spread || 0)
-      : fin.taxaAnual || 0;
-
-  // ─── Reserva de juros ──────────────────────────────────────────────────────
-  const reservaJuros = Math.max(0, fin.reservaJuros || 0);
-  const reservaSacada = fin.reservaJurosSacada !== false;
+  /**
+   * O custo financeiro entra na demanda de caixa?
+   *
+   * Basta UMA facilidade com a flag ligada: a demanda do mês é uma só e
+   * compartilhada, e se qualquer dívida financia o próprio custo financeiro,
+   * esse custo precisa estar dimensionado na demanda. Com uma facilidade é
+   * exatamente a flag dela.
+   */
+  const custoFinanceiroNaDemanda = ativas.some((c) => c.fin.custoFinanceiroNaDemanda);
 
   // ─── Amortização: só release e quitação na saída ───────────────────────────
   // Sobraram DOIS modos, e o passo 3 é a implementação inteira dos dois:
   //   'at_exit' — o saldo remanescente sai no mês da saída;
   //   'manual'  — nada automático, só overrides.
   // O release por unidade vendida amortiza nos dois, porque não é modo: é
-  // cláusula do contrato.
+  // cláusula do contrato. O REFINANCIAMENTO também amortiza nos dois, e pela
+  // mesma razão — é cláusula, não modo.
   //
   // 'price' e 'sac' (prestação, carência, vencimento e balloon) foram removidos
   // pela migration 1763400000, depois de o passo 3 ter passado a ser release +
@@ -927,30 +1374,6 @@ export function calcular(input: ModelInput): ModelOutput {
   // nenhum. Quem for reintroduzir a prestação: é aqui e no passo 3, e a previsão
   // do passo 1 tem de aprender a mesma conta, senão o saque volta a ser
   // dimensionado a menos e o caixa volta a fechar negativo.
-
-  // ─── Release price ─────────────────────────────────────────────────────────
-  // Valor fixo tem precedência sobre o percentual — ver o COMMENT da coluna. O
-  // percentual incide sobre o preço BRUTO das unidades que fecham no mês, não
-  // sobre a receita líquida: é assim que o contrato é escrito, e a comissão do
-  // corretor não reduz o que o banco leva.
-  //
-  // Alvo PRETENDIDO do mês, antes de qualquer teto. É a ÚNICA fonte do release:
-  // a previsão do passo 1, a amortização do passo 3 e o total que a conferência
-  // examina saem todos daqui, e por isso não têm como divergir. `vendasPorMes` é
-  // a mesma série que alimenta o gatilho de custo 'por_venda' e
-  // `MesFluxo.unidadesVendidas`.
-  const releasePrice = Math.max(0, fin.releasePrice || 0);
-  const releasePct = fin.releasePricePct ?? null;
-  const releaseBrutoDoMes = (m: number, unidadesNoMes = vendasPorMes.get(m) ?? 0) => {
-    if (releasePrice > 0) return releasePrice * unidadesNoMes;
-    // Valor bruto REAL das unidades que fecham no mês, não o preço médio vezes a
-    // contagem: com tipologias de preços diferentes a média cobraria release a
-    // mais nas baratas e a menos nas caras. Num projeto de preço uniforme os
-    // dois são o mesmo número.
-    if (releasePct != null) return releasePct * (valorVendidoPorMes.get(m) ?? 0);
-    return 0;
-  };
-
   // ─── Aporte previsto de cada mês (migration 1763200000) ────────────────────
   // O que o passo 5 VAI lançar de equity em cada mês, resolvido ANTES do loop
   // porque o passo 1 precisa dele: é o desconto do aporte do PRÓPRIO mês que
@@ -984,6 +1407,7 @@ export function calcular(input: ModelInput): ModelOutput {
   }
 
   // ─── Uma passada do loop mensal ────────────────────────────────────────────
+  // ─── Uma passada do loop mensal ────────────────────────────────────────────
   const passe = (estado: EstadoPonto): ResultadoPasse => {
     const meses: MesFluxo[] = [];
     // Quanto da demanda do mês o TETO impediu de sacar, acumulado no passe
@@ -991,242 +1415,462 @@ export function calcular(input: ModelInput): ModelOutput {
     // aporte a mais fecharia o caixa.
     let mesesNoTeto = 0;
     let descobertoPorTeto = 0;
-    let saldoAnterior = 0;
     let caixaAcumulado = 0;
     let obraAcumulada = 0;
-    let sacadoAte = 0;
     let equityAcumulado = 0;
-    let jaHouveSaque = false;
-    let saldoReserva = 0;
     // Release que o teto do saldo de abertura cortou, somado no passe inteiro.
     // Alimenta `release_insuficiente`: é dívida que as vendas queriam quitar e
     // não havia mais.
     let releaseCortadoTotal = 0;
+    const refinanciamentoDescoberto: {
+      refinanciadora: number;
+      refinanciada: number;
+      falta: number;
+    }[] = [];
+
+    // ─── Estado POR FACILIDADE, atravessando os meses ────────────────────────
+    // Arrays paralelos a `facilidades` (a lista completa), não a `ativas`: o
+    // índice é o mesmo endereço usado pelas chaves de override.
+    const saldoAnterior = facilidades.map(() => 0);
+    const sacadoAte = facilidades.map(() => 0);
+    const jaHouveSaque = facilidades.map(() => false);
+    const saldoReserva = facilidades.map(() => 0);
+    // O refinanciamento acontece UMA vez por par: no primeiro mês em que a
+    // facilidade que refinancia entra em janela e há saldo a quitar.
+    const jaRefinanciou = facilidades.map(() => false);
 
     for (let m = 1; m <= prazoTotal; m++) {
-      const pagamentosOperacionais = land[m] + construction[m] + propertyTax[m] + otherCosts[m];
-      const saldoAbertura = saldoAnterior;
+      // OPEX entra em `pagamentosOperacionais` junto de terreno, obra, property
+      // tax e custos do orçamento: é saída de caixa operacional como qualquer
+      // outra, e no modo venda vale zero — a soma é a de sempre.
+      const pagamentosOperacionais =
+        land[m] + construction[m] + propertyTax[m] + otherCosts[m] + opex[m];
       const caixaAbertura = caixaAcumulado;
       obraAcumulada += construction[m];
 
-      // Capacidade de saque do mês.
-      //
-      // Linha ROTATIVA (migration 1763300000): amortizar devolve limite, então o
-      // que importa é a POSIÇÃO EM ABERTO, não o total já desembolsado na vida
-      // do empréstimo. Não rotativa (default, e toda modelagem já gravada): o
-      // teto vale para o total desembolsado, e capacidade consumida não volta.
-      //
-      // Nos dois casos a base é o saldo de ABERTURA, nunca o saldo depois do
-      // saque ou depois da amortização do próprio mês. Duas razões:
-      //   1. o saldo pós-saque depende do saque, e o saque dependeria do saldo —
-      //      é a mesma circularidade que o teto do release cria (ver abaixo), e
-      //      ela empurra o ponto fixo sem convergir para caixa fechado;
-      //   2. contratualmente o pedido de saque é avaliado contra a posição em
-      //      aberto NO MOMENTO DO PEDIDO, não contra a posição depois da
-      //      liquidação da venda do mesmo mês. É a leitura conservadora e a
-      //      única autoconsistente.
-      const capacidade = fin.linhaRotativa
-        ? Math.max(0, tetoDivida - saldoAbertura)
-        : Math.max(0, tetoDivida - sacadoAte);
-      const dentroJanela = m >= fin.mesInicioSaque && m <= fin.mesFimSaque;
-
-      // Taxa e fator do mês, apurados ANTES do passo 1 porque o teto do release
-      // precisa dos juros previstos sobre o saldo de abertura. Dependem só de `m`
-      // e do contrato — não do saque —, então subi-los não muda número nenhum.
-      const taxaEfetivaAno = taxaEfetivaDoMes(m);
-      const fatorMes = fatorJurosDoMes(convencao, taxaEfetivaAno, somarMeses(input.dataInicio, m - 1));
-
-      // ─── Release do mês ────────────────────────────────────────────────────
       // Unidades que fecham no mês — a mesma série que alimenta o gatilho de
       // custo 'por_venda' e `MesFluxo.unidadesVendidas`. Uma fonte só, para as
-      // leituras não divergirem.
+      // leituras não divergirem. Vazia no modo locação.
       const unidadesNoMes = vendasPorMes.get(m) ?? 0;
-      const releaseBruto = releaseBrutoDoMes(m, unidadesNoMes);
 
-      // TETO PELO SALDO DE ABERTURA, não pelo saldo depois do saque do mês.
-      // Sem isto, cada dólar sacado libera um dólar a mais de amortização, o
-      // caixa nunca melhora e o ponto fixo empurra o saque para cima sem
-      // convergir para um caixa fechado. Ninguém toma emprestado hoje para
-      // amortizar hoje o mesmo empréstimo — e o motor não pode modelar isso.
-      const jurosPrevistosSobreAbertura = saldoAbertura * fatorMes;
-      const tetoRelease = saldoAbertura + (fin.capitalizarJuros ? jurosPrevistosSobreAbertura : 0);
-      const alvoRelease = clamp(releaseBruto, 0, tetoRelease);
-      // O que o teto cortou: a venda queria quitar mais do que ainda se devia.
-      releaseCortadoTotal += Math.max(0, releaseBruto - alvoRelease);
+      // ─── PRÉ-PASSO: o que cada facilidade traz para o mês ──────────────────
+      // Tudo aqui depende só do contrato e do saldo de ABERTURA — nada depende
+      // do saque —, então pode ser apurado antes de qualquer decisão de saque. É
+      // isso que permite dimensionar a demanda do mês uma vez só, para todas.
+      const pre = ativas.map((c) => {
+        const i = c.indice;
+        const saldoAbertura = saldoAnterior[i];
 
-      // 1. SAQUE — vem antes da amortização, porque no modo at_exit a amortização
-      //    precisa conhecer o saque do próprio mês. Para não fechar o círculo no
-      //    cash_demand, o saque usa uma amortização PREVISTA (só o saldo de
-      //    abertura), não a definitiva.
-      //
-      //    O release ENTRA na previsão: é saída de caixa do mês como qualquer
-      //    amortização, e deixá-lo de fora era o que fazia o saque ser
-      //    dimensionado a menos e o caixa fechar negativo justamente nos meses de
-      //    venda. `alvoRelease` é o mesmo número que o passo 3 vai amortizar —
-      //    previsão e realização não podem divergir, senão o dinheiro sacado não
-      //    chega inteiro ao caixa.
-      //
-      //    max(0, saldoAbertura − alvoRelease) evita a soma dupla: no mês da
-      //    saída, o que o release já amortiza não precisa ser pedido de novo. Sem
-      //    isso o motor pede o dobro e o saque sai inflado no último mês.
-      const amortPrevista =
-        alvoRelease +
-        (fin.modoAmortizacao === 'at_exit' && m === mesSaida
-          ? Math.max(0, saldoAbertura - alvoRelease)
-          : 0);
+        // Capacidade de saque do mês.
+        //
+        // Linha ROTATIVA (migration 1763300000): amortizar devolve limite, então
+        // o que importa é a POSIÇÃO EM ABERTO, não o total já desembolsado na
+        // vida do empréstimo. Não rotativa (default, e toda modelagem já
+        // gravada): o teto vale para o total desembolsado, e capacidade
+        // consumida não volta.
+        //
+        // Nos dois casos a base é o saldo de ABERTURA, nunca o saldo depois do
+        // saque ou depois da amortização do próprio mês. Duas razões:
+        //   1. o saldo pós-saque depende do saque, e o saque dependeria do
+        //      saldo — é a mesma circularidade que o teto do release cria, e ela
+        //      empurra o ponto fixo sem convergir para caixa fechado;
+        //   2. contratualmente o pedido de saque é avaliado contra a posição em
+        //      aberto NO MOMENTO DO PEDIDO, não contra a posição depois da
+        //      liquidação da venda do mesmo mês. É a leitura conservadora e a
+        //      única autoconsistente.
+        const capacidade = c.fin.linhaRotativa
+          ? Math.max(0, c.teto - saldoAbertura)
+          : Math.max(0, c.teto - sacadoAte[i]);
+        const dentroJanela = m >= c.fin.mesInicioSaque && m <= c.fin.mesFimSaque;
 
-      // Demanda de caixa do mês, nas duas leituras que os modos usam. Calculadas
-      // aqui em cima, fora do if, é o que garante que a tela mostre a MESMA conta
-      // que dimensionou o saque — recomputá-la depois abriria espaço para as duas
-      // divergirem.
+        // Taxa e fator do mês, apurados ANTES do passo 1 porque o teto do
+        // release precisa dos juros previstos sobre o saldo de abertura.
+        // Dependem só de `m` e do contrato — não do saque —, então subi-los não
+        // muda número nenhum.
+        const taxaEfetivaAno = c.taxaEfetivaDoMes(m);
+        const fatorMes = fatorJurosDoMes(
+          c.convencao,
+          taxaEfetivaAno,
+          somarMeses(input.dataInicio, m - 1),
+        );
+
+        // ─── Release do mês ─────────────────────────────────────────────────
+        const releaseBruto = c.releaseBrutoDoMes(m, unidadesNoMes);
+
+        // TETO PELO SALDO DE ABERTURA, não pelo saldo depois do saque do mês.
+        // Sem isto, cada dólar sacado libera um dólar a mais de amortização, o
+        // caixa nunca melhora e o ponto fixo empurra o saque para cima sem
+        // convergir para um caixa fechado. Ninguém toma emprestado hoje para
+        // amortizar hoje o mesmo empréstimo — e o motor não pode modelar isso.
+        const jurosPrevistosSobreAbertura = saldoAbertura * fatorMes;
+        const tetoRelease =
+          saldoAbertura + (c.fin.capitalizarJuros ? jurosPrevistosSobreAbertura : 0);
+        const alvoRelease = clamp(releaseBruto, 0, tetoRelease);
+        releaseCortadoTotal += Math.max(0, releaseBruto - alvoRelease);
+
+        // Amortização PREVISTA — release do mês mais, no mês da saída, o
+        // remanescente do saldo de abertura.
+        //
+        // max(0, saldoAbertura − alvoRelease) evita a soma dupla: no mês da
+        // saída, o que o release já amortiza não precisa ser pedido de novo. Sem
+        // isso o motor pede o dobro e o saque sai inflado no último mês.
+        //
+        // O REFINANCIAMENTO NÃO ENTRA NESTA PREVISÃO, e é deliberado: ele é
+        // financiado pelo saque da facilidade que refinancia, não pelo caixa do
+        // projeto — a quitação e o saque se anulam no mesmo mês. Somá-lo à
+        // demanda faria o projeto sacar de novo, de terceiros, dinheiro que já
+        // está coberto.
+        const amortPrevista =
+          alvoRelease +
+          (c.fin.modoAmortizacao === 'at_exit' && m === mesSaida
+            ? Math.max(0, saldoAbertura - alvoRelease)
+            : 0);
+
+        return { c, i, saldoAbertura, capacidade, dentroJanela, taxaEfetivaAno, fatorMes, alvoRelease, amortPrevista };
+      });
+
+      // ─── A demanda de caixa do mês, UMA para todas as facilidades ─────────
       //
       // `custoFinEstimado` vem do ponto fixo: é o custo financeiro que a passada
-      // anterior apurou para ESTE mês. Com a flag desligada é zero, e aí os juros
-      // do mês saem do caixa sem ter entrado no dimensionamento.
-      const custoFinEstimado = fin.custoFinanceiroNaDemanda ? (estado.custoFinPorMes[m] ?? 0) : 0;
+      // anterior apurou para ESTE mês, somado sobre todas as facilidades. Com a
+      // flag desligada em todas é zero, e aí os juros do mês saem do caixa sem
+      // ter entrado no dimensionamento.
+      //
+      // `rentalRevenue[m]` entra ao lado de `revenue[m]`: é entrada de caixa do
+      // mês como qualquer outra, e vale zero no modo venda.
+      const custoFinEstimado = custoFinanceiroNaDemanda ? (estado.custoFinPorMes[m] ?? 0) : 0;
+      const amortPrevistaTotal = soma(pre.map((x) => x.amortPrevista));
       const demandaSemAporte =
-        pagamentosOperacionais + custoFinEstimado + amortPrevista + colchao - revenue[m] - caixaAbertura;
+        pagamentosOperacionais +
+        custoFinEstimado +
+        amortPrevistaTotal +
+        colchao -
+        revenue[m] -
+        rentalRevenue[m] -
+        caixaAbertura;
       const demandaLiquidaDeAporte = demandaSemAporte - aportePrevisto[m];
 
-      let draw: number;
-      // A demanda que DIMENSIONOU o saque neste mês. Nos modos que não
-      // dimensionam por demanda ela é só leitura da aba Demanda de Caixa.
-      let demandaDoSaque = demandaLiquidaDeAporte;
-      if (temOverride(m, 'draw')) {
-        // Override de saque vence sempre, inclusive acima do teto: nesse caso a
-        // conferência acende vermelho, mas o cálculo segue.
-        draw = valorOverride(m, 'draw');
-      } else if (fin.modoSaque === 'equity_first') {
-        // Regra clássica: o capital próprio entra primeiro na obra. Só há saque
-        // depois que a obra acumulada ultrapassa o equity disponível para obra.
-        //
-        // O teto `construction[m]` é o que deixa terreno, property tax, custos do
-        // orçamento e custo financeiro sem cobertura de dívida — e é exatamente
-        // isso que o modo 'equity_first_demanda' abaixo resolve. Aqui não se
-        // mexe: é o resultado de toda modelagem já gravada.
-        draw = dentroJanela
-          ? clamp(obraAcumulada - equityDisponivelObraAte(m), 0, Math.min(construction[m], capacidade))
-          : 0;
-      } else if (fin.modoSaque === 'cash_demand') {
-        // Dimensiona a dívida pela necessidade real de caixa do mês. Ignora o
-        // aporte do próprio mês de propósito — ver o modo abaixo.
-        demandaDoSaque = demandaSemAporte;
-        draw = dentroJanela ? clamp(demandaSemAporte, 0, capacidade) : 0;
-      } else if (fin.modoSaque === 'equity_first_demanda') {
-        // O capital próprio entra primeiro porque é descontado da demanda: só
-        // sobra saque quando o aporte do mês, a receita e o caixa de abertura não
-        // cobrem os pagamentos mais o colchão.
-        //
-        // Diferente do 'cash_demand', que ignora o aporte do próprio mês e por
-        // isso saca no mês 1 mesmo quando o aporte já cobriria tudo — deixando
-        // dinheiro parado em caixa pagando juros.
-        //
-        // clamp(…, 0, capacidade): mês superavitário não gera saque NEGATIVO (o
-        // saque não é devolução de principal — quem devolve é a amortização), e o
-        // teto continua sendo o teto. Quando a demanda passa da capacidade o
-        // caixa fica negativo de novo — e é justamente isso que `teto_divida`
-        // conta logo abaixo, com o valor de aporte que fecharia o buraco.
-        //
-        // Fora da janela de saque o saque é ZERO e o buraco fica. É correto:
-        // janela é contrato, não preferência — o banco não libera dinheiro em mês
-        // nenhum fora dela, e inventar saque ali esconderia um problema de
-        // cronograma que `caixa_minimo` tem de mostrar.
-        draw = dentroJanela ? clamp(demandaLiquidaDeAporte, 0, capacidade) : 0;
-      } else {
-        draw = 0; // 'manual' → só overrides
-      }
-      sacadoAte += draw;
-
-      // Cobertura do mês, para a aba Demanda de Caixa não ter de recalcular nada.
-      // O clamp no coberto: saque ACIMA da demanda — override, ou o saque do
-      // equity_first quando a obra do mês passa da necessidade — sobra em caixa,
-      // não é cobertura.
-      const demandaDimensionada = Math.max(0, demandaDoSaque);
-      const demandaCoberta = clamp(draw, 0, demandaDimensionada);
-      const demandaDescoberta = Math.max(0, demandaDimensionada - draw);
-
-      // O teto BINDOU neste mês: havia demanda, o mês estava dentro da janela e a
-      // capacidade foi o limite. Contado só no modo novo — nos outros o saque não
-      // é dimensionado por esta demanda, e contá-los mudaria o texto de
-      // `teto_divida` em modelagem já gravada.
-      if (
-        fin.modoSaque === 'equity_first_demanda' &&
-        !temOverride(m, 'draw') &&
-        dentroJanela &&
-        demandaDoSaque > capacidade + TOL_CONVERGENCIA
-      ) {
-        mesesNoTeto += 1;
-        descobertoPorTeto += demandaDoSaque - draw;
-      }
-
-      // 1b. RESERVA DE JUROS — constituída no PRIMEIRO SAQUE, um único mês.
-      //     Sacada: sai do próprio empréstimo, soma ao principal e rende juros
-      //     como qualquer principal, mas NÃO passa pelo caixa do projeto (o
-      //     dinheiro vai direto para a conta da reserva). Orçamentária: só abre o
-      //     saldo, sem mexer em dívida nem em chamada de capital.
-      const ehPrimeiroSaque = !jaHouveSaque && draw > 0;
-      if (ehPrimeiroSaque) jaHouveSaque = true;
-      const constituiReserva = ehPrimeiroSaque && reservaJuros > 0;
-      const saqueReservaJuros = constituiReserva && reservaSacada ? reservaJuros : 0;
-      if (constituiReserva) saldoReserva = reservaJuros;
-      sacadoAte += saqueReservaJuros;
-
-      // 2. JUROS — dependem só do saldo já sacado, então já podem ser apurados.
-      //    `fatorMes` foi apurado antes do passo 1, para o teto do release.
-      const saldoAntes = saldoAbertura + draw + saqueReservaJuros;
-      const juros = saldoAntes * fatorMes;
-
-      // 2b. A reserva paga PRIMEIRO, a capitalização vem DEPOIS. A ordem importa:
-      //     invertida, o juro viraria principal antes de a reserva ter chance de
-      //     absorvê-lo, e a reserva nunca esvaziaria. Os dois recursos coexistem —
-      //     a reserva não substitui `capitalizarJuros`.
-      const jurosPagosPelaReserva = Math.min(juros, saldoReserva);
-      saldoReserva -= jurosPagosPelaReserva;
-      const jurosAposReserva = juros - jurosPagosPelaReserva;
-
-      // Com capitalização, o que sobrou vira principal ANTES da amortização; senão
-      // o saldo final do mês de saída ficaria com um mês de juros pendurado.
-      const baseAmortizavel = saldoAntes + (fin.capitalizarJuros ? jurosAposReserva : 0);
-
-      // 3. AMORTIZAÇÃO — release do mês, mais a quitação no mês de saída.
+      // ─── PRECEDÊNCIA DENTRO DO MÊS ────────────────────────────────────────
       //
-      //    `alvoRelease` NÃO é recalculado aqui: é exatamente o número que o
-      //    passo 1 previu, já limitado pelo saldo de ABERTURA. Previsão e
-      //    realização usando o mesmo número é o que faz o saque dimensionado
-      //    chegar inteiro ao caixa — recalcular contra `baseAmortizavel` (que já
-      //    contém o saque do mês) reabriria a circularidade.
+      // ESTE É O PONTO EM QUE A `ordem` DAS FACILIDADES DEFINE O RESULTADO, e
+      // não só a exibição: nos modos dimensionados por demanda, a primeira
+      // facilidade saca o que couber no teto dela e SÓ O QUE SOBRAR chega à
+      // segunda. Trocar duas facilidades de ordem, com tetos e taxas diferentes,
+      // muda o juro do projeto inteiro.
       //
-      //    max(0, baseAmortizavel − alvoRelease) no mês da saída: o release já
-      //    amortizou uma parte, e o at_exit cobre só o remanescente.
+      // Três poços, porque os modos medem coisas diferentes e uma facilidade não
+      // pode consumir o poço de um modo que não é o dela:
+      //   `restanteDemanda`    — o do 'cash_demand', que ignora o aporte do mês;
+      //   `restanteDemandaLiq` — o do 'equity_first_demanda', líquido do aporte;
+      //   `restanteObra`       — o do 'equity_first', que é cobertura de OBRA e
+      //                          não de caixa.
       //
-      //    O clamp final continua sendo a proteção contra saldo devedor negativo
-      //    por override abusivo.
-      let alvoAmort: number;
-      if (temOverride(m, 'amortization')) {
-        // Override vence tudo — inclusive o release.
-        alvoAmort = valorOverride(m, 'amortization');
-      } else {
-        const parteExit =
-          fin.modoAmortizacao === 'at_exit' && m === mesSaida
-            ? Math.max(0, baseAmortizavel - alvoRelease)
+      // Os dois primeiros são decrementados por QUALQUER saque, inclusive o de
+      // uma facilidade em 'equity_first': dinheiro que entrou é dinheiro que
+      // entrou, e a segunda facilidade não deve sacar de novo o que a primeira
+      // já cobriu. O terceiro só pelos saques de 'equity_first', porque medir
+      // cobertura de obra com dinheiro sacado por demanda de caixa misturaria
+      // duas grandezas.
+      //
+      // Com UMA facilidade — o estado de toda modelagem já gravada — nenhum
+      // decremento chega a ser lido, e cada modo produz exatamente o mesmo
+      // número de antes.
+      let restanteDemanda = demandaSemAporte;
+      let restanteDemandaLiq = demandaLiquidaDeAporte;
+      let restanteObra = Math.min(
+        Math.max(0, obraAcumulada - equityDisponivelObraAte(m)),
+        construction[m],
+      );
+
+      const porFacilidade: FacilidadeMes[] = [];
+      let drawMes = 0;
+      let amortizacaoMes = 0;
+      let jurosMes = 0;
+      let feeMes = 0;
+      let saldoDevedorMes = 0;
+      let capacidadeMes = 0;
+      let saqueReservaMes = 0;
+      let jurosPelaReservaMes = 0;
+      let saldoReservaMes = 0;
+      let custoFinanceiroCaixa = 0;
+      let amortizacaoReleaseMes = 0;
+      let amortPrevistaMes = 0;
+      let bindouNoTeto = false;
+      // Saldo devedor VIVO de cada facilidade neste momento do mês. Começa no
+      // saldo de abertura e é fechado quando a facilidade é processada; é daqui
+      // que o refinanciamento lê o que precisa quitar.
+      const saldoVivo = facilidades.map((_, i) => saldoAnterior[i]);
+      const amortizacaoDaFacilidade = facilidades.map(() => 0);
+
+      for (const x of pre) {
+        const { c, i, saldoAbertura, capacidade, dentroJanela, fatorMes, alvoRelease } = x;
+        amortPrevistaMes += x.amortPrevista;
+        capacidadeMes += capacidade;
+
+        // 1. SAQUE — vem antes da amortização, porque no modo at_exit a
+        //    amortização precisa conhecer o saque do próprio mês. Para não
+        //    fechar o círculo no cash_demand, o saque usa uma amortização
+        //    PREVISTA (só o saldo de abertura), não a definitiva.
+        const chaveDraw = chaveFacilidade('draw', i + 1);
+        const temOverrideDraw = temOverride(m, chaveDraw);
+        let draw: number;
+        // A demanda que DIMENSIONOU o saque desta facilidade. Nos modos que não
+        // dimensionam por demanda ela é só leitura da aba Demanda de Caixa.
+        let demandaDoSaque = restanteDemandaLiq;
+        if (temOverrideDraw) {
+          // Override de saque vence sempre, inclusive acima do teto: nesse caso
+          // a conferência acende vermelho, mas o cálculo segue.
+          draw = valorOverride(m, chaveDraw);
+        } else if (c.fin.modoSaque === 'equity_first') {
+          // Regra clássica: o capital próprio entra primeiro na obra. Só há
+          // saque depois que a obra acumulada ultrapassa o equity disponível
+          // para obra.
+          //
+          // O teto pela obra do mês é o que deixa terreno, property tax, custos
+          // do orçamento e custo financeiro sem cobertura de dívida — e é
+          // exatamente isso que o modo 'equity_first_demanda' resolve. Aqui não
+          // se mexe: é o resultado de toda modelagem já gravada.
+          draw = dentroJanela ? clamp(restanteObra, 0, capacidade) : 0;
+        } else if (c.fin.modoSaque === 'cash_demand') {
+          // Dimensiona a dívida pela necessidade real de caixa do mês. Ignora o
+          // aporte do próprio mês de propósito — ver o modo abaixo.
+          demandaDoSaque = restanteDemanda;
+          draw = dentroJanela ? clamp(restanteDemanda, 0, capacidade) : 0;
+        } else if (c.fin.modoSaque === 'equity_first_demanda') {
+          // O capital próprio entra primeiro porque é descontado da demanda: só
+          // sobra saque quando o aporte do mês, a receita e o caixa de abertura
+          // não cobrem os pagamentos mais o colchão.
+          //
+          // Diferente do 'cash_demand', que ignora o aporte do próprio mês e por
+          // isso saca no mês 1 mesmo quando o aporte já cobriria tudo —
+          // deixando dinheiro parado em caixa pagando juros.
+          //
+          // clamp(…, 0, capacidade): mês superavitário não gera saque NEGATIVO
+          // (o saque não é devolução de principal — quem devolve é a
+          // amortização), e o teto continua sendo o teto. Quando a demanda passa
+          // da capacidade o caixa fica negativo de novo — e é justamente isso
+          // que `teto_divida` conta logo abaixo.
+          //
+          // Fora da janela de saque o saque é ZERO e o buraco fica. É correto:
+          // janela é contrato, não preferência — o banco não libera dinheiro em
+          // mês nenhum fora dela, e inventar saque ali esconderia um problema de
+          // cronograma que `caixa_minimo` tem de mostrar.
+          draw = dentroJanela ? clamp(restanteDemandaLiq, 0, capacidade) : 0;
+        } else {
+          draw = 0; // 'manual' → só overrides
+        }
+
+        // ─── REFINANCIAMENTO — o coração do modo locação ────────────────────
+        //
+        // A construção sai numa facilidade cara e curta; quando o ativo
+        // estabiliza, um permanent loan barato entra, QUITA a primeira e fica no
+        // lugar dela. Sem este vínculo o motor veria dois saques e nenhuma
+        // amortização, e a dívida do projeto dobraria em silêncio.
+        //
+        // O gatilho é o PRIMEIRO MÊS em que esta facilidade entra na janela de
+        // saque com algo a quitar do outro lado — e não "o primeiro mês em que
+        // ela saca por demanda", porque um permanent loan tipicamente não tem
+        // demanda de caixa nenhuma: o refinanciamento É o motivo dele existir, e
+        // esperar por uma demanda que nunca vem deixaria a dívida velha de pé o
+        // projeto inteiro.
+        //
+        // A ORDEM DENTRO DO MÊS É O QUE FAZ A CONTA FECHAR: a facilidade
+        // refinanciada precisa vir ANTES na `ordem`, para já ter calculado os
+        // juros e fechado o saldo quando esta saca. Vindo depois, o saque quita
+        // um saldo que ainda não incorporou o juro do mês e sobra um resíduo —
+        // que fica VISÍVEL, porque o saldo devedor dela não zera e
+        // `saldo_devedor_final` acusa, em vez de sumir na diferença.
+        let refinanciado = 0;
+        if (c.refinancia != null && !jaRefinanciou[i] && dentroJanela) {
+          const alvo = c.refinancia;
+          const saqueMinimo = Math.max(0, saldoVivo[alvo]);
+          if (saqueMinimo > TOL_CONVERGENCIA) {
+            jaRefinanciou[i] = true;
+            // "Ao menos o saldo da outra, respeitando o próprio teto." O
+            // refinanciamento é SOMADO ao saque de demanda, não comparado com
+            // ele: a facilidade precisa financiar as duas coisas — o buraco de
+            // caixa do mês e a quitação da dívida velha. Tratar como `max`
+            // deixaria o projeto sem o dinheiro do mês.
+            refinanciado = Math.min(saqueMinimo, capacidade);
+            if (!temOverrideDraw) draw = clamp(draw + refinanciado, 0, capacidade);
+            // Override VENCE, também aqui: se o usuário forçou o saque desta
+            // facilidade, a quitação não pode passar do que de fato foi sacado —
+            // senão apareceria dinheiro que ninguém pôs.
+            refinanciado = Math.min(refinanciado, Math.max(0, draw));
+            const falta = saqueMinimo - refinanciado;
+            if (falta > TOL_CONVERGENCIA) {
+              refinanciamentoDescoberto.push({
+                refinanciadora: i,
+                refinanciada: alvo,
+                falta,
+              });
+            }
+          }
+        }
+
+        sacadoAte[i] += draw;
+        drawMes += draw;
+
+        // Cobertura do mês. O clamp: saque ACIMA da demanda — override, ou o
+        // saque do equity_first quando a obra do mês passa da necessidade —
+        // sobra em caixa, não é cobertura.
+        //
+        // Os poços de demanda são decrementados por QUALQUER saque; o de obra,
+        // só pelo saque de quem está em 'equity_first'.
+        restanteDemanda -= draw;
+        restanteDemandaLiq -= draw;
+        if (c.fin.modoSaque === 'equity_first') restanteObra -= draw;
+
+        // O teto BINDOU nesta facilidade: havia demanda, o mês estava dentro da
+        // janela e a capacidade foi o limite. Contado só no modo novo — nos
+        // outros o saque não é dimensionado por esta demanda, e contá-los mudaria
+        // o texto de `teto_divida` em modelagem já gravada.
+        if (
+          c.fin.modoSaque === 'equity_first_demanda' &&
+          !temOverrideDraw &&
+          dentroJanela &&
+          demandaDoSaque > capacidade + TOL_CONVERGENCIA
+        ) {
+          bindouNoTeto = true;
+        }
+
+        // 1b. RESERVA DE JUROS — constituída no PRIMEIRO SAQUE, um único mês.
+        //     Sacada: sai do próprio empréstimo, soma ao principal e rende juros
+        //     como qualquer principal, mas NÃO passa pelo caixa do projeto (o
+        //     dinheiro vai direto para a conta da reserva). Orçamentária: só abre
+        //     o saldo, sem mexer em dívida nem em chamada de capital.
+        const ehPrimeiroSaque = !jaHouveSaque[i] && draw > 0;
+        if (ehPrimeiroSaque) jaHouveSaque[i] = true;
+        const constituiReserva = ehPrimeiroSaque && c.reservaJuros > 0;
+        const saqueReservaJuros = constituiReserva && c.reservaSacada ? c.reservaJuros : 0;
+        if (constituiReserva) saldoReserva[i] = c.reservaJuros;
+        sacadoAte[i] += saqueReservaJuros;
+        saqueReservaMes += saqueReservaJuros;
+
+        // 2. JUROS — dependem só do saldo já sacado, então já podem ser apurados.
+        const saldoAntes = saldoAbertura + draw + saqueReservaJuros;
+        const juros = saldoAntes * fatorMes;
+        jurosMes += juros;
+
+        // 2b. A reserva paga PRIMEIRO, a capitalização vem DEPOIS. A ordem
+        //     importa: invertida, o juro viraria principal antes de a reserva ter
+        //     chance de absorvê-lo, e a reserva nunca esvaziaria. Os dois
+        //     recursos coexistem — a reserva não substitui `capitalizarJuros`.
+        const jurosPagosPelaReserva = Math.min(juros, saldoReserva[i]);
+        saldoReserva[i] -= jurosPagosPelaReserva;
+        jurosPelaReservaMes += jurosPagosPelaReserva;
+        saldoReservaMes += saldoReserva[i];
+        const jurosAposReserva = juros - jurosPagosPelaReserva;
+
+        // Com capitalização, o que sobrou vira principal ANTES da amortização;
+        // senão o saldo final do mês de saída ficaria com um mês de juros
+        // pendurado.
+        const baseAmortizavel = saldoAntes + (c.fin.capitalizarJuros ? jurosAposReserva : 0);
+
+        // 3. AMORTIZAÇÃO — release do mês, mais a quitação no mês de saída.
+        //
+        //    `alvoRelease` NÃO é recalculado aqui: é exatamente o número que o
+        //    passo 1 previu, já limitado pelo saldo de ABERTURA. Previsão e
+        //    realização usando o mesmo número é o que faz o saque dimensionado
+        //    chegar inteiro ao caixa — recalcular contra `baseAmortizavel` (que
+        //    já contém o saque do mês) reabriria a circularidade.
+        //
+        //    max(0, baseAmortizavel − alvoRelease) no mês da saída: o release já
+        //    amortizou uma parte, e o at_exit cobre só o remanescente.
+        //
+        //    O clamp final continua sendo a proteção contra saldo devedor
+        //    negativo por override abusivo.
+        const chaveAmort = chaveFacilidade('amortization', i + 1);
+        let alvoAmort: number;
+        if (temOverride(m, chaveAmort)) {
+          // Override vence tudo — inclusive o release.
+          alvoAmort = valorOverride(m, chaveAmort);
+        } else {
+          const parteExit =
+            c.fin.modoAmortizacao === 'at_exit' && m === mesSaida
+              ? Math.max(0, baseAmortizavel - alvoRelease)
+              : 0;
+          alvoAmort = alvoRelease + parteExit;
+        }
+        const amortization = clamp(alvoAmort, 0, baseAmortizavel);
+        const saldoDepois = baseAmortizavel - amortization;
+        // Quanto da amortização do mês foi release, para a grade do fluxo poder
+        // decompor "Release: X · Saída: Y" sem refazer a conta.
+        amortizacaoReleaseMes += Math.min(amortization, alvoRelease);
+
+        // ─── A quitação da facilidade REFINANCIADA ─────────────────────────
+        // Ela já foi processada neste mês (vem antes na ordem) e o saldo dela
+        // está fechado: a quitação é aplicada agora, sobre o saldo vivo, e
+        // nunca o deixa negativo.
+        if (refinanciado > 0) {
+          const alvo = c.refinancia as number;
+          const quitado = Math.min(refinanciado, Math.max(0, saldoVivo[alvo]));
+          saldoVivo[alvo] -= quitado;
+          amortizacaoDaFacilidade[alvo] += quitado;
+          amortizacaoMes += quitado;
+        }
+
+        saldoVivo[i] = saldoDepois;
+        amortizacaoDaFacilidade[i] += amortization;
+        amortizacaoMes += amortization;
+
+        // 4. FEE — por facilidade, sobre o valor contratado de CADA UMA.
+        const fee =
+          (c.fin.feeTiming === 'first_draw' ? ehPrimeiroSaque : m === c.fin.feeMes)
+            ? (estado.feePorFacilidade[i] ?? 0)
             : 0;
-        alvoAmort = alvoRelease + parteExit;
+        feeMes += fee;
+
+        // Juros capitalizados não saem do caixa (viram principal), mas continuam
+        // na apuração de resultado como custo financeiro incorrido. O que a
+        // reserva pagou também não sai do caixa — é isso que ela existe para
+        // fazer.
+        custoFinanceiroCaixa += (c.fin.capitalizarJuros ? 0 : jurosAposReserva) + fee;
+
+        porFacilidade.push({
+          id: c.fin.id,
+          indice: i,
+          nome: c.nome,
+          draw,
+          // Preenchidos no fecho do mês: a amortização de uma facilidade pode
+          // crescer DEPOIS de ela ser processada, quando outra a refinancia.
+          amortization: 0,
+          juros,
+          fee,
+          saldoDevedor: 0,
+          capacidadeSaque: capacidade,
+        });
       }
-      const amortization = clamp(alvoAmort, 0, baseAmortizavel);
-      const saldoDevedor = baseAmortizavel - amortization;
-      // Quanto da amortização do mês foi release, para a grade do fluxo poder
-      // decompor "Release: X · Saída: Y" sem refazer a conta.
-      const amortizacaoRelease = Math.min(amortization, alvoRelease);
 
-      // 4. FEE
-      const mesDoFee =
-        fin.feeTiming === 'first_draw' ? ehPrimeiroSaque : m === fin.feeMes;
-      const fee = mesDoFee ? estado.feeTotal : 0;
+      // Fecho por facilidade: amortização e saldo definitivos, já com o efeito
+      // do refinanciamento aplicado por quem veio depois na ordem.
+      for (const linha of porFacilidade) {
+        linha.amortization = amortizacaoDaFacilidade[linha.indice];
+        linha.saldoDevedor = saldoVivo[linha.indice];
+      }
+      for (let i = 0; i < facilidades.length; i++) saldoAnterior[i] = saldoVivo[i];
+      saldoDevedorMes = soma(porFacilidade.map((x) => x.saldoDevedor));
 
-      // Juros capitalizados não saem do caixa (viram principal), mas continuam
-      // na apuração de resultado como custo financeiro incorrido. O que a reserva
-      // pagou também não sai do caixa — é isso que ela existe para fazer.
-      const custoFinanceiroCaixa = (fin.capitalizarJuros ? 0 : jurosAposReserva) + fee;
+      // ─── Leituras do mês, agregadas ──────────────────────────────────────
+      //
+      // `demandaDoSaqueMes` é a demanda da PRIMEIRA facilidade ativa, na leitura
+      // do modo dela — com uma facilidade é exatamente o número de antes. Ela
+      // existe para a aba Demanda de Caixa mostrar a MESMA conta que dimensionou
+      // o saque; recomputá-la lá abriria espaço para as duas divergirem.
+      const primeira = ativas[0];
+      const demandaDoSaqueMes =
+        primeira && primeira.fin.modoSaque === 'cash_demand'
+          ? demandaSemAporte
+          : demandaLiquidaDeAporte;
+      const demandaDimensionada = Math.max(0, demandaDoSaqueMes);
+      const demandaCoberta = clamp(drawMes, 0, demandaDimensionada);
+      const demandaDescoberta = Math.max(0, demandaDimensionada - drawMes);
+
+      if (bindouNoTeto) {
+        mesesNoTeto += 1;
+        descobertoPorTeto += Math.max(0, demandaDoSaqueMes - drawMes);
+      }
+
       const pagamentos = pagamentosOperacionais + custoFinanceiroCaixa;
 
       // 5. APORTE DE EQUITY — a receita do mês cobre os custos do próprio mês.
@@ -1256,7 +1900,13 @@ export function calcular(input: ModelInput): ModelOutput {
       } else {
         equityCall = Math.max(
           0,
-          pagamentos + amortization + colchao - draw - revenue[m] - caixaAbertura,
+          pagamentos +
+            amortizacaoMes +
+            colchao -
+            drawMes -
+            revenue[m] -
+            rentalRevenue[m] -
+            caixaAbertura,
         );
       }
       equityAcumulado += equityCall;
@@ -1272,11 +1922,16 @@ export function calcular(input: ModelInput): ModelOutput {
       //    inclusive ficando negativo (a conferência acusa).
       // `saqueReservaJuros` fica DE FORA de propósito: o dinheiro vai direto para
       // a conta da reserva e nunca passa pelo caixa do projeto. Ele já está no
-      // principal (saldoAntes) e volta pela amortização, como qualquer dívida.
+      // principal e volta pela amortização, como qualquer dívida.
       const caixaMes =
-        equityCall + draw + revenue[m] - pagamentos - amortization - distribution;
+        equityCall +
+        drawMes +
+        revenue[m] +
+        rentalRevenue[m] -
+        pagamentos -
+        amortizacaoMes -
+        distribution;
       caixaAcumulado += caixaMes;
-      saldoAnterior = saldoDevedor;
 
       meses.push({
         mes: m,
@@ -1285,42 +1940,59 @@ export function calcular(input: ModelInput): ModelOutput {
         construction: construction[m],
         propertyTax: propertyTax[m],
         otherCosts: otherCosts[m],
+        ocupacao: ocupacaoMes[m],
+        rentalRevenue: rentalRevenue[m],
+        opexBruto: opexBruto[m],
+        opexReembolso: opexReembolso[m],
+        opex: opex[m],
+        noiMes: noiMes[m],
         pagamentosOperacionais,
-        juros,
-        jurosPagosPelaReserva,
-        saldoReservaJuros: saldoReserva,
-        fee,
+        juros: jurosMes,
+        jurosPagosPelaReserva: jurosPelaReservaMes,
+        saldoReservaJuros: saldoReservaMes,
+        fee: feeMes,
         custoFinanceiroCaixa,
         pagamentos,
         revenue: revenue[m],
-        draw,
-        saqueReservaJuros,
-        amortization,
+        draw: drawMes,
+        saqueReservaJuros: saqueReservaMes,
+        amortization: amortizacaoMes,
         equityCall,
         distribution,
-        saldoDevedor,
+        saldoDevedor: saldoDevedorMes,
         equityAcumulado,
         caixaAbertura,
         caixaMes,
         caixaAcumulado,
-        demandaBruta: pagamentos + amortization - revenue[m],
+        demandaBruta: pagamentos + amortizacaoMes - revenue[m] - rentalRevenue[m],
         demandaDimensionada,
         demandaCoberta,
         demandaDescoberta,
-        amortizacaoPrevista: amortPrevista,
-        amortizacaoRelease,
-        capacidadeSaque: capacidade,
-        taxaEfetivaAno,
-        unidadesVendidas: vendasPorMes.get(m) ?? 0,
+        amortizacaoPrevista: amortPrevistaMes,
+        amortizacaoRelease: amortizacaoReleaseMes,
+        capacidadeSaque: capacidadeMes,
+        // Taxa da PRIMEIRA facilidade ativa. Não é média ponderada de propósito:
+        // com saldo zero a ponderação seria 0/0, e com uma facilidade — o caso
+        // de toda modelagem já gravada — este é exatamente o número de antes. A
+        // taxa de cada uma está em `porFacilidade`, que é onde ela tem sentido.
+        taxaEfetivaAno: pre.length ? pre[0].taxaEfetivaAno : 0,
+        unidadesVendidas: unidadesNoMes,
         equityDisponivelAcumulado: equityDisponivelObraAte(m),
+        porFacilidade,
       });
     }
-    return { meses, mesesNoTeto, descobertoPorTeto, releaseCortadoTotal };
+    return {
+      meses,
+      mesesNoTeto,
+      descobertoPorTeto,
+      releaseCortadoTotal,
+      refinanciamentoDescoberto,
+    };
   };
 
   // ─── Ponto fixo ────────────────────────────────────────────────────────────
   let estado: EstadoPonto = {
-    feeTotal: 0,
+    feePorFacilidade: facilidades.map(() => 0),
     custoFinPorMes: zeros(),
     distribuicaoAutomatica: 0,
   };
@@ -1328,6 +2000,7 @@ export function calcular(input: ModelInput): ModelOutput {
   let mesesNoTeto = 0;
   let descobertoPorTeto = 0;
   let releaseCortadoTotal = 0;
+  let refinanciamentoDescoberto: ResultadoPasse['refinanciamentoDescoberto'] = [];
   let iteracoes = 0;
   let convergiu = false;
 
@@ -1337,7 +2010,13 @@ export function calcular(input: ModelInput): ModelOutput {
     iteracoes = it + 1;
     // O corte pelo teto vale o da ÚLTIMA passada, como todo o resto: é a passada
     // convergida que vira resultado.
-    ({ meses, mesesNoTeto, descobertoPorTeto, releaseCortadoTotal } = passe(estado));
+    ({
+      meses,
+      mesesNoTeto,
+      descobertoPorTeto,
+      releaseCortadoTotal,
+      refinanciamentoDescoberto,
+    } = passe(estado));
 
     // `dividaSacada` NÃO é lida aqui desde que deixou de ser a base do fee: ela
     // continua sendo apurada uma vez só, depois do ponto fixo, e alimentando
@@ -1345,10 +2024,18 @@ export function calcular(input: ModelInput): ModelOutput {
     const equityTotal = soma(meses.map((x) => x.equityCall));
     const jurosTotais = soma(meses.map((x) => x.juros));
     const feeLancado = soma(meses.map((x) => x.fee));
+    // O OPEX entra no custo do empreendimento também aqui, e não só na apuração
+    // final: é ele que dimensiona a distribuição automática, e deixá-lo de fora
+    // distribuiria um lucro maior do que existe — realimentando o ponto fixo com
+    // o número errado.
     const custoEmpreendimento = soma(
-      meses.map((x) => x.land + x.construction + x.propertyTax + x.otherCosts),
+      meses.map((x) => x.land + x.construction + x.propertyTax + x.otherCosts + x.opex),
     );
-    const receitaLiquida = vgv * fatorLiquido;
+    // Locação: aluguel faturado no fluxo mais o valor de saída já líquido do
+    // custo de venda. Venda: o VGV líquido de comissão e cartório, como sempre.
+    const receitaLiquida = ehLocacao
+      ? soma(meses.map((x) => x.rentalRevenue)) + valorSaida * (1 - (loc.custoVendaPct || 0))
+      : vgv * fatorLiquido;
     const lucroProjeto = receitaLiquida - custoEmpreendimento - (jurosTotais + feeLancado);
     const lucroInvestidores = lucroProjeto * (rec.lucroInvestidoresPct || 0);
 
@@ -1365,21 +2052,37 @@ export function calcular(input: ModelInput): ModelOutput {
     // O termo do fee CONTINUA no `delta` abaixo: com teto ele é zero da segunda
     // passada em diante e não custa nada, e sem teto é justamente ele que cobra a
     // convergência do pico.
-    const picoSaldoDevedor = meses.length ? Math.max(...meses.map((x) => x.saldoDevedor)) : 0;
-    const novoFee = baseFeeEstruturacao(picoSaldoDevedor) * (fin.feeEstruturacaoPct || 0);
+    // O pico é POR FACILIDADE: a base do fee de cada uma é a exposição do banco
+    // DELA, e um pico somado não corresponde a contrato nenhum. Facilidade
+    // inativa fica com fee zero, sem sumir do array — o índice é endereço.
+    const picoPorFacilidade = facilidades.map((_, i) =>
+      meses.length
+        ? Math.max(
+            0,
+            ...meses.map((x) => x.porFacilidade.find((f) => f.indice === i)?.saldoDevedor ?? 0),
+          )
+        : 0,
+    );
+    const novoFee = ctxFacilidades.map((c, i) =>
+      c.ativa ? c.baseFee(picoPorFacilidade[i]) * (c.fin.feeEstruturacaoPct || 0) : 0,
+    );
     const novoCustoFin = zeros();
     for (const x of meses) novoCustoFin[x.mes] = x.custoFinanceiroCaixa;
     const novaDist = equityTotal + lucroInvestidores;
 
-    let delta = Math.max(
-      Math.abs(novoFee - estado.feeTotal),
-      Math.abs(novaDist - estado.distribuicaoAutomatica),
-    );
+    let delta = Math.abs(novaDist - estado.distribuicaoAutomatica);
+    for (let i = 0; i < novoFee.length; i++) {
+      delta = Math.max(delta, Math.abs(novoFee[i] - (estado.feePorFacilidade[i] ?? 0)));
+    }
     for (let m = 1; m <= prazoTotal; m++) {
       delta = Math.max(delta, Math.abs(novoCustoFin[m] - estado.custoFinPorMes[m]));
     }
 
-    estado = { feeTotal: novoFee, custoFinPorMes: novoCustoFin, distribuicaoAutomatica: novaDist };
+    estado = {
+      feePorFacilidade: novoFee,
+      custoFinPorMes: novoCustoFin,
+      distribuicaoAutomatica: novaDist,
+    };
     if (it > 0 && delta < TOL_CONVERGENCIA) {
       convergiu = true;
       break;
@@ -1387,9 +2090,12 @@ export function calcular(input: ModelInput): ModelOutput {
   }
 
   // Release PRETENDIDO (antes do clamp pelo saldo): é ele que a conferência
-  // compara com a dívida para dizer se os releases quitam o empréstimo.
+  // compara com a dívida para dizer se os releases quitam o empréstimo. Somado
+  // sobre TODAS as facilidades ativas — cada uma tem a própria cláusula.
   let releaseTotal = 0;
-  for (let m = 1; m <= prazoTotal; m++) releaseTotal += releaseBrutoDoMes(m);
+  for (const c of ativas) {
+    for (let m = 1; m <= prazoTotal; m++) releaseTotal += c.releaseBrutoDoMes(m);
+  }
 
   // ─── Apuração ──────────────────────────────────────────────────────────────
   // Nunca calcule o lucro como "receita líquida − quitação da dívida − devolução
@@ -1399,14 +2105,32 @@ export function calcular(input: ModelInput): ModelOutput {
   const custoObra = soma(meses.map((x) => x.construction));
   const custoPropertyTax = soma(meses.map((x) => x.propertyTax));
   const custoOutros = soma(meses.map((x) => x.otherCosts));
-  const custoEmpreendimento = custoTerrenos + custoObra + custoPropertyTax + custoOutros;
+  // Σ do OPEX já LÍQUIDO do reembolso dos inquilinos — é o que de fato sai do
+  // caixa —, e com os overrides da linha `opex` aplicados. Zero no modo venda.
+  const opexTotal = soma(meses.map((x) => x.opex));
+  // O OPEX entra no custo do empreendimento porque é saída de caixa operacional
+  // como qualquer outra; sem ele o lucro sairia inflado exatamente nesse valor.
+  // No modo venda o termo é zero e a soma é a de sempre.
+  const custoEmpreendimento =
+    custoTerrenos + custoObra + custoPropertyTax + custoOutros + opexTotal;
   const jurosTotais = soma(meses.map((x) => x.juros));
   const feeTotal = soma(meses.map((x) => x.fee));
   const custoFinanceiro = jurosTotais + feeTotal;
-  const receitaBruta = vgv;
-  const comissoes = vgv * (rec.comissaoPct || 0);
-  const cartorio = vgv * (rec.custoCartorioPct || 0);
-  const receitaLiquida = receitaBruta - comissoes - cartorio;
+
+  // ─── A RECEITA, nos dois modos ─────────────────────────────────────────────
+  //
+  // Venda: o VGV, deduzido de comissão e cartório.
+  //
+  // Locação: o aluguel faturado ao longo da operação MAIS o valor de saída
+  // bruto, deduzido do custo de venda. `comissoes` e `cartorio` são ZERO — quem
+  // faz o papel dos dois é `custoVenda`, e aplicar os três contaria a corretagem
+  // duas vezes sobre o mesmo negócio.
+  const receitaAluguel = soma(meses.map((x) => x.rentalRevenue));
+  const receitaBruta = ehLocacao ? receitaAluguel + valorSaida : vgv;
+  const comissoes = ehLocacao ? 0 : vgv * (rec.comissaoPct || 0);
+  const cartorio = ehLocacao ? 0 : vgv * (rec.custoCartorioPct || 0);
+  const custoVenda = ehLocacao ? valorSaida * (loc.custoVendaPct || 0) : 0;
+  const receitaLiquida = receitaBruta - comissoes - cartorio - custoVenda;
   const lucroProjeto = receitaLiquida - custoEmpreendimento - custoFinanceiro;
   const lucroInvestidores = lucroProjeto * (rec.lucroInvestidoresPct || 0);
   const lucroSponsor = lucroProjeto * (rec.lucroSponsorPct || 0);
@@ -1424,20 +2148,48 @@ export function calcular(input: ModelInput): ModelOutput {
   // passada convergida — é literalmente o número que multiplicou o percentual.
   // Sai daqui para a conferência e para a leitura da aba Financiamento em vez de
   // ser recomputado nas duas, que é como as três contas divergiriam.
-  const baseFee = baseFeeEstruturacao(saldoDevedorMaximo);
+  // Base do fee de CADA facilidade, resolvida com o pico DELA na passada
+  // convergida — é literalmente o número que multiplicou cada percentual. O
+  // campo da apuração é a soma, e com uma facilidade é o valor de sempre.
+  const picoPorFacilidadeFinal = facilidades.map((_, i) =>
+    meses.length
+      ? Math.max(
+          0,
+          ...meses.map((x) => x.porFacilidade.find((f) => f.indice === i)?.saldoDevedor ?? 0),
+        )
+      : 0,
+  );
+  const basePorFacilidade = ctxFacilidades.map((c, i) =>
+    c.ativa ? c.baseFee(picoPorFacilidadeFinal[i]) : 0,
+  );
+  const baseFee = soma(basePorFacilidade);
   const totalPagamentos = soma(meses.map((x) => x.pagamentos));
   const totalDistribuido = equityTotal + lucroInvestidores;
+
+  // Custo de DESENVOLVIMENTO: o que custou pôr o ativo de pé, SEM o OPEX de
+  // operá-lo. É o denominador de `yieldOnCost` e de `custoDesenvolvimentoPorSf`,
+  // e está na apuração justamente para o spread sobre o cap ser auditável.
+  // No modo venda `opexTotal` é zero e este é o mesmo numerador que
+  // `custoPorUnidade` e `custoPorSf` sempre usaram.
+  const custoDesenvolvimento = custoEmpreendimento - opexTotal + custoFinanceiro;
 
   const apuracao: Apuracao = {
     receitaBruta,
     comissoes,
     cartorio,
+    custoVenda,
     receitaLiquida,
+    receitaAluguel,
+    opexTotal,
+    // NOI ACUMULADO do fluxo. Não confundir com `Indicadores.noiEstabilizado`,
+    // que é o NOI ANUAL de referência que divide o cap rate.
+    noiTotal: receitaAluguel - opexTotal,
     custoTerrenos,
     custoObra,
     custoPropertyTax,
     custoOutros,
     custoEmpreendimento,
+    custoDesenvolvimento,
     jurosTotais,
     feeTotal,
     custoFinanceiro,
@@ -1499,6 +2251,64 @@ export function calcular(input: ModelInput): ModelOutput {
     precoMedioPorUnidade: razao(vgv, unidadesTotal),
     receitaPorSf: razao(vgv, bases.areaSf),
     margemPorUnidade: razao(lucroProjeto, unidadesTotal),
+
+    // ─── Modo locação ────────────────────────────────────────────────────────
+    // TODOS `null` no modo venda, sem exceção. Devolver zero faria a tela
+    // mostrar "0,00%" de yield on cost num projeto que não tem yield nenhum — e
+    // um zero é indistinguível de um cálculo que deu zero de verdade.
+    noiEstabilizado: ehLocacao ? noiReferencia : null,
+    // Já resolvido lá em cima, com a guarda `capRate > 0`: cap rate zero é
+    // valor de saída ZERO, nunca Infinity.
+    valorSaida: ehLocacao ? valorSaida : null,
+    // Denominador é o custo de DESENVOLVIMENTO, sem o OPEX da operação — ver o
+    // comentário do campo em tipos.ts. `razao` devolve null em denominador zero,
+    // então nunca sai NaN nem Infinity para a tela.
+    yieldOnCost: ehLocacao ? razao(noiReferencia, custoDesenvolvimento) : null,
+    // O SPREAD SOBRE O CAP É O NEGÓCIO INTEIRO: o que o ativo rende sobre o
+    // custo, menos o que o comprador exige. Negativo não é erro do modelo — é um
+    // projeto que vale menos do que custou, e é justamente isso que o modelo
+    // existe para revelar (`spread_negativo` acende âmbar, não vermelho).
+    //
+    // `null` quando o yield não existe: um spread calculado sobre denominador
+    // zero seria `−capRate`, um número plausível e completamente falso.
+    spreadSobreCap: ehLocacao
+      ? (() => {
+          const y = razao(noiReferencia, custoDesenvolvimento);
+          return y === null ? null : y - (loc.capRateSaida || 0);
+        })()
+      : null,
+    aluguelPorSf: ehLocacao ? razao(receitaBrutaAnual100, bases.areaSf) : null,
+    custoDesenvolvimentoPorSf: ehLocacao ? razao(custoDesenvolvimento, bases.areaSf) : null,
+    // ─── Os dois breakevens de ocupação ──────────────────────────────────────
+    //
+    // A ocupação entra na conta do NOI em DOIS lugares e com sinais opostos: ela
+    // multiplica a receita e multiplica o reembolso. Isolando-a:
+    //
+    //   NOI(o) = o × [receita100 × (1 − perdaCrédito) + opexReembolsável × taxa]
+    //            − opexBruto
+    //
+    // O colchete é o ganho marginal por ponto de ocupação — receita mais
+    // reembolso — e é o denominador dos dois breakevens. Zerado (sem aluguel e
+    // sem reembolso), não há ocupação que cubra despesa nenhuma: `razao` devolve
+    // null e a tela mostra "n/d", em vez de um Infinity.
+    ocupacaoBreakevenNoi: ehLocacao
+      ? razao(
+          opexBrutoAnual,
+          receitaBrutaAnual100 * (1 - (loc.perdaCreditoPct || 0)) +
+            opexBrutoReembolsavelAnual * (loc.taxaReembolsoPct || 0),
+        )
+      : null,
+    // Mesmo denominador, numerador acrescido dos juros ANUAIS: é o breakeven que
+    // o banco olha, e é sempre maior que o do NOI. Os juros anuais saem do juro
+    // total do projeto rateado pelo prazo — não de uma taxa aplicada ao saldo
+    // final, que ignoraria a curva de saque inteira.
+    ocupacaoBreakevenJuros: ehLocacao
+      ? razao(
+          opexBrutoAnual + (prazoTotal > 0 ? (jurosTotais / prazoTotal) * 12 : 0),
+          receitaBrutaAnual100 * (1 - (loc.perdaCreditoPct || 0)) +
+            opexBrutoReembolsavelAnual * (loc.taxaReembolsoPct || 0),
+        )
+      : null,
   };
 
   // ─── Rateio por sócio ──────────────────────────────────────────────────────
@@ -1694,6 +2504,18 @@ export function calcular(input: ModelInput): ModelOutput {
     mesesNoTeto,
     descobertoPorTeto,
     releaseCortadoTotal,
+    // ─── Locação e múltiplas facilidades ───────────────────────────────────
+    // Tudo já resolvido, nada recalculado do outro lado: a conferência tem de
+    // cobrar exatamente o número que o cálculo usou.
+    tipoModelagem,
+    facilidades,
+    tetoPorFacilidade: ctxFacilidades.map((c) => c.teto),
+    emCicloRefin,
+    refinanciamentoDescoberto,
+    noiReferencia,
+    valorSaida,
+    opexBrutoAnual,
+    indicadores,
   });
 
   return {

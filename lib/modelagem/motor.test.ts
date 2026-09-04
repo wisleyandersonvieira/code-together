@@ -1242,9 +1242,19 @@ describe('11 — orçamento por categoria', () => {
     // `areaTotalSf` também sai da comparação: entrou depois, com o item 4.3, e é
     // agregado de SAÍDA como `custosPorCategoria` — não muda valor nenhum dos
     // que já existiam, e é isso que o `resto` abaixo cobra.
-    const { custosPorCategoria, areaTotalSf, ...resto } = referencia.agregados;
+    //
+    // `ablSf` e `receitaBrutaAnual100` entraram com o modo LOCAÇÃO (migration
+    // 1764050000) e saem da comparação pelo mesmo motivo. Os dois são ZERO no
+    // caso base: `ablSf` porque nenhuma tipologia declara área, e
+    // `receitaBrutaAnual100` porque nenhuma declara aluguel — que é o estado de
+    // toda tipologia de venda.
+    const { custosPorCategoria, areaTotalSf, ablSf, receitaBrutaAnual100, ...resto } =
+      referencia.agregados;
     // O caso base não tem área por unidade, então o total é zero.
     expect(areaTotalSf).toBe(0);
+    // `ablSf` é a MESMA conta de `areaTotalSf`, exposta com o nome da locação.
+    expect(ablSf).toBe(areaTotalSf);
+    expect(receitaBrutaAnual100).toBe(0);
     // O que já existia continua idêntico ao caso base de antes da categorização.
     expect(resto).toEqual({
       terrenosTotal: 240_000,
@@ -2652,7 +2662,15 @@ describe('21 — taxa variável: benchmark mais spread', () => {
         modo_amortizacao: 'at_exit', colchao_minimo_caixa: '0.00',
       },
     } as never);
-    const f = input.financiamento;
+    // `mapearModelInput` devolve `financiamentos` desde a migration 1764200000:
+    // uma linha 1:1 do formato antigo vira uma lista de UM elemento, com os
+    // campos de identidade nos defaults da coluna.
+    const f = input.financiamentos![0];
+    expect(input.financiamentos).toHaveLength(1);
+    expect(f.ordem).toBe(0);
+    expect(f.nome).toBe('Financiamento'); // DEFAULT da coluna
+    expect(f.ativo).toBe(true); // DEFAULT TRUE da coluna
+    expect(f.refinanciaIndex).toBeNull(); // nulo ≠ 0: "não refinancia ninguém"
     expect(f.reservaJuros).toBe(0);
     expect(f.reservaJurosSacada).toBe(true); // DEFAULT TRUE da coluna
     expect(f.prazoMeses).toBeNull();
@@ -2679,7 +2697,7 @@ describe('21 — taxa variável: benchmark mais spread', () => {
         { id: 1, mes: 2, valor: '0.060000' },
         { id: 2, mes: 1, valor: '0.050000' },
       ],
-    } as never).financiamento;
+    } as never).financiamentos![0];
     expect(comCurva.spread).toBe(0.02);
     expect(comCurva.reservaJuros).toBe(100_000);
     expect(comCurva.reservaJurosSacada).toBe(false);
@@ -2705,14 +2723,28 @@ describe('22 — indicadores por unidade e por pé quadrado', () => {
   it('não muda nenhum número que já existia', () => {
     // Os indicadores antigos seguem idênticos; só há campos novos.
     // `ltcPico` é campo NOVO (migration 1763300000), como os cinco por-unidade.
+    // Os oito últimos entraram com o modo LOCAÇÃO e são TODOS `null` no modo
+    // venda — é o que o bloco logo abaixo cobra, um a um. `null`, e não zero,
+    // porque um "0,00%" de yield on cost é indistinguível de um cálculo que deu
+    // zero de verdade.
     const {
       custoPorUnidade, custoPorSf, precoMedioPorUnidade, receitaPorSf, margemPorUnidade,
-      ltcPico, custoTotalDividaPicoPct, ...antigos
+      ltcPico, custoTotalDividaPicoPct,
+      noiEstabilizado, valorSaida, yieldOnCost, spreadSobreCap, aluguelPorSf,
+      custoDesenvolvimentoPorSf, ocupacaoBreakevenNoi, ocupacaoBreakevenJuros,
+      ...antigos
     } = referencia.indicadores;
     expect(Object.keys(antigos)).toEqual([
       'moic', 'roi', 'margemVgv', 'ltc', 'alavancagem', 'custoTotalDividaPct',
       'tirMensal', 'tirAnual', 'xirr',
     ]);
+    // Modo venda: nenhum indicador de locação existe.
+    for (const v of [
+      noiEstabilizado, valorSaida, yieldOnCost, spreadSobreCap, aluguelPorSf,
+      custoDesenvolvimentoPorSf, ocupacaoBreakevenNoi, ocupacaoBreakevenJuros,
+    ]) {
+      expect(v).toBeNull();
+    }
     expect(ltcPico).not.toBeNull();
     expect(custoTotalDividaPicoPct).not.toBeNull();
     expect(custoPorUnidade).not.toBeNull();
@@ -4398,5 +4430,434 @@ const cenarioRelease = (patch: Partial<ModelInput['financiamento']> = {}): Model
     // Sem teto o fee ainda realimenta — pelo pico, de forma amortecida —, e por
     // isso consome mais passadas que o caso com teto.
     expect(comTeto.iteracoes).toBeLessThan(semTeto.iteracoes);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODO LOCAÇÃO (migrations 1764000000..1764300000)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * O caso de referência: 45.000 sf a $32/sf/ano, OPEX de $524.250 com 85% de
+ * reembolso, ocupação estabilizada em 100% com 10% de perda de crédito, cap de
+ * 7,5% e custo de venda de 6%.
+ *
+ * NOI = 1.440.000 × 1,00 × (1 − 0,10) − (524.250 − 524.250 × 0,85 × 1,00)
+ *     = 1.296.000 − 78.637,50 = 1.217.362,50
+ * Valor de saída = 1.217.362,50 ÷ 0,075 = 16.231.500
+ * Líquido de 6% = 15.257.610
+ */
+const casoLocacao = (): ModelInput => ({
+  nome: 'Ocoee',
+  tipoModelagem: 'locacao',
+  dataInicio: '2025-01-01',
+  mesesAprovacao: 6,
+  mesesConstrucao: 12,
+  mesesPosObra: 18,
+  horizonteMaximo: 60,
+  unidades: [
+    {
+      nome: 'Galpão',
+      quantidade: 1,
+      areaSf: 45_000,
+      aluguelSfAno: 32,
+      custoTerreno: 1_500_000,
+      custoObra: 9_000_000,
+      // Preenchidos de propósito: no modo locação os DOIS são ignorados, e as
+      // conferências `preco_venda_ignorado` e `property_tax_duplicado` acusam.
+      precoVenda: 12_000_000,
+      propertyTaxAno: 90_000,
+    },
+  ],
+  custosAdicionais: [],
+  aportes: { modoAporte: 'demanda', aporteBaseTotal: 12_000_000, valorTotalAlvo: 0, regraRateioCapital: 'participacao' },
+  locacao: {
+    taxaReembolsoPct: 0.85,
+    perdaCreditoPct: 0.1,
+    capRateSaida: 0.075,
+    custoVendaPct: 0.06,
+    noiReferencia: 'estabilizado',
+    ocupacaoEstabilizadaPct: 1,
+  },
+  // $524.250 / 45.000 sf = $11,65/sf/ano.
+  opex: [{ ordem: 1, label: 'Operação', valorSfAno: 11.65, reembolsavel: true }],
+  // Estabilizado do mês 19 (fim da obra) ao fim.
+  ocupacao: Array.from({ length: 18 }, (_, k) => ({ mes: 19 + k, ocupacaoPct: 1 })),
+  financiamentos: [
+    {
+      ordem: 0, nome: 'Construção', ativo: true,
+      taxaAnual: 0.09, feeEstruturacaoPct: 0, feeTiming: 'first_draw',
+      mesInicioSaque: 7, mesFimSaque: 18, modoSaque: 'equity_first_demanda',
+      maxLtcPct: null, valorContratado: 7_000_000, custoFinanceiroNaDemanda: false,
+      modoAmortizacao: 'at_exit', capitalizarJuros: false, linhaRotativa: false,
+      colchaoMinimoCaixa: 0, reservaJuros: 0, reservaJurosSacada: true,
+      prazoMeses: null, carenciaMeses: 0, amortizacaoMeses: null, balloonNoVencimento: true,
+      releasePrice: 0, releasePricePct: null, convencaoJuros: 'mensal_12',
+      tipoTaxa: 'fixa', spread: 0, benchmarkNome: null, benchmarkPadrao: 0,
+    },
+  ],
+  socios: [{ nome: 'Sócio único', participacaoPct: 1, cotaDisponivel: false, aportes: [] }],
+  receita: {
+    comissaoPct: 0, custoCartorioPct: 0, modoVenda: 'single_exit',
+    mesSaida: 36, lucroInvestidoresPct: 0.8, lucroSponsorPct: 0.2,
+  },
+  overrides: [],
+});
+
+describe('locação — o caso de referência (Ocoee)', () => {
+  const out = calcular(casoLocacao());
+
+  it('deriva a ABL e a receita bruta anual a 100% de ocupação', () => {
+    expect(out.agregados.ablSf).toBe(45_000);
+    expect(out.agregados.receitaBrutaAnual100).toBeCloseTo(1_440_000, 2);
+  });
+
+  it('reproduz o NOI de referência de $1.217.362,50', () => {
+    expect(out.indicadores.noiEstabilizado!).toBeCloseTo(1_217_362.5, 2);
+  });
+
+  it('reproduz o valor de saída de $16.231.500', () => {
+    expect(out.indicadores.valorSaida!).toBeCloseTo(16_231_500, 2);
+  });
+
+  it('lança na receita o valor de saída líquido do custo de venda, num único mês', () => {
+    // $16.231.500 − 6% = $15.257.610, no mês 36 e em nenhum outro.
+    const comReceita = out.meses.filter((m) => Math.abs(m.revenue) > DOLAR);
+    expect(comReceita).toHaveLength(1);
+    expect(comReceita[0].mes).toBe(36);
+    expect(comReceita[0].revenue).toBeCloseTo(15_257_610, 2);
+  });
+
+  it('não usa comissão nem cartório — quem faz o papel deles é o custo de venda', () => {
+    expect(out.apuracao.comissoes).toBe(0);
+    expect(out.apuracao.cartorio).toBe(0);
+    expect(out.apuracao.custoVenda).toBeCloseTo(16_231_500 * 0.06, 2);
+  });
+
+  it('ignora preço de venda e property tax da tipologia, e acusa os dois', () => {
+    // A coluna continua gravada — nada é apagado —, mas não entra em conta
+    // nenhuma: o property tax não é lançado em mês nenhum.
+    expect(out.apuracao.custoPropertyTax).toBe(0);
+    expect(semaforo(out, 'property_tax_duplicado')).toBe('ambar');
+    expect(semaforo(out, 'preco_venda_ignorado')).toBe('ambar');
+    // E nenhuma unidade "fecha" em mês nenhum.
+    expect(soma(out.unidadesVendidasPorMes)).toBe(0);
+  });
+
+  it('o reembolso acompanha a ocupação e o OPEX bruto NÃO', () => {
+    const cheio = out.meses.find((m) => m.mes === 20)!;
+    const vazio = out.meses.find((m) => m.mes === 10)!;
+    // Mesmo OPEX bruto nos dois meses: prédio vazio custa igual.
+    expect(vazio.opexBruto).toBeCloseTo(cheio.opexBruto, 6);
+    expect(cheio.opexBruto).toBeCloseTo(524_250 / 12, 2);
+    // O reembolso é que varia.
+    expect(vazio.opexReembolso).toBe(0);
+    expect(cheio.opexReembolso).toBeCloseTo((524_250 * 0.85) / 12, 2);
+    // E o NOI segue o reembolso.
+    expect(vazio.noiMes).toBeCloseTo(-524_250 / 12, 2);
+    expect(cheio.noiMes).toBeCloseTo(1_217_362.5 / 12, 2);
+  });
+
+  it('a perda de crédito incide sobre a receita faturada, não sobre a de 100%', () => {
+    const cheio = out.meses.find((m) => m.mes === 20)!;
+    const meio = { ...cheio };
+    // A 100% de ocupação, a receita é 1.440.000/12 × 0,9.
+    expect(meio.rentalRevenue).toBeCloseTo((1_440_000 / 12) * 0.9, 2);
+    // A ocupação zero não há o que perder: a receita é zero, não negativa.
+    expect(out.meses.find((m) => m.mes === 10)!.rentalRevenue).toBe(0);
+  });
+
+  it('o OPEX entra em pagamentosOperacionais e no custo do empreendimento', () => {
+    const mes = out.meses.find((m) => m.mes === 20)!;
+    expect(mes.pagamentosOperacionais).toBeCloseTo(
+      mes.land + mes.construction + mes.propertyTax + mes.otherCosts + mes.opex,
+      6,
+    );
+    expect(out.apuracao.opexTotal).toBeCloseTo(soma(out.meses.map((m) => m.opex)), 2);
+    expect(out.apuracao.custoEmpreendimento).toBeCloseTo(
+      out.apuracao.custoTerrenos + out.apuracao.custoObra + out.apuracao.custoPropertyTax +
+        out.apuracao.custoOutros + out.apuracao.opexTotal,
+      2,
+    );
+  });
+
+  it('o spread sobre o cap é yield on cost menos cap rate', () => {
+    const { yieldOnCost, spreadSobreCap } = out.indicadores;
+    expect(yieldOnCost!).toBeCloseTo(1_217_362.5 / out.apuracao.custoDesenvolvimento, 8);
+    expect(spreadSobreCap!).toBeCloseTo(yieldOnCost! - 0.075, 8);
+  });
+
+  it('não sai NaN nem Infinity em lugar nenhum do output', () => {
+    const finito = (v: unknown): boolean =>
+      typeof v === 'number' ? Number.isFinite(v) : true;
+    const varrer = (o: unknown): boolean =>
+      Array.isArray(o)
+        ? o.every(varrer)
+        : o && typeof o === 'object'
+          ? Object.values(o).every(varrer)
+          : finito(o);
+    // `tetoDivida` é Infinity legítimo quando não há teto; aqui há valor
+    // contratado, então tudo tem de ser finito.
+    expect(varrer(out)).toBe(true);
+  });
+});
+
+describe('locação — ocupação zero em todos os meses', () => {
+  const out = calcular({ ...casoLocacao(), ocupacao: [] });
+
+  it('não fatura nada e o prédio custa dinheiro todo mês', () => {
+    for (const m of out.meses) {
+      expect(m.ocupacao).toBe(0);
+      expect(m.rentalRevenue).toBe(0);
+      // Sem ocupação não há reembolso: o OPEX líquido é o BRUTO inteiro.
+      expect(m.opexReembolso).toBe(0);
+      expect(m.opex).toBeCloseTo(m.opexBruto, 6);
+      expect(m.opex).toBeGreaterThan(0);
+      // E o NOI é exatamente o OPEX bruto, negativo.
+      expect(m.noiMes).toBeCloseTo(-m.opexBruto, 6);
+    }
+  });
+
+  it('acende sem_curva_ocupacao em vermelho', () => {
+    expect(semaforo(out, 'sem_curva_ocupacao')).toBe('vermelho');
+  });
+});
+
+describe('locação — cap rate zerado', () => {
+  const base = casoLocacao();
+  const out = calcular({ ...base, locacao: { ...base.locacao!, capRateSaida: 0 } });
+
+  it('devolve valor de saída ZERO, nunca Infinity', () => {
+    expect(out.indicadores.valorSaida).toBe(0);
+    expect(out.meses.every((m) => m.revenue === 0)).toBe(true);
+  });
+
+  it('não deixa NaN nem Infinity escapar para lugar nenhum', () => {
+    const varrer = (o: unknown): boolean =>
+      Array.isArray(o)
+        ? o.every(varrer)
+        : o && typeof o === 'object'
+          ? Object.values(o).every(varrer)
+          : typeof o === 'number'
+            ? Number.isFinite(o)
+            : true;
+    expect(varrer(out)).toBe(true);
+  });
+
+  it('acende cap_rate_zerado em vermelho', () => {
+    expect(semaforo(out, 'cap_rate_zerado')).toBe('vermelho');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DUAS FACILIDADES E REFINANCIAMENTO (migration 1764200000)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('facilidades — uma só produz exatamente o resultado de sempre', () => {
+  it('financiamentos: [x] é idêntico a financiamento: x, campo a campo', () => {
+    const singular = casoBase();
+    const plural: ModelInput = { ...casoBase(), financiamento: undefined, financiamentos: [casoBase().financiamento!] };
+    const a = calcular(singular);
+    const b = calcular(plural);
+    expect(JSON.stringify(b.meses)).toBe(JSON.stringify(a.meses));
+    expect(JSON.stringify(b.apuracao)).toBe(JSON.stringify(a.apuracao));
+    expect(JSON.stringify(b.indicadores)).toBe(JSON.stringify(a.indicadores));
+    expect(b.conferencias.map((c) => c.chave)).toEqual(a.conferencias.map((c) => c.chave));
+  });
+
+  it('os agregados do mês são a soma das facilidades, e há uma só', () => {
+    const out = calcular(casoBase());
+    for (const m of out.meses) {
+      expect(m.porFacilidade).toHaveLength(1);
+      expect(m.porFacilidade[0].draw).toBe(m.draw);
+      expect(m.porFacilidade[0].saldoDevedor).toBe(m.saldoDevedor);
+      expect(m.porFacilidade[0].juros).toBe(m.juros);
+    }
+  });
+
+  it('a lista vence o campo único quando os dois vêm, e a conferência acusa', () => {
+    const base = casoBase();
+    const out = calcular({
+      ...base,
+      // A lista traz uma facilidade SEM dívida nenhuma (janela fechada); o campo
+      // único traz a de sempre. Se o campo único vencesse, haveria juros.
+      financiamentos: [{ ...base.financiamento!, modoSaque: 'manual' }],
+    });
+    expect(out.apuracao.jurosTotais).toBe(0);
+    expect(semaforo(out, 'financiamento_duplicado')).toBe('ambar');
+  });
+});
+
+/** Construção cara e curta, refinanciada por um permanent loan barato. */
+const casoRefinanciamento = (): ModelInput => {
+  const base = casoLocacao();
+  return {
+    ...base,
+    financiamentos: [
+      {
+        ...base.financiamentos![0],
+        ordem: 0,
+        nome: 'Construção',
+        taxaAnual: 0.11,
+        // Teto folgado de propósito: com o teto binding o saldo trava no
+        // contratado e os juros do mês deixam de aparecer no saldo, que é
+        // justamente o caso em que o teste NÃO exercitaria a ordem dentro do mês.
+        valorContratado: 9_000_000,
+        mesInicioSaque: 7,
+        mesFimSaque: 20,
+        modoSaque: 'equity_first_demanda',
+        modoAmortizacao: 'at_exit',
+        // Juros CAPITALIZADOS: é o que faz o saldo crescer dentro do mês da
+        // entrada do permanent, e é exatamente o resíduo que a ordem "A fecha o
+        // saldo antes de B sacar" existe para eliminar.
+        capitalizarJuros: true,
+      },
+      {
+        ...base.financiamentos![0],
+        id: undefined,
+        ordem: 1,
+        nome: 'Permanent',
+        taxaAnual: 0.055,
+        valorContratado: 11_000_000,
+        // Entra quando o ativo estabiliza.
+        mesInicioSaque: 24,
+        mesFimSaque: 36,
+        // Sem demanda de caixa própria: o refinanciamento É o motivo dele existir.
+        modoSaque: 'manual',
+        modoAmortizacao: 'at_exit',
+        // ÍNDICE 0-based da facilidade que ele refinancia.
+        refinanciaIndex: 0,
+      },
+    ],
+  };
+};
+
+describe('refinanciamento — o permanent loan quita o construction loan', () => {
+  const out = calcular(casoRefinanciamento());
+  const mesEntrada = 24;
+  const anterior = out.meses[mesEntrada - 2];
+  const entrada = out.meses[mesEntrada - 1];
+  const construcao = (m: (typeof out.meses)[number]) => m.porFacilidade.find((f) => f.indice === 0)!;
+  const permanent = (m: (typeof out.meses)[number]) => m.porFacilidade.find((f) => f.indice === 1)!;
+
+  it('havia dívida de construção a quitar', () => {
+    expect(construcao(anterior).saldoDevedor).toBeGreaterThan(1_000_000);
+  });
+
+  it('o saque do permanent é ≥ ao saldo da construção JÁ COM os juros do mês', () => {
+    // O saldo da construção no mês da entrada, antes de ser quitado, é o saldo
+    // de abertura mais os juros daquele mês — é isso que "A fecha o saldo antes
+    // de B sacar" significa, e o que impede o resíduo de juros.
+    const jurosDoMes = construcao(entrada).juros;
+    const aQuitar = construcao(anterior).saldoDevedor + jurosDoMes;
+    expect(permanent(entrada).draw).toBeGreaterThanOrEqual(aQuitar - DOLAR);
+  });
+
+  it('a construção fica com saldo ZERO no mês da entrada e daí em diante', () => {
+    expect(construcao(entrada).saldoDevedor).toBeCloseTo(0, 2);
+    for (const m of out.meses.slice(mesEntrada - 1)) {
+      expect(construcao(m).saldoDevedor).toBeCloseTo(0, 2);
+    }
+  });
+
+  it('a construção amortiza no mês da entrada exatamente o que o permanent sacou para ela', () => {
+    const jurosDoMes = construcao(entrada).juros;
+    expect(construcao(entrada).amortization).toBeCloseTo(
+      construcao(anterior).saldoDevedor + jurosDoMes,
+      2,
+    );
+  });
+
+  it('Σ saldoDevedor das facilidades bate com o consolidado em TODO mês', () => {
+    for (const m of out.meses) {
+      expect(soma(m.porFacilidade.map((f) => f.saldoDevedor))).toBeCloseTo(m.saldoDevedor, 6);
+      expect(soma(m.porFacilidade.map((f) => f.draw))).toBeCloseTo(m.draw, 6);
+      expect(soma(m.porFacilidade.map((f) => f.amortization))).toBeCloseTo(m.amortization, 6);
+      expect(soma(m.porFacilidade.map((f) => f.juros))).toBeCloseTo(m.juros, 6);
+      expect(soma(m.porFacilidade.map((f) => f.fee))).toBeCloseTo(m.fee, 6);
+    }
+  });
+
+  it('o refinanciamento é cash-neutro no mês: saque e quitação se anulam', () => {
+    // O permanent saca e a construção amortiza o mesmo valor. O caixa do mês não
+    // muda por causa do refinanciamento — se mudasse, o motor estaria criando ou
+    // destruindo dinheiro.
+    const quitado = construcao(entrada).amortization;
+    expect(permanent(entrada).draw).toBeCloseTo(quitado, 2);
+  });
+
+  it('acontece UMA vez só: não há segundo refinanciamento nos meses seguintes', () => {
+    for (const m of out.meses.slice(mesEntrada)) {
+      expect(construcao(m).amortization).toBeCloseTo(0, 2);
+    }
+  });
+});
+
+describe('refinanciamento — teto insuficiente', () => {
+  const base = casoRefinanciamento();
+  base.financiamentos![1].valorContratado = 500_000; // não cobre o saldo
+  const out = calcular(base);
+
+  it('saca o máximo, amortiza só isso e acende vermelho com a diferença', () => {
+    const entrada = out.meses[23];
+    const construcao = entrada.porFacilidade.find((f) => f.indice === 0)!;
+    expect(construcao.saldoDevedor).toBeGreaterThan(0);
+    expect(semaforo(out, 'refinanciamento_insuficiente')).toBe('vermelho');
+  });
+});
+
+describe('refinanciamento — ciclo', () => {
+  const base = casoRefinanciamento();
+  base.financiamentos![0].refinanciaIndex = 1; // A refinancia B e B refinancia A
+  const out = calcular(base);
+
+  it('as duas param de refinanciar e a conferência acende vermelho', () => {
+    expect(semaforo(out, 'refinanciamento_circular')).toBe('vermelho');
+    // Nenhuma quitação por refinanciamento acontece.
+    const entrada = out.meses[23];
+    expect(entrada.porFacilidade.find((f) => f.indice === 1)!.draw).toBe(0);
+  });
+
+  it('a autorreferência também é ciclo', () => {
+    const so = casoRefinanciamento();
+    so.financiamentos![1].refinanciaIndex = 1;
+    expect(semaforo(calcular(so), 'refinanciamento_circular')).toBe('vermelho');
+  });
+});
+
+describe('overrides por facilidade', () => {
+  it('a forma antiga sem sufixo continua valendo e significa a facilidade 1', () => {
+    const comSufixo = calcular({
+      ...casoBase(),
+      overrides: [{ mes: 15, linha: 'draw:1', valor: 123_456 }],
+    });
+    const semSufixo = calcular({
+      ...casoBase(),
+      overrides: [{ mes: 15, linha: 'draw', valor: 123_456 }],
+    });
+    expect(comSufixo.meses[14].draw).toBe(123_456);
+    expect(JSON.stringify(semSufixo.meses)).toBe(JSON.stringify(comSufixo.meses));
+  });
+
+  it('o override chega na facilidade certa, e só nela', () => {
+    const out = calcular({
+      ...casoRefinanciamento(),
+      overrides: [{ mes: 10, linha: 'draw:2', valor: 250_000 }],
+    });
+    const mes = out.meses[9];
+    expect(mes.porFacilidade.find((f) => f.indice === 1)!.draw).toBe(250_000);
+    expect(mes.draw).toBeCloseTo(
+      250_000 + mes.porFacilidade.find((f) => f.indice === 0)!.draw,
+      6,
+    );
+  });
+
+  it('override de facilidade removida fica guardado, inativo, e acende âmbar', () => {
+    const out = calcular({
+      ...casoBase(),
+      overrides: [{ mes: 15, linha: 'draw:3', valor: 999 }],
+    });
+    expect(out.meses[14].draw).not.toBe(999);
+    expect(semaforo(out, 'overrides_facilidade_removida')).toBe('ambar');
   });
 });

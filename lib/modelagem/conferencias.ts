@@ -15,14 +15,17 @@ import type {
   Apuracao,
   Conferencia,
   Cronograma,
+  Financiamento,
+  Indicadores,
   MesFluxo,
   ModelInput,
   Override,
   RateioSocio,
   Semaforo,
+  TipoModelagem,
 } from './tipos';
 import type { BasesDeCalculo, ResolucaoCustos } from './motor';
-import { ROTULO_CATEGORIA, ROTULO_GATILHO } from './tipos';
+import { ROTULO_CATEGORIA, ROTULO_GATILHO, interpretarChaveOverride } from './tipos';
 import { TOLERANCIA } from './indicadores';
 
 /** Tolerância de participação: 0,01 ponto percentual. */
@@ -80,14 +83,105 @@ interface Contexto {
    * motivo dos dois acima: é o número que a amortização de fato usou.
    */
   releaseCortadoTotal: number;
+
+  // ─── Modo locação e múltiplas facilidades ──────────────────────────────────
+  // Tudo abaixo vem PRONTO do motor, e não é recalculado aqui, pela mesma razão
+  // de `bases` e `resolucao`: a conferência tem de cobrar exatamente o número
+  // que o cálculo usou. Refazer a conta é justamente como um painel passa a
+  // dizer "está tudo certo" sobre um número que o fluxo não usou.
+  tipoModelagem: TipoModelagem;
+  /** As facilidades na ordem de precedência, inclusive as inativas. */
+  facilidades: Financiamento[];
+  /** Teto de cada facilidade, já resolvido (contratado → LTC → Infinity). */
+  tetoPorFacilidade: number[];
+  /** Índices das facilidades que participam de um ciclo de refinanciamento. */
+  emCicloRefin: Set<number>;
+  /** O que o teto da facilidade que refinancia não cobriu, por par. */
+  refinanciamentoDescoberto: { refinanciadora: number; refinanciada: number; falta: number }[];
+  /** NOI ANUAL de referência — o numerador do valor de saída. Zero na venda. */
+  noiReferencia: number;
+  /** `noiReferencia ÷ capRateSaida`, antes do custo de venda. Zero na venda. */
+  valorSaida: number;
+  /** Σ (linha.valorSfAno × ablSf) de todas as linhas de OPEX. Zero na venda. */
+  opexBrutoAnual: number;
+  /** Indicadores já apurados — daqui sai o spread sobre o cap. */
+  indicadores: Indicadores;
 }
+
+/**
+ * Contrato NEUTRO, usado quando o projeto não tem facilidade nenhuma.
+ *
+ * Existe para as conferências de financiamento seguirem lendo campos sem
+ * guardas espalhadas: um projeto sem dívida tem janela vazia, taxa zero e
+ * nenhum teto, e todas elas acendem verde ou simplesmente não se aplicam.
+ * Devolver `undefined` aqui obrigaria a testar `fin?.` em vinte lugares, e a
+ * primeira omissão viraria um `undefined` no meio de uma conta.
+ */
+const FACILIDADE_NEUTRA: Financiamento = {
+  taxaAnual: 0,
+  feeEstruturacaoPct: 0,
+  feeTiming: 'first_draw',
+  feeMes: null,
+  mesInicioSaque: 1,
+  mesFimSaque: 1,
+  modoSaque: 'manual',
+  maxLtcPct: null,
+  valorContratado: null,
+  custoFinanceiroNaDemanda: false,
+  modoAmortizacao: 'manual',
+  capitalizarJuros: false,
+  colchaoMinimoCaixa: 0,
+  linhaRotativa: false,
+  reservaJuros: 0,
+  reservaJurosSacada: true,
+  prazoMeses: null,
+  carenciaMeses: 0,
+  amortizacaoMeses: null,
+  balloonNoVencimento: true,
+  releasePrice: 0,
+  releasePricePct: null,
+  convencaoJuros: 'mensal_12',
+  tipoTaxa: 'fixa',
+  spread: 0,
+  benchmarkNome: null,
+  benchmarkPadrao: 0,
+  benchmarkCurva: [],
+};
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
   const { input, cronograma, agregados, meses, apuracao, convergiu, orfaos } = ctx;
-  const fin = input.financiamento;
+  const ehLocacao = ctx.tipoModelagem === 'locacao';
+  const facilidades = ctx.facilidades;
+  const indicesAtivos = facilidades
+    .map((f, i) => ({ f, i }))
+    .filter((x) => x.f.ativo !== false)
+    .map((x) => x.i);
+
+  /**
+   * A PRIMEIRA facilidade ativa.
+   *
+   * As conferências de CONTRATO abaixo — janela de saque, base do fee, reserva
+   * de juros, release price, curva do benchmark, custo financeiro na demanda —
+   * leem daqui. Com uma facilidade, que é o estado de toda modelagem já gravada,
+   * `fin` É a facilidade e o texto de cada uma sai idêntico ao de antes; é isso
+   * que faz o painel não mudar uma vírgula na não-regressão.
+   *
+   * LIMITE CONHECIDO, e está aqui para não ser descoberto por acidente: com duas
+   * ou mais facilidades, essas conferências examinam só a PRIMEIRA. Uma janela
+   * invertida na segunda facilidade não acende nada. Abrir o painel por
+   * facilidade é o próximo passo natural — e é aqui, num laço sobre
+   * `indicesAtivos`, que ele começa. As conferências que já nascem cientes de
+   * todas as facilidades são as de refinanciamento e a de overrides órfãos, no
+   * fim do arquivo.
+   */
+  const fin = facilidades[indicesAtivos[0]] ?? FACILIDADE_NEUTRA;
   const rec = input.receita;
   const socios = input.socios ?? [];
-  const colchao = fin.colchaoMinimoCaixa || 0;
+  // O colchão do PROJETO é o maior entre os das facilidades ativas — é um piso
+  // de saldo em conta, não uma soma. Mesma leitura do motor.
+  const colchao = indicesAtivos.length
+    ? Math.max(0, ...indicesAtivos.map((i) => facilidades[i].colchaoMinimoCaixa || 0))
+    : 0;
   const lista: Conferencia[] = [];
 
   const add = (
@@ -1085,6 +1179,212 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
       'Há custo de obra mas o cronograma tem zero meses de construção — o custo não é lançado em mês nenhum.',
       'Informe os meses de construção nas premissas.',
     );
+  }
+
+  // ─── Refinanciamento entre facilidades (migration 1764200000) ──────────────
+  //
+  // As duas conferências abaixo valem nos DOIS modos: um projeto de venda com
+  // mezanino refinanciando o construction loan cai exatamente aqui. Elas não
+  // estão atrás de `ehLocacao` de propósito — o que as torna inalcançáveis para
+  // uma modelagem já gravada é outra coisa: `refinanciaIndex` é nulo em toda
+  // facilidade que existe hoje, porque a coluna nasceu nula.
+
+  // Ciclo: A refinancia B e B refinancia A — ou, o caso que passa despercebido,
+  // A refinancia a si mesma. As duas param de refinanciar, e as duas dívidas
+  // ficam de pé.
+  if (ctx.emCicloRefin.size > 0) {
+    const nomes = [...ctx.emCicloRefin]
+      .sort((a, b) => a - b)
+      .map((i) => facilidades[i]?.nome || `Facilidade ${i + 1}`);
+    add(
+      'refinanciamento_circular',
+      'Refinanciamento circular',
+      'vermelho',
+      `${ctx.emCicloRefin.size}`,
+      `${nomes.join(', ')} formam um ciclo de refinanciamento — cada uma quitaria a outra, sem que nenhuma saísse do lugar. O motor DESLIGA o refinanciamento das ${ctx.emCicloRefin.size === 1 ? 'dela' : 'duas'} e as dívidas ficam de pé até o modo de amortização de cada uma resolver.`,
+      'Na aba Financiamento, deixe o campo "Refinancia" apontando em uma direção só: a facilidade nova refinancia a antiga, e a antiga não refinancia ninguém.',
+    );
+  }
+
+  // Teto insuficiente: a dívida nova não cobre a velha, e sobra saldo devedor.
+  if (ctx.refinanciamentoDescoberto.length > 0) {
+    const faltaTotal = ctx.refinanciamentoDescoberto.reduce((a, x) => a + x.falta, 0);
+    const detalhes = ctx.refinanciamentoDescoberto
+      .map(
+        (x) =>
+          `${facilidades[x.refinanciadora]?.nome || `Facilidade ${x.refinanciadora + 1}`} não cobriu ${dinheiro(x.falta)} do saldo de ${facilidades[x.refinanciada]?.nome || `Facilidade ${x.refinanciada + 1}`}`,
+      )
+      .join('; ');
+    add(
+      'refinanciamento_insuficiente',
+      'Refinanciamento cobre o saldo refinanciado',
+      'vermelho',
+      dinheiro(faltaTotal),
+      `${detalhes}. O teto da facilidade que refinancia não alcança o saldo devedor da refinanciada: ela saca o máximo, a outra amortiza só isso, e ${dinheiro(faltaTotal)} de dívida velha continuam de pé — pagando a taxa ANTIGA, que é justamente a que o refinanciamento existia para trocar.`,
+      'Aumente o valor contratado (ou o LTC máximo) da facilidade que refinancia, ou antecipe amortizações da refinanciada para o saldo caber no teto.',
+    );
+  }
+
+  // ─── Overrides de uma facilidade que não existe mais ───────────────────────
+  //
+  // NUNCA APAGAR OVERRIDE. Removida uma facilidade, os `draw:N` e
+  // `amortization:N` dela ficam guardados no banco, inativos, e voltam a valer
+  // se ela for recriada na mesma posição. É a mesma postura dos overrides fora
+  // do prazo (`overrides_orfaos`), e pela mesma razão: input do usuário não some
+  // em silêncio.
+  {
+    const foraDaLista = new Map<number, number>();
+    for (const o of input.overrides ?? []) {
+      const { linha, facilidade } = interpretarChaveOverride(o.linha);
+      if (linha !== 'draw' && linha !== 'amortization') continue;
+      // 1-based na chave, 0-based no array.
+      if (facilidade > facilidades.length) {
+        foraDaLista.set(facilidade, (foraDaLista.get(facilidade) ?? 0) + 1);
+      }
+    }
+    if (foraDaLista.size > 0) {
+      const total = [...foraDaLista.values()].reduce((a, b) => a + b, 0);
+      add(
+        'overrides_facilidade_removida',
+        'Overrides de facilidade removida',
+        'ambar',
+        `${total}`,
+        `${total} célula(s) forçada(s) à mão apontam para a(s) facilidade(s) ${[...foraDaLista.keys()].sort((a, b) => a - b).join(', ')}, que não existe(m) mais. Elas ficam GUARDADAS e inativas — não entram no fluxo e não são apagadas —, e voltam a valer se a facilidade for recriada na mesma posição.`,
+        'Se a remoção foi intencional, limpe esses overrides na aba Fluxo de caixa; se não foi, recrie a facilidade na mesma posição da lista.',
+      );
+    }
+  }
+
+  // ─── Input com as duas formas de financiamento ─────────────────────────────
+  // `financiamentos` vence e o singular é ignorado. Input inconsistente vira
+  // conferência, nunca exceção e nunca escolha silenciosa.
+  if (input.financiamentos && input.financiamentos.length > 0 && input.financiamento) {
+    add(
+      'financiamento_duplicado',
+      'Financiamento declarado duas vezes',
+      'ambar',
+      `${input.financiamentos.length} + 1`,
+      'O input traz a lista `financiamentos` E o campo `financiamento` do formato anterior. A lista vence e o campo único é ignorado — nada é somado nem sacado duas vezes.',
+      'É estado de código, não de tela: quem monta o input deve passar só `financiamentos`.',
+    );
+  }
+
+  // ─── MODO LOCAÇÃO ──────────────────────────────────────────────────────────
+  // Tudo daqui para baixo está atrás de `ehLocacao`, e por isso é INALCANÇÁVEL
+  // para qualquer modelagem já gravada — todas em 'venda', o default da coluna.
+  if (ehLocacao) {
+    const loc = input.locacao;
+    const capRate = loc?.capRateSaida || 0;
+    const linhasOpex = input.opex ?? [];
+    const curva = input.ocupacao ?? [];
+
+    // ESTA É A DIVISÃO QUE DERRUBA A MODELAGEM INTEIRA SE PASSAR.
+    add(
+      'cap_rate_zerado',
+      'Cap rate de saída informado',
+      capRate > 0 ? 'verde' : 'vermelho',
+      pct(capRate),
+      capRate > 0
+        ? `O ativo é vendido a ${pct(capRate)} de cap rate.`
+        : 'O cap rate de saída está zerado, e por isso o VALOR DE SAÍDA É ZERO: o motor não divide por zero, devolve zero. O projeto aparece sem a receita principal, e todo indicador de retorno sai do lugar.',
+      'Informe o cap rate de saída na aba Locação e saída — é a taxa que o comprador do ativo estabilizado exige.',
+    );
+
+    // Sem curva de ocupação a receita de aluguel é zero o projeto INTEIRO, e o
+    // OPEX corre igual: o prédio custa dinheiro do primeiro ao último mês sem
+    // faturar um dólar.
+    const semCurva = curva.length === 0;
+    add(
+      'sem_curva_ocupacao',
+      'Curva de ocupação preenchida',
+      semCurva ? 'vermelho' : 'verde',
+      `${curva.length}`,
+      semCurva
+        ? 'Nenhum mês tem ocupação declarada, e mês sem linha é ocupação ZERO — não ocupação padrão. A receita de aluguel é zero o projeto inteiro, enquanto o OPEX bruto corre normalmente: o NOI fica negativo em todo mês.'
+        : `${curva.length} de ${cronograma.prazoTotal} meses têm ocupação declarada.`,
+      'Use o gerador da aba Operação: mês de início do lease-up, meses até estabilizar e ocupação estabilizada geram a rampa inteira.',
+    );
+
+    // Ocupação declarada além do mês de saída: o ativo já foi vendido.
+    const alemDaSaida = curva.filter((p) => p.mes > cronograma.mesSaida);
+    if (alemDaSaida.length > 0) {
+      add(
+        'ocupacao_apos_saida',
+        'Ocupação depois da saída',
+        'ambar',
+        `${alemDaSaida.length}`,
+        `${alemDaSaida.length} mês(es) da curva caem depois do mês ${cronograma.mesSaida}, em que o ativo é vendido. Esses meses NÃO geram receita de aluguel nem OPEX para este projeto — o dono a partir dali é o comprador. As linhas ficam guardadas e voltam a valer se a saída for adiada.`,
+        'Ajuste o mês de saída na aba Locação e saída, ou remova os meses excedentes da curva de ocupação.',
+      );
+    }
+
+    // NOI de referência não positivo: não há valor de saída a calcular.
+    add(
+      'noi_negativo_na_saida',
+      'NOI de referência positivo',
+      ctx.noiReferencia > TOLERANCIA ? 'verde' : 'vermelho',
+      dinheiro(ctx.noiReferencia),
+      ctx.noiReferencia > TOLERANCIA
+        ? `O NOI de referência é ${dinheiro(ctx.noiReferencia)} ao ano, e é ele que divide o cap rate.`
+        : `O NOI de referência é ${dinheiro(ctx.noiReferencia)} — não há valor de saída a calcular, e o ativo sai valendo ${dinheiro(ctx.valorSaida)}. Ou o aluguel não cobre o OPEX na ocupação estabilizada, ou a ocupação estabilizada está baixa demais.`,
+      'Reveja o aluguel por sf das tipologias, as linhas de OPEX e a taxa de reembolso — nessa ordem, que é a do impacto.',
+    );
+
+    // Property tax dos DOIS lados: no modo locação só a linha de OPEX entra.
+    if (agregados.taxAnoTotal > TOLERANCIA) {
+      add(
+        'property_tax_duplicado',
+        'Property tax só no OPEX',
+        'ambar',
+        dinheiro(agregados.taxAnoTotal),
+        `As tipologias declaram ${dinheiro(agregados.taxAnoTotal)} por ano de property tax, e no modo locação essa coluna é IGNORADA: o imposto vem da linha de OPEX, que é a que entra na base do reembolso NNN. Lançar os dois cobraria o imposto duas vezes. O valor fica guardado e volta a valer se a modelagem for duplicada como venda.`,
+        'Deixe o property tax só na linha de OPEX da aba Operação e zere a coluna nas tipologias, ou ignore este aviso — o motor já não soma a coluna.',
+      );
+    }
+
+    // Preço de venda preenchido: no modo locação quem manda é o cap rate.
+    if (agregados.vgv > TOLERANCIA) {
+      add(
+        'preco_venda_ignorado',
+        'Preço de venda ignorado',
+        'ambar',
+        dinheiro(agregados.vgv),
+        `As tipologias somam ${dinheiro(agregados.vgv)} de preço de venda, e no modo locação isso NÃO entra em conta nenhuma: o valor de saída é ${dinheiro(ctx.valorSaida)}, vindo do NOI dividido pelo cap rate. O número fica guardado e não é apagado.`,
+        'Ignore o aviso, ou zere o preço de venda das tipologias para a leitura da aba Unidades não ficar ambígua.',
+      );
+    }
+
+    // Sem OPEX nenhum o NOI é a receita inteira — e nenhum prédio opera de graça.
+    if (linhasOpex.length === 0) {
+      add(
+        'opex_sem_linhas',
+        'OPEX cadastrado',
+        'ambar',
+        '0',
+        'A modelagem de locação não tem nenhuma linha de OPEX. O NOI passa a ser a receita de aluguel inteira, e o valor de saída sai inflado exatamente na despesa que falta — nenhum prédio opera de graça.',
+        'Acrescente as linhas na aba Operação, ou duplique o modelo de locação, que já nasce com o plano de contas da operação.',
+      );
+    }
+
+    // O SPREAD SOBRE O CAP É O NEGÓCIO INTEIRO. Negativo NÃO é erro: pode ser a
+    // realidade de um projeto ruim, e é justamente o que o modelo existe para
+    // revelar. Por isso âmbar, e nunca vermelho.
+    const spread = ctx.indicadores.spreadSobreCap;
+    if (spread !== null) {
+      const pontosBase = Math.round(spread * 10_000);
+      add(
+        'spread_negativo',
+        'Spread sobre o cap rate',
+        spread < 0 ? 'ambar' : 'verde',
+        `${pontosBase} pb`,
+        spread < 0
+          ? `O yield on cost (${pct(ctx.indicadores.yieldOnCost ?? 0)}) é MENOR que o cap rate de saída (${pct(capRate)}): o ativo pronto vale menos do que custou para ficar de pé. Não é erro do modelo — é o que o modelo existe para revelar.`
+          : `O yield on cost (${pct(ctx.indicadores.yieldOnCost ?? 0)}) supera o cap rate de saída (${pct(capRate)}) em ${pontosBase} pontos-base. É daqui que sai o lucro do projeto.`,
+        spread < 0
+          ? 'Reduza o custo de desenvolvimento, suba o aluguel por sf ou negocie um cap rate de saída menor — nessa ordem, que é a do que está sob controle.'
+          : 'Nada a fazer.',
+      );
+    }
   }
 
   return lista;

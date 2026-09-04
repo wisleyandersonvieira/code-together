@@ -13,7 +13,7 @@ function createModelagemUnidade() {
     query: `
       INSERT INTO modelagem_unidades (
         modelagem_id, ordem, nome, cidade, quantidade, area_sf, custo_terreno,
-        custo_obra, preco_venda, property_tax_ano, observacoes
+        custo_obra, preco_venda, property_tax_ano, aluguel_sf_ano, observacoes
       ) VALUES (
         {{params.modelagemId}}::int,
         COALESCE({{params.ordem}}::int, 0),
@@ -25,6 +25,9 @@ function createModelagemUnidade() {
         COALESCE({{params.custoObra}}::decimal, 0),
         COALESCE({{params.precoVenda}}::decimal, 0),
         COALESCE({{params.propertyTaxAno}}::decimal, 0),
+        -- Aluguel pedido, POR UNIDADE, por sf e por ano (migration 1764050000).
+        -- Só tem efeito no modo locação; no modo venda fica guardado e inerte.
+        COALESCE({{params.aluguelSfAno}}::decimal, 0),
         '{{params.observacoes}}'
       ) RETURNING id
     `,

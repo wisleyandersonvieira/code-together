@@ -5,7 +5,46 @@
  * Nenhum valor calculado é persistido — o banco guarda só inputs e overrides.
  */
 
-/** Linhas do fluxo que aceitam override manual. Chaves estáveis: não renomear. */
+/**
+ * O MODO DE NEGÓCIO da modelagem (migration 1764000000).
+ *
+ * 'venda' é o default do banco e o comportamento anterior a esta versão:
+ * incorporação para venda das unidades. 'locacao' é o modo novo: desenvolver,
+ * locar e vender o ativo estabilizado a um fundo pelo cap rate.
+ *
+ * REGRA QUE VALE ACIMA DE TODAS NESTE MÓDULO: o modo venda não muda em nada.
+ * Toda a lógica de locação fica atrás de `tipoModelagem === 'locacao'`, e como
+ * o default é 'venda', o caminho novo é INALCANÇÁVEL para qualquer modelagem já
+ * gravada. Se uma modelagem existente produzir `ModelOutput` diferente, é bug.
+ *
+ * O tipo NÃO muda depois de criada: cada modo tem campos que o outro ignora
+ * (`precoVenda` e takedowns de um lado, `aluguelSfAno`, OPEX e ocupação do
+ * outro), e trocar deixaria campos órfãos de um modo dentro do outro. Quem
+ * quiser o outro modo, duplica.
+ */
+export type TipoModelagem = 'venda' | 'locacao';
+
+/** Chaves estáveis: são o CHECK de `modelagens.tipo_modelagem`. */
+export const TIPOS_MODELAGEM: TipoModelagem[] = ['venda', 'locacao'];
+
+export const ROTULO_TIPO_MODELAGEM: Record<TipoModelagem, string> = {
+  venda: 'Venda',
+  locacao: 'Locação',
+};
+
+export const EXPLICACAO_TIPO_MODELAGEM: Record<TipoModelagem, string> = {
+  venda:
+    'Incorporação para venda: as unidades são construídas e vendidas, uma a uma ou em lotes, e o resultado sai da margem entre preço de venda e custo.',
+  locacao:
+    'Desenvolver, locar e vender: o ativo é construído, passa por um lease-up até estabilizar e é vendido a um fundo pelo cap rate. O resultado sai do NOI estabilizado e do spread sobre o cap.',
+};
+
+/**
+ * Linhas do fluxo que aceitam override manual. Chaves estáveis: não renomear.
+ *
+ * 'rental_revenue' e 'opex' (migration 1764100000) só são alimentadas no modo
+ * locação; no modo venda ficam zeradas o projeto inteiro.
+ */
 export type LinhaFluxo =
   | 'land'
   | 'construction'
@@ -15,7 +54,9 @@ export type LinhaFluxo =
   | 'draw'
   | 'amortization'
   | 'equity_call'
-  | 'distribution';
+  | 'distribution'
+  | 'rental_revenue'
+  | 'opex';
 
 export const LINHAS_FLUXO: LinhaFluxo[] = [
   'land',
@@ -27,6 +68,8 @@ export const LINHAS_FLUXO: LinhaFluxo[] = [
   'amortization',
   'equity_call',
   'distribution',
+  'rental_revenue',
+  'opex',
 ];
 
 export const ROTULO_LINHA: Record<LinhaFluxo, string> = {
@@ -39,7 +82,51 @@ export const ROTULO_LINHA: Record<LinhaFluxo, string> = {
   amortization: 'Amortização',
   equity_call: 'Aporte de equity',
   distribution: 'Distribuição',
+  rental_revenue: 'Receita de aluguel',
+  opex: 'OPEX',
 };
+
+/**
+ * Chave de uma célula de override (migration 1764200000).
+ *
+ * `draw` e `amortization` deixaram de ser uma linha só e passaram a ser uma POR
+ * FACILIDADE: `draw:N` / `amortization:N`, com N sendo a posição 1-BASED da
+ * facilidade em `ModelInput.financiamentos` — a mesma convenção de índice de
+ * `unidadeIndex` e `faseIndex`, e não o id da linha, que muda a cada duplicação.
+ *
+ * A forma SEM sufixo continua válida e significa a facilidade 1 — que é
+ * exatamente o que ela sempre significou, quando só havia uma. A migration
+ * converteu o que estava gravado; a leitura tolerante existe para réplica
+ * atrasada e restore de backup não virarem erro.
+ */
+export type ChaveOverride =
+  | LinhaFluxo
+  | `draw:${number}`
+  | `amortization:${number}`;
+
+/** Monta a chave de override de uma facilidade. `indice` é 1-based. */
+export const chaveFacilidade = (
+  linha: 'draw' | 'amortization',
+  indice: number,
+): ChaveOverride => `${linha}:${indice}` as ChaveOverride;
+
+/**
+ * Lê uma chave de override e devolve a linha e a facilidade (1-based).
+ *
+ * Total: chave desconhecida devolve `facilidade: 1` e a própria string como
+ * linha — quem chama decide o que fazer, e nada estoura. Sufixo ausente,
+ * fracionário ou zero cai em 1 pelo mesmo motivo.
+ */
+export function interpretarChaveOverride(chave: string): {
+  linha: LinhaFluxo;
+  facilidade: number;
+} {
+  const corte = chave.indexOf(':');
+  if (corte < 0) return { linha: chave as LinhaFluxo, facilidade: 1 };
+  const base = chave.slice(0, corte) as LinhaFluxo;
+  const n = Math.trunc(Number(chave.slice(corte + 1)));
+  return { linha: base, facilidade: Number.isFinite(n) && n >= 1 ? n : 1 };
+}
 
 /**
  * Uma TIPOLOGIA: `quantidade` unidades iguais.
@@ -59,10 +146,32 @@ export interface Unidade {
   custoTerreno: number;
   /** Por unidade. */
   custoObra: number;
-  /** Por unidade. */
+  /**
+   * Por unidade. IGNORADO no modo locação — lá o valor de saída vem do cap
+   * rate, não do preço das unidades. A coluna some da tela e a conferência
+   * `preco_venda_ignorado` acende âmbar se estiver preenchida, para o usuário
+   * não achar que ela entra na conta. Nunca é apagada.
+   */
   precoVenda: number;
-  /** Por unidade. */
+  /**
+   * Por unidade. IGNORADO no modo locação: lá o property tax vem de uma LINHA
+   * DE OPEX, e ler os dois lançaria o imposto duas vezes. A conferência
+   * `property_tax_duplicado` acende âmbar quando está preenchida.
+   */
   propertyTaxAno: number;
+  /**
+   * Aluguel pedido, por pé quadrado e por ano — POR UNIDADE, como todo o resto
+   * da linha (migration 1764050000).
+   *
+   * Só tem efeito no modo locação; no modo venda fica guardado, inerte, e a
+   * coluna não aparece na tela. É a simetria exata de `precoVenda`.
+   *
+   * OPCIONAL no tipo, NOT NULL DEFAULT 0 no banco — mesma assimetria de
+   * `areaSf`, e pelo mesmo motivo: uma tipologia de venda não declara aluguel, e
+   * exigir o campo obrigaria todo input já escrito (inclusive o de teste) a
+   * carregar um zero decorativo. `mapearUnidades` sempre o preenche.
+   */
+  aluguelSfAno?: number;
   /** Quantas unidades iguais a linha representa. Inteiro ≥ 1. */
   quantidade: number;
 }
@@ -392,7 +501,75 @@ export interface PontoBenchmark {
   valor: number;
 }
 
+/**
+ * UMA facilidade de crédito (migration 1764200000).
+ *
+ * Até a 1764200000 `modelagem_financiamento` era 1:1 com a modelagem e este tipo
+ * descrevia "o financiamento". Agora descreve UMA de várias — um projeto de
+ * locação quase sempre tem duas, e a relação entre elas é o que define o
+ * resultado: a construção sai numa facilidade cara e curta, e quando o ativo
+ * estabiliza um permanent loan barato entra, QUITA a primeira e fica no lugar
+ * dela (ver `refinanciaIndex`).
+ *
+ * Toda modelagem anterior passa a ter exatamente uma facilidade, de `ordem` 0,
+ * com os campos novos nos defaults inertes — e por isso nada muda nela.
+ */
 export interface Financiamento {
+  id?: number;
+  /**
+   * Ordem de precedência DENTRO DO MÊS, não só de exibição.
+   *
+   * Nos modos `cash_demand` e `equity_first_demanda` a demanda remanescente do
+   * mês passa da facilidade 1 para a 2 nesta ordem: a primeira saca o que couber
+   * no teto dela, e só o que sobrar chega à segunda. É ela, portanto, que define
+   * o resultado — trocar a ordem de duas facilidades com tetos diferentes muda o
+   * juro do projeto inteiro.
+   *
+   * Os três campos de identidade da facilidade — `ordem`, `nome` e `ativo` — são
+   * OPCIONAIS no tipo e NOT NULL no banco, pela mesma razão de `areaSf` e
+   * `aluguelSfAno`: quem escreve um input de uma facilidade só não deve ter de
+   * declarar a posição dela. Ausente, `ordem` é a própria posição no array.
+   */
+  ordem?: number;
+  /**
+   * Rótulo da facilidade na tela e nas exportações. Não entra em conta nenhuma.
+   * Ausente, a interface mostra 'Financiamento' — o DEFAULT da coluna.
+   */
+  nome?: string;
+  /**
+   * Facilidade desligada continua gravada com todos os campos e NÃO entra no
+   * fluxo — nem saca, nem cobra juros, nem aparece em `MesFluxo.porFacilidade`.
+   * É o jeito de comparar cenários sem apagar o que o usuário declarou.
+   *
+   * Lido como `ativo !== false`: ausente é ATIVO, que é o default da coluna e o
+   * estado de toda facilidade já gravada. Mesma leitura de `reservaJurosSacada`.
+   */
+  ativo?: boolean;
+  /**
+   * ÍNDICE (0-based, em `ModelInput.financiamentos`) da facilidade que ESTA
+   * refinancia. `null` = não refinancia ninguém, e é o estado de toda linha já
+   * gravada.
+   *
+   * No primeiro mês em que esta facilidade saca, o saque é NO MÍNIMO o saldo
+   * devedor da refinanciada naquele mês — respeitando o próprio teto —, e a
+   * refinanciada amortiza exatamente esse valor no mesmo mês. Sem o vínculo o
+   * motor veria dois saques e nenhuma amortização, e a dívida do projeto
+   * dobraria em silêncio.
+   *
+   * A ORDEM importa: a refinanciada precisa vir ANTES na `ordem`, para fechar os
+   * juros do mês antes de esta sacar. Vindo depois, o saque quita um saldo que
+   * ainda não incorporou o juro do mês e sobra um resíduo — visível, porque o
+   * saldo devedor dela não zera e `saldo_devedor_final` acusa.
+   *
+   * Teto insuficiente acende `refinanciamento_insuficiente` em vermelho com a
+   * diferença. Ciclo (A refinancia B e B refinancia A) acende
+   * `refinanciamento_circular` e as duas param de refinanciar.
+   *
+   * O banco guarda `refinancia_facilidade_id` (auto-referência na mesma tabela);
+   * a conversão para índice acontece em `mapearFinanciamentos`, com o mesmo
+   * Map<id, índice> que a venda por unidade já usa.
+   */
+  refinanciaIndex?: number | null;
   /** Taxa nominal ao ano. 0.095 = 9,5% a.a. */
   taxaAnual: number;
   feeEstruturacaoPct: number;
@@ -693,6 +870,129 @@ export interface Receita {
 }
 
 /**
+ * Qual NOI divide o cap rate para achar o valor de saída.
+ *
+ * O padrão de MERCADO é o NOI FORWARD 12 meses a partir da saída — o comprador
+ * paga pelo que o ativo vai render, não pelo que rendeu. Esse padrão NÃO está
+ * implementado, e a razão é honesta: exigiria modelar 12 meses ALÉM do horizonte
+ * do projeto, com premissas de reajuste e renovação que a modelagem não tem, e o
+ * resultado seria um número que ninguém conseguiria auditar contra o fluxo.
+ *
+ * As duas opções implementadas ficam DENTRO do prazo já modelado e são
+ * auditáveis linha a linha:
+ *
+ *   'estabilizado' — default. Receita a 100% × ocupação estabilizada, menos o
+ *     OPEX líquido de reembolso na mesma ocupação. É o que a pro forma de
+ *     referência faz, e não depende de o fluxo ter chegado a estabilizar.
+ *   'ultimos_12m' — soma do `noiMes` dos 12 meses que terminam no mês de saída.
+ *     O trailing do fluxo de fato modelado.
+ */
+export type NoiReferencia = 'estabilizado' | 'ultimos_12m';
+
+/** Chaves estáveis: são o CHECK de `modelagem_locacao.noi_referencia`. */
+export const NOIS_REFERENCIA: NoiReferencia[] = ['estabilizado', 'ultimos_12m'];
+
+export const ROTULO_NOI_REFERENCIA: Record<NoiReferencia, string> = {
+  estabilizado: 'NOI estabilizado',
+  ultimos_12m: 'NOI dos últimos 12 meses',
+};
+
+export const EXPLICACAO_NOI_REFERENCIA: Record<NoiReferencia, string> = {
+  estabilizado:
+    'Receita a 100% × ocupação estabilizada, menos o OPEX líquido de reembolso na mesma ocupação. Não depende de o fluxo ter chegado a estabilizar.',
+  ultimos_12m:
+    'Soma do NOI dos 12 meses que terminam no mês de saída — o trailing do fluxo efetivamente modelado.',
+};
+
+/**
+ * Uma linha do plano de contas da OPERAÇÃO (`modelagem_opex`).
+ *
+ * Está para o modo locação como `CustoAdicional` está para o desenvolvimento —
+ * com uma diferença que é a chave do modelo inteiro: o OPEX não tem cronograma.
+ * Ele é uma taxa anual por pé quadrado que corre todo mês, do primeiro ao
+ * último, e NÃO varia com a ocupação.
+ */
+export interface LinhaOpex {
+  id?: number;
+  ordem: number;
+  label: string;
+  /**
+   * Despesa anual por pé quadrado de ABL. O valor do mês é
+   * `valorSfAno × ablSf / 12`, IGUAL em todo mês do projeto: prédio vazio custa
+   * property tax, seguro e manutenção igual. O que varia com a ocupação é o
+   * REEMBOLSO, porque só quem está lá paga — e é exatamente por isso que o NOI é
+   * negativo em ocupação baixa.
+   */
+  valorSfAno: number;
+  /**
+   * Entra na base do reembolso NNN dos inquilinos. Property taxes, seguro e
+   * manutenção entram; reserva de reposição (CapEx) normalmente NÃO — é despesa
+   * do proprietário, não do ocupante.
+   */
+  reembolsavel: boolean;
+}
+
+/**
+ * Um ponto da curva de ocupação (`modelagem_ocupacao`). `mes` é índice, não data.
+ *
+ * Mês SEM ponto é ocupação ZERO, não ocupação padrão — o oposto da curva do
+ * benchmark, e é deliberado: ocupação é um fato do lease-up, e inventar valor
+ * para o mês não declarado criaria receita que ninguém projetou.
+ *
+ * Duas ocupações no mesmo mês NÃO somam (85% + 85% não é 170%): seriam
+ * contraditórias. Por isso — e só aqui, ao contrário de parcelas, takedowns e
+ * aportes — o banco tem UNIQUE (modelagem_id, mes).
+ */
+export interface PontoOcupacao {
+  id?: number;
+  mes: number;
+  /** FRAÇÃO, não percentual: 0.85 = 85%. Limitada a 0..1 pelo CHECK da coluna. */
+  ocupacaoPct: number;
+}
+
+/**
+ * Premissas da operação e da saída no modo locação (`modelagem_locacao`).
+ *
+ * Sem linha no banco o mapeador devolve o PADRÃO NEUTRO — tudo zerado, ocupação
+ * estabilizada em 100% — em vez de `undefined`: o motor não pode falhar por
+ * input incompleto. Com cap rate zerado o valor de saída é ZERO e a conferência
+ * `cap_rate_zerado` acende vermelho.
+ */
+export interface ConfigLocacao {
+  /** Fração do OPEX bruto que os inquilinos reembolsam (NNN). 0.85 = 85%. */
+  taxaReembolsoPct: number;
+  /**
+   * Perda de crédito sobre a receita EFETIVAMENTE FATURADA — não sobre a receita
+   * a 100% de ocupação. Inquilino que não existe não deixa de pagar.
+   *
+   * NÃO confundir com vacância: a vacância física já está na curva de ocupação.
+   * Somar as duas conta o mesmo buraco duas vezes.
+   */
+  perdaCreditoPct: number;
+  /**
+   * Cap rate exigido pelo comprador do ativo estabilizado. É o DIVISOR do valor
+   * de saída: ZERO devolve valor de saída zero, nunca Infinity, e a conferência
+   * `cap_rate_zerado` acende vermelho. Essa é a divisão que derruba a modelagem
+   * inteira se passar.
+   */
+  capRateSaida: number;
+  /**
+   * Custo da venda do ativo, como fração do valor de saída.
+   *
+   * No modo locação `comissaoPct` e `custoCartorioPct` NÃO se aplicam: quem faz
+   * o papel dos dois é este campo, que já é a corretagem da venda do ativo.
+   * Aplicar os três contaria comissão duas vezes.
+   */
+  custoVendaPct: number;
+  noiReferencia: NoiReferencia;
+  /**
+   * Ocupação considerada estabilizada, como fração. Alimenta o NOI de referência
+   * quando `noiReferencia = 'estabilizado'` e o gerador da curva de ocupação.
+   */
+  ocupacaoEstabilizadaPct: number;
+}
+
+/**
  * Override de uma célula do fluxo.
  *
  * `valor = 0` significa "forcei este mês a zero"; `limpar = true` força a célula
@@ -701,13 +1001,28 @@ export interface Receita {
  */
 export interface Override {
   mes: number;
-  linha: LinhaFluxo;
+  /**
+   * `ChaveOverride`, não `LinhaFluxo`: `draw` e `amortization` são POR
+   * FACILIDADE desde a migration 1764200000 (`draw:1`, `draw:2`, …). A forma sem
+   * sufixo continua valendo e significa a facilidade 1.
+   */
+  linha: ChaveOverride;
   valor?: number | null;
   limpar?: boolean;
 }
 
 export interface ModelInput {
   nome?: string;
+  /**
+   * Modo de negócio (migration 1764000000). AUSENTE = 'venda', que é o default
+   * do banco e o comportamento anterior a esta versão.
+   *
+   * É o interruptor de tudo que a locação acrescenta: `locacao`, `opex`,
+   * `ocupacao` e `Unidade.aluguelSfAno` só são lidos com 'locacao', e
+   * `precoVenda`, `propertyTaxAno`, `modoVenda`, takedowns, `comissaoPct` e
+   * `custoCartorioPct` só são lidos com 'venda'.
+   */
+  tipoModelagem?: TipoModelagem;
   localizacao?: string;
   tipoUso?: string;
   moeda?: string;
@@ -731,10 +1046,65 @@ export interface ModelInput {
    * `alocacao_fases` acende vermelho e bloqueia o salvamento.
    */
   alocacoes?: AlocacaoFase[];
-  financiamento: Financiamento;
+  /**
+   * As facilidades de crédito, na ordem de precedência (migration 1764200000).
+   *
+   * É o campo CANÔNICO desde que `modelagem_financiamento` deixou de ser 1:1.
+   * Lista vazia é um projeto sem dívida nenhuma, e o motor lida com isso —
+   * saque, juros e fee zerados o projeto inteiro.
+   */
+  financiamentos?: Financiamento[];
+  /**
+   * A facilidade única, no formato anterior à migration 1764200000.
+   *
+   * DEPRECADO como entrada preferencial, mas NÃO removido, e a razão é a regra
+   * que vale acima de todas neste módulo: o teste de não-regressão é escrito
+   * sobre este campo, e reescrevê-lo para provar que nada mudou destruiria
+   * justamente a prova. `mapearModelInput` já devolve `financiamentos`; quem
+   * ainda passar `financiamento` é normalizado pelo motor para uma lista de um
+   * elemento, sem diferença de resultado.
+   *
+   * Passar os dois é input inconsistente: `financiamentos` vence e a conferência
+   * `financiamento_duplicado` acende âmbar. Não é erro — input inconsistente
+   * nunca lança neste módulo.
+   */
+  financiamento?: Financiamento;
   socios?: Socio[];
   receita: Receita;
+  /**
+   * Premissas da operação e da saída. Só lido com `tipoModelagem = 'locacao'`;
+   * ausente, o motor usa o padrão neutro.
+   */
+  locacao?: ConfigLocacao;
+  /** Plano de contas da operação. Só lido no modo locação. */
+  opex?: LinhaOpex[];
+  /** Curva de ocupação mês a mês. Só lida no modo locação. */
+  ocupacao?: PontoOcupacao[];
   overrides?: Override[];
+}
+
+/**
+ * O que UMA facilidade fez num mês (migration 1764200000).
+ *
+ * Os campos agregados de `MesFluxo` — `draw`, `amortization`, `juros`, `fee`,
+ * `saldoDevedor` — continuam existindo como SOMA destas linhas: nada que já os
+ * lê pode quebrar. Para todo mês, Σ `porFacilidade[i].saldoDevedor` é exatamente
+ * `MesFluxo.saldoDevedor`, e há teste cobrando isso.
+ *
+ * Facilidade inativa não aparece aqui.
+ */
+export interface FacilidadeMes {
+  /** Id no banco, quando a facilidade veio de lá. */
+  id?: number;
+  /** Índice 0-based em `ModelInput.financiamentos`. É o endereço estável. */
+  indice: number;
+  nome: string;
+  draw: number;
+  amortization: number;
+  juros: number;
+  fee: number;
+  saldoDevedor: number;
+  capacidadeSaque: number;
 }
 
 /** Uma coluna do quadro mensal. Só existem meses 1..prazoTotal — o resto é vazio, não zero. */
@@ -745,6 +1115,41 @@ export interface MesFluxo {
   construction: number;
   propertyTax: number;
   otherCosts: number;
+  /**
+   * Ocupação física do mês, como fração 0..1. Sempre ZERO no modo venda.
+   * Mês sem ponto na curva é zero, não o valor do mês anterior.
+   */
+  ocupacao: number;
+  /**
+   * Receita de aluguel do mês, LÍQUIDA de perda de crédito. Zero no modo venda.
+   *
+   * `receitaBrutaAnual100 / 12 × ocupacao × (1 − perdaCreditoPct)`. A perda de
+   * crédito incide sobre a receita FATURADA, não sobre a receita a 100%:
+   * inquilino que não existe não deixa de pagar.
+   */
+  rentalRevenue: number;
+  /**
+   * OPEX bruto do mês: `Σ (linha.valorSfAno × ablSf) / 12`. NÃO varia com a
+   * ocupação — prédio vazio custa property tax, seguro e manutenção igual.
+   */
+  opexBruto: number;
+  /**
+   * Reembolso dos inquilinos, proporcional à ocupação: só quem está lá paga.
+   * `Σ (linha reembolsável.valorSfAno × ablSf) / 12 × taxaReembolso × ocupacao`.
+   */
+  opexReembolso: number;
+  /**
+   * `opexBruto − opexReembolso`: o que de fato sai do bolso do dono. Entra em
+   * `pagamentosOperacionais` junto de terreno, obra, property tax e custos — é
+   * saída de caixa como qualquer outra.
+   */
+  opex: number;
+  /**
+   * `rentalRevenue − opex`. NEGATIVO em ocupação baixa, e isso é o modelo
+   * funcionando: o OPEX bruto corre inteiro desde o primeiro mês e só o
+   * reembolso acompanha a ocupação.
+   */
+  noiMes: number;
   pagamentosOperacionais: number;
   /** Juros incorridos no mês (entram na apuração mesmo quando capitalizados). */
   juros: number;
@@ -822,18 +1227,78 @@ export interface MesFluxo {
    * 'demanda' é constante em todos os meses (o valor único do aporte base).
    */
   equityDisponivelAcumulado: number;
+  /**
+   * O que cada facilidade ATIVA fez no mês, na ordem de precedência.
+   *
+   * Os agregados acima (`draw`, `amortization`, `juros`, `fee`, `saldoDevedor`,
+   * `capacidadeSaque`) são a SOMA desta lista. Com uma facilidade só — o estado
+   * de toda modelagem já gravada — a lista tem um elemento e os agregados são
+   * exatamente ele.
+   */
+  porFacilidade: FacilidadeMes[];
 }
 
 export interface Apuracao {
+  /**
+   * Venda: o VGV. Locação: aluguel faturado no projeto inteiro MAIS o valor de
+   * saída bruto (antes do custo de venda).
+   */
   receitaBruta: number;
+  /** Sempre ZERO no modo locação — quem faz este papel é `custoVenda`. */
   comissoes: number;
+  /** Sempre ZERO no modo locação — quem faz este papel é `custoVenda`. */
   cartorio: number;
+  /**
+   * Corretagem da venda do ativo estabilizado: `valorSaida × custoVendaPct`.
+   * Sempre ZERO no modo venda, onde as deduções são `comissoes` e `cartorio`.
+   *
+   * Os três nunca coexistem, e é deliberado: aplicar comissão, cartório E custo
+   * de venda contaria a corretagem duas vezes.
+   */
+  custoVenda: number;
   receitaLiquida: number;
+  /**
+   * Σ `rentalRevenue` do projeto inteiro, líquida de perda de crédito e já com
+   * os overrides aplicados. Zero no modo venda.
+   */
+  receitaAluguel: number;
+  /**
+   * Σ `opex` do projeto inteiro — já líquido do reembolso dos inquilinos, que é
+   * o que de fato sai do caixa. Zero no modo venda.
+   */
+  opexTotal: number;
+  /**
+   * `receitaAluguel − opexTotal`: o NOI ACUMULADO do fluxo modelado. Não
+   * confundir com `Indicadores.noiEstabilizado`, que é o NOI ANUAL de referência
+   * que divide o cap rate. Zero no modo venda.
+   */
+  noiTotal: number;
   custoTerrenos: number;
   custoObra: number;
   custoPropertyTax: number;
   custoOutros: number;
+  /**
+   * Terreno + obra + property tax + outros custos + OPEX.
+   *
+   * O OPEX entra aqui porque é saída de caixa operacional do empreendimento como
+   * qualquer outra, e sem ele `lucroProjeto` sairia inflado exatamente no valor
+   * do OPEX. É ZERO no modo venda, então a soma é a de sempre.
+   */
   custoEmpreendimento: number;
+  /**
+   * Custo de DESENVOLVIMENTO: `custoEmpreendimento − opexTotal + custoFinanceiro`
+   * — terreno, obra, property tax, custos do orçamento, juros e fee, sem o OPEX
+   * da operação.
+   *
+   * É o denominador de `yieldOnCost` e de `custoDesenvolvimentoPorSf`, e está na
+   * apuração justamente para o spread sobre o cap ser auditável: sem ele, quem lê
+   * 465 pontos-base não tem como refazer a conta.
+   *
+   * No modo venda `opexTotal` é zero, então este campo é exatamente
+   * `custoEmpreendimento + custoFinanceiro` — o mesmo numerador que
+   * `custoPorUnidade` e `custoPorSf` sempre usaram.
+   */
+  custoDesenvolvimento: number;
   jurosTotais: number;
   feeTotal: number;
   custoFinanceiro: number;
@@ -860,6 +1325,11 @@ export interface Apuracao {
   baseFeeEstruturacao: number;
   totalPagamentos: number;
   totalDistribuido: number;
+  /**
+   * Σ dos tetos de TODAS as facilidades ativas. Uma facilidade sem teto nenhum
+   * (valor contratado e LTC máximo nulos) torna a soma Infinity, como já
+   * acontecia com a facilidade única.
+   */
   tetoDivida: number;
 }
 
@@ -906,6 +1376,68 @@ export interface Indicadores {
   receitaPorSf: number | null;
   /** Lucro do projeto ÷ unidadesTotal. */
   margemPorUnidade: number | null;
+
+  // ─── Modo locação ──────────────────────────────────────────────────────────
+  // TODOS `null` no modo venda, sem exceção: são grandezas que não existem
+  // quando não há ativo a locar, e devolver zero faria a tela mostrar "0,00%" de
+  // yield on cost num projeto que não tem yield nenhum.
+  /**
+   * NOI ANUAL de referência — o numerador do valor de saída. Não confundir com
+   * `Apuracao.noiTotal`, que é o NOI acumulado do fluxo inteiro.
+   *
+   * Sai de `ConfigLocacao.noiReferencia`: 'estabilizado' (receita a 100% ×
+   * ocupação estabilizada menos OPEX líquido de reembolso na mesma ocupação) ou
+   * 'ultimos_12m' (Σ `noiMes` dos 12 meses que terminam no mês de saída).
+   */
+  noiEstabilizado: number | null;
+  /**
+   * `noiEstabilizado ÷ capRateSaida`, ANTES do custo de venda. Cap rate zero
+   * devolve ZERO — nunca Infinity —, e `cap_rate_zerado` acende vermelho.
+   */
+  valorSaida: number | null;
+  /**
+   * `noiEstabilizado ÷ Apuracao.custoDesenvolvimento`: o que o ativo rende sobre
+   * o que ele custou para ficar de pé.
+   *
+   * O denominador é o custo de DESENVOLVIMENTO — terreno, obra, custos do
+   * orçamento e custo financeiro —, e NÃO inclui o OPEX da operação, apesar de
+   * `custoEmpreendimento` incluir. É deliberado: yield on cost compara o
+   * rendimento anual do ativo com o que foi investido para construí-lo. Jogar o
+   * OPEX no denominador misturaria a despesa de OPERAR com o capital
+   * IMOBILIZADO, e o indicador cairia quanto mais tempo o ativo ficasse aberto —
+   * exatamente ao contrário do que ele deve mostrar.
+   */
+  yieldOnCost: number | null;
+  /**
+   * `yieldOnCost − capRateSaida`. É O NEGÓCIO INTEIRO: a diferença entre o que o
+   * ativo rende sobre o custo e o que o comprador exige. Na pro forma de
+   * referência são 465 pontos-base.
+   *
+   * Negativo não é erro do modelo — é um projeto que vale menos do que custou, e
+   * é justamente isso que o modelo existe para revelar. `spread_negativo` acende
+   * âmbar, não vermelho.
+   */
+  spreadSobreCap: number | null;
+  /** `receitaBrutaAnual100 ÷ ablSf`: o aluguel médio pedido, por sf e por ano. */
+  aluguelPorSf: number | null;
+  /**
+   * `Apuracao.custoDesenvolvimento ÷ ablSf`. Compara direto com `aluguelPorSf`.
+   *
+   * NÃO é o mesmo que `custoPorSf`, que existe nos dois modos e cujo numerador
+   * inclui o OPEX da operação. Mesmo denominador, numeradores diferentes — e a
+   * distinção é a mesma de `yieldOnCost`.
+   */
+  custoDesenvolvimentoPorSf: number | null;
+  /**
+   * Ocupação em que o NOI do mês ZERA — abaixo dela o prédio dá prejuízo
+   * operacional. Na pro forma de referência é 27,8%.
+   */
+  ocupacaoBreakevenNoi: number | null;
+  /**
+   * Ocupação que cobre os juros anuais além do OPEX. É o breakeven que o banco
+   * olha, e é sempre maior que `ocupacaoBreakevenNoi`.
+   */
+  ocupacaoBreakevenJuros: number | null;
 }
 
 /**
@@ -1035,6 +1567,26 @@ export interface Agregados {
    * output: sem ele, quem lê um $/sf não tem como auditar de onde veio.
    */
   areaTotalSf: number;
+  /**
+   * ÁREA BRUTA LOCÁVEL: Σ (areaSf × quantidade). Mesmo número de `areaTotalSf`,
+   * exposto com o nome que o modo locação usa — é o denominador de todo $/sf da
+   * operação e o multiplicador de toda linha de OPEX.
+   *
+   * Existe como campo próprio, e não como apelido só na tela, porque quem lê uma
+   * pro forma de locação procura "ABL": obrigar a saber que ela se chama
+   * `areaTotalSf` aqui dentro é atrito sem contrapartida. As duas saem da mesma
+   * conta, então não têm como divergir.
+   */
+  ablSf: number;
+  /**
+   * Receita de aluguel anual a 100% DE OCUPAÇÃO:
+   * Σ (areaSf × aluguelSfAno × quantidade).
+   *
+   * É o teto da receita, não a receita: o que entra em cada mês é este número
+   * dividido por 12, multiplicado pela ocupação daquele mês e líquido de perda
+   * de crédito. Zero no modo venda.
+   */
+  receitaBrutaAnual100: number;
 }
 
 export interface ModelOutput {

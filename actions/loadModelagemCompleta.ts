@@ -44,11 +44,24 @@ function loadModelagemCompleta() {
           SELECT json_agg(uf)
           FROM modelagem_unidade_fases uf WHERE uf.modelagem_id = m.id
         ) AS unidade_fases,
+        -- AS FACILIDADES, na ordem de precedência (migration 1764200000).
+        --
+        -- "json_agg" no lugar de "row_to_json": a tabela deixou de ser 1:1 com a
+        -- modelagem. A ORDEM não é cosmética — é a precedência da demanda de
+        -- caixa dentro do mês e a posição 1-based que as chaves de override
+        -- ("draw:1", "draw:2") endereçam. Por isso ela é fixada aqui, no SELECT,
+        -- e repetida no mapeador: as duas pontas têm de concordar sobre qual é a
+        -- facilidade 1, senão um override migra de dívida sozinho.
         (
-          SELECT row_to_json(f) FROM modelagem_financiamento f WHERE f.modelagem_id = m.id
-        ) AS financiamento,
+          SELECT json_agg(f ORDER BY f.ordem, f.id)
+          FROM modelagem_financiamento f WHERE f.modelagem_id = m.id
+        ) AS financiamentos,
+        -- A curva do benchmark vem numa lista só, com "financiamento_id" em cada
+        -- ponto — o mapeador reparte por facilidade. Aninhar dentro de cada
+        -- facilidade também funcionaria, mas duplicaria o JSON de um projeto com
+        -- curva longa sem ganho nenhum de leitura.
         (
-          SELECT json_agg(bc ORDER BY bc.mes)
+          SELECT json_agg(bc ORDER BY bc.financiamento_id, bc.mes)
           FROM modelagem_benchmark_curva bc WHERE bc.modelagem_id = m.id
         ) AS benchmark_curva,
         -- Os aportes vêm ANINHADOS dentro do sócio, não como segunda lista.
@@ -76,6 +89,22 @@ function loadModelagemCompleta() {
           SELECT json_agg(cn ORDER BY cn.is_baseline DESC, cn.id)
           FROM modelagem_cenarios cn WHERE cn.modelagem_id = m.id
         ) AS cenarios,
+        -- ─── Modo locação (migration 1764100000) ──────────────────────────
+        -- Carregadas SEMPRE, e não só quando m.tipo_modelagem = 'locacao':
+        -- numa modelagem de venda os três sub-selects devolvem NULL de graça, e
+        -- condicioná-los faria a tela de uma modelagem que trocou de tipo por
+        -- SQL administrativo abrir vazia em vez de mostrar o que está gravado.
+        (
+          SELECT row_to_json(l) FROM modelagem_locacao l WHERE l.modelagem_id = m.id
+        ) AS locacao,
+        (
+          SELECT json_agg(op ORDER BY op.ordem, op.id)
+          FROM modelagem_opex op WHERE op.modelagem_id = m.id
+        ) AS opex,
+        (
+          SELECT json_agg(oc ORDER BY oc.mes)
+          FROM modelagem_ocupacao oc WHERE oc.modelagem_id = m.id
+        ) AS ocupacao,
         (
           SELECT json_agg(o ORDER BY o.mes, o.linha)
           FROM modelagem_overrides o

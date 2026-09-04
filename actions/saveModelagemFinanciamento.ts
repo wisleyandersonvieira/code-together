@@ -1,11 +1,34 @@
 import { action } from '@uibakery/data';
 
-/** Linha 1:1 criada junto com a modelagem — sempre UPDATE, nunca INSERT. */
+/**
+ * Atualiza UMA facilidade de crédito.
+ *
+ * Deixou de ser 1:1 com a migration 1764200000: a modelagem pode ter várias, e
+ * por isso o UPDATE precisa do `id` da facilidade. O `modelagem_id` continua no
+ * WHERE — não é redundância defensiva à toa: sem ele, um `id` de outra modelagem
+ * (parâmetro trocado na tela, cenário recarregado no meio) gravaria por cima da
+ * facilidade de um projeto que não está aberto, e nada acusaria.
+ *
+ * A facilidade continua sendo criada junto com a modelagem (`createModelagem`),
+ * então o caminho comum é UPDATE. As facilidades adicionais nascem em
+ * `createModelagemFacilidade`.
+ */
 function saveModelagemFinanciamento() {
   return action('saveModelagemFinanciamento', 'SQL', {
     databaseName: 'provision',
     query: `
       UPDATE modelagem_financiamento SET
+        -- Identidade da facilidade (1764200000). "ordem" DEFINE o resultado —
+        -- é a precedência da demanda de caixa dentro do mês —, então gravá-la
+        -- errado não é problema de exibição.
+        ordem = COALESCE({{params.ordem}}::int, 0),
+        nome = COALESCE(NULLIF('{{params.nome}}', ''), 'Financiamento'),
+        ativo = COALESCE({{params.ativo}}::boolean, TRUE),
+        -- Auto-referência na MESMA tabela: nulo = não refinancia ninguém, e é o
+        -- estado de toda linha já gravada. A tela manda o ID da facilidade
+        -- refinanciada; o motor trabalha por índice e a conversão é do mapeador.
+        refinancia_facilidade_id = {{params.refinanciaFacilidadeId}}::int,
+
         taxa_anual = COALESCE({{params.taxaAnual}}::decimal, 0),
         fee_estruturacao_pct = COALESCE({{params.feeEstruturacaoPct}}::decimal, 0),
         fee_timing = '{{params.feeTiming}}',
@@ -56,6 +79,7 @@ function saveModelagemFinanciamento() {
 
         updated_at = CURRENT_TIMESTAMP
       WHERE modelagem_id = {{params.modelagemId}}::int
+        AND id = {{params.id}}::int
     `,
   });
 }
