@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import type { ApuracaoAnual, ModelInput, ModelOutput, RateioSocio } from '@/lib/modelagem';
-import { apuracaoAnual, LINHAS_ANUAL, totalAnual } from '@/lib/modelagem';
+import { apuracaoAnual, LINHAS_ANUAL, totalAnual, facilidadePrincipal, ROTULO_NOI_REFERENCIA } from '@/lib/modelagem';
 import { dinheiro, mesAno, multiplo, numero, percentual } from './formato';
 
 interface Props {
@@ -159,7 +159,7 @@ export function AbaResultado({ rascunho, resultado }: Props) {
           rotulo="Pico do saldo devedor"
           valor={d(ap.saldoDevedorMaximo)}
           nota={`LTC de pico de ${percentual(ind.ltcPico)}${
-            rascunho.financiamento.linhaRotativa ? ' — é o que o teto da linha rotativa limita' : ''
+            facilidadePrincipal(rascunho)?.linhaRotativa ? ' — é o que o teto da linha rotativa limita' : ''
           }`}
         />
         <Indicador rotulo="Alavancagem" valor={percentual(ind.alavancagem)} nota="Dívida sobre o total de pagamentos" />
@@ -178,7 +178,7 @@ export function AbaResultado({ rascunho, resultado }: Props) {
           rotulo="Custo da dívida sobre o pico"
           valor={percentual(ind.custoTotalDividaPicoPct)}
           nota={`Mesmo custo financeiro sobre o pico do saldo devedor${
-            rascunho.financiamento.linhaRotativa ? ' — é a leitura da linha rotativa' : ''
+            facilidadePrincipal(rascunho)?.linhaRotativa ? ' — é a leitura da linha rotativa' : ''
           }`}
         />
         <Indicador rotulo="XIRR" valor={percentual(ind.xirr)} nota="Com as datas reais, base actual/365" />
@@ -189,6 +189,95 @@ export function AbaResultado({ rascunho, resultado }: Props) {
         datas em que ocorrem. Com datas de aporte diferentes por sócio, a TIR geral não é a média das
         TIRs individuais — os perfis no tempo são diferentes.
       </p>
+
+      {/* ─── MODO LOCAÇÃO ───────────────────────────────────────────────────
+          Só aparece na locação; no modo venda os oito indicadores são `null` e o
+          bloco inteiro some, sem deixar cartões com "n/d" pela tela. */}
+      {(rascunho.tipoModelagem ?? 'venda') === 'locacao' ? (
+        <FinanceDetailSectionCard
+          title="Locação"
+          description="O ativo estabilizado: quanto rende, quanto custou e a que preço o mercado compra."
+        >
+          {/* O SPREAD EM DESTAQUE, e sozinho na primeira linha: é a diferença
+              entre o que o ativo rende sobre o custo e o que o comprador exige, e
+              é o negócio inteiro. Um cartão do mesmo tamanho dos outros sete o
+              esconderia no meio deles. */}
+          <div
+            className={`rounded-2xl border p-5 ${
+              (ind.spreadSobreCap ?? 0) < 0
+                ? 'border-amber-300 bg-amber-50'
+                : 'border-emerald-300 bg-emerald-50'
+            }`}
+          >
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-600">
+              Spread sobre o cap rate
+            </p>
+            <p className="mt-1 flex flex-wrap items-baseline gap-3">
+              <span
+                className={`text-4xl font-semibold tabular-nums tracking-tight ${
+                  (ind.spreadSobreCap ?? 0) < 0 ? 'text-amber-800' : 'text-emerald-800'
+                }`}
+              >
+                {ind.spreadSobreCap === null
+                  ? 'n/d'
+                  : `${Math.round(ind.spreadSobreCap * 10_000)} pb`}
+              </span>
+              <span className="text-sm text-slate-600">
+                yield on cost {percentual(ind.yieldOnCost)} − cap de saída{' '}
+                {percentual(rascunho.locacao?.capRateSaida ?? 0)}
+              </span>
+            </p>
+            <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-600">
+              {(ind.spreadSobreCap ?? 0) < 0
+                ? 'Negativo: o ativo pronto vale menos do que custou para ficar de pé. Não é erro do modelo — é o que o modelo existe para revelar.'
+                : 'É daqui que sai o lucro do projeto: construir a um yield maior do que o cap rate que o comprador exige.'}
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Indicador
+              rotulo="NOI de referência"
+              valor={d(ind.noiEstabilizado)}
+              nota={`Ao ano · ${ROTULO_NOI_REFERENCIA[rascunho.locacao?.noiReferencia ?? 'estabilizado']}`}
+            />
+            <Indicador
+              rotulo="Valor de saída"
+              valor={d(ind.valorSaida)}
+              nota={`Antes do custo de venda de ${percentual(rascunho.locacao?.custoVendaPct ?? 0)}`}
+            />
+            <Indicador
+              rotulo="Yield on cost"
+              valor={percentual(ind.yieldOnCost)}
+              nota={`Sobre ${d(ap.custoDesenvolvimento)} de custo de desenvolvimento`}
+            />
+            <Indicador
+              rotulo="Aluguel por sf"
+              valor={d(ind.aluguelPorSf)}
+              nota={`Ao ano, sobre ${numero(ag.ablSf, 0)} sf de ABL`}
+            />
+            <Indicador
+              rotulo="Custo por sf"
+              valor={d(ind.custoDesenvolvimentoPorSf)}
+              nota="Desenvolvimento, sem o OPEX da operação"
+            />
+            <Indicador
+              rotulo="Breakeven de ocupação"
+              valor={percentual(ind.ocupacaoBreakevenNoi)}
+              nota="Onde o NOI do mês zera"
+            />
+            <Indicador
+              rotulo="Breakeven com juros"
+              valor={percentual(ind.ocupacaoBreakevenJuros)}
+              nota="Cobrindo também o juro anual da dívida"
+            />
+            <Indicador
+              rotulo="NOI acumulado"
+              valor={d(ap.noiTotal)}
+              nota="Do fluxo inteiro, não anualizado"
+            />
+          </div>
+        </FinanceDetailSectionCard>
+      ) : null}
 
       <FinanceDetailSectionCard
         title="Por unidade"

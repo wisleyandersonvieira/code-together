@@ -4861,3 +4861,196 @@ describe('overrides por facilidade', () => {
     expect(semaforo(out, 'overrides_facilidade_removida')).toBe('ambar');
   });
 });
+
+describe('locação — identidades que precisam fechar', () => {
+  const out = calcular(casoLocacao());
+  const ap = out.apuracao;
+
+  it('Σ lucro das tipologias = lucro do projeto', () => {
+    // A identidade que o bloco de rateio existe para manter. No modo locação a
+    // receita é rateada pela ÁREA LOCÁVEL, e não pelo preço de venda — que ali é
+    // ignorado pelo motor.
+    expect(soma(out.resultadoUnidades.map((u) => u.lucro))).toBeCloseTo(ap.lucroProjeto, 2);
+  });
+
+  it('Σ receita líquida das tipologias = receita líquida do projeto', () => {
+    expect(soma(out.resultadoUnidades.map((u) => u.receitaLiquida))).toBeCloseTo(
+      ap.receitaLiquida,
+      2,
+    );
+  });
+
+  it('Σ custo total das tipologias = custo do empreendimento + custo financeiro', () => {
+    expect(soma(out.resultadoUnidades.map((u) => u.custoTotal))).toBeCloseTo(
+      ap.custoEmpreendimento + ap.custoFinanceiro,
+      2,
+    );
+  });
+
+  it('a apuração fecha: receita líquida − custo − custo financeiro = lucro', () => {
+    expect(ap.receitaLiquida - ap.custoEmpreendimento - ap.custoFinanceiro).toBeCloseTo(
+      ap.lucroProjeto,
+      2,
+    );
+  });
+
+  it('custo de desenvolvimento é o empreendimento SEM o OPEX, mais o financeiro', () => {
+    expect(ap.custoDesenvolvimento).toBeCloseTo(
+      ap.custoEmpreendimento - ap.opexTotal + ap.custoFinanceiro,
+      2,
+    );
+  });
+
+  it('o NOI acumulado do fluxo é receita de aluguel menos OPEX', () => {
+    expect(ap.noiTotal).toBeCloseTo(ap.receitaAluguel - ap.opexTotal, 2);
+  });
+});
+
+describe('locação — NOI de referência pelos últimos 12 meses', () => {
+  const base = casoLocacao();
+  const out = calcular({
+    ...base,
+    locacao: { ...base.locacao!, noiReferencia: 'ultimos_12m' },
+  });
+
+  it('soma o NOI dos 12 meses que terminam no mês de saída', () => {
+    const mesSaida = out.cronograma.mesSaida;
+    const esperado = soma(
+      Array.from({ length: 12 }, (_, k) => out.meses[mesSaida - 1 - k].noiMes),
+    );
+    expect(out.indicadores.noiEstabilizado!).toBeCloseTo(esperado, 2);
+  });
+
+  it('com ocupação cheia nos 12 meses, coincide com o estabilizado', () => {
+    // A curva do caso base já está em 100% do mês 19 ao 36, e a ocupação
+    // estabilizada também é 100% — então as duas leituras têm de dar o mesmo
+    // número. Se divergirem, uma das duas fórmulas está errada.
+    expect(out.indicadores.noiEstabilizado!).toBeCloseTo(1_217_362.5, 2);
+  });
+});
+
+describe('locação — conferências do modo', () => {
+  it('ocupacao_apos_saida acende âmbar quando a curva passa do mês de saída', () => {
+    const base = casoLocacao();
+    const out = calcular({
+      ...base,
+      ocupacao: [...(base.ocupacao ?? []), { mes: 40, ocupacaoPct: 1 }],
+    });
+    expect(semaforo(out, 'ocupacao_apos_saida')).toBe('ambar');
+  });
+
+  it('opex_sem_linhas acende âmbar sem nenhuma linha de OPEX', () => {
+    expect(semaforo(calcular({ ...casoLocacao(), opex: [] }), 'opex_sem_linhas')).toBe('ambar');
+  });
+
+  it('noi_negativo_na_saida acende vermelho quando o aluguel não cobre o OPEX', () => {
+    const base = casoLocacao();
+    const out = calcular({
+      ...base,
+      unidades: base.unidades.map((u) => ({ ...u, aluguelSfAno: 0 })),
+    });
+    expect(semaforo(out, 'noi_negativo_na_saida')).toBe('vermelho');
+    // E o valor de saída fica NEGATIVO, não zero: um NOI negativo dividido por
+    // um cap positivo é um número negativo, e escondê-lo seria pior.
+    expect(out.indicadores.valorSaida!).toBeLessThan(0);
+  });
+
+  it('spread_negativo é ÂMBAR, não vermelho — pode ser a realidade do projeto', () => {
+    const base = casoLocacao();
+    const out = calcular({
+      ...base,
+      unidades: base.unidades.map((u) => ({ ...u, custoObra: 40_000_000 })),
+    });
+    expect(out.indicadores.spreadSobreCap!).toBeLessThan(0);
+    expect(semaforo(out, 'spread_negativo')).toBe('ambar');
+  });
+
+  it('nenhuma conferência de locação aparece no modo venda', () => {
+    const chaves = calcular(casoBase()).conferencias.map((c) => c.chave);
+    for (const chave of [
+      'cap_rate_zerado', 'sem_curva_ocupacao', 'ocupacao_apos_saida',
+      'noi_negativo_na_saida', 'property_tax_duplicado', 'preco_venda_ignorado',
+      'opex_sem_linhas', 'spread_negativo',
+    ]) {
+      expect(chaves).not.toContain(chave);
+    }
+  });
+});
+
+describe('facilidades — precedência da demanda dentro do mês', () => {
+  /**
+   * Duas facilidades dimensionadas por demanda de caixa, a primeira com teto
+   * baixo. A segunda só pode sacar o que a primeira não cobriu — e é essa
+   * cascata que a `ordem` define.
+   */
+  const comDuas = (tetoPrimeira: number): ModelInput => {
+    const base = casoBase();
+    const comum = { ...base.financiamento!, modoSaque: 'cash_demand' as const, mesInicioSaque: 1, mesFimSaque: 23 };
+    return {
+      ...base,
+      financiamento: undefined,
+      financiamentos: [
+        // TAXAS DIFERENTES de propósito: com a mesma taxa nos dois contratos a
+        // ordem não muda o juro total, e o teste passaria sem provar nada.
+        { ...comum, ordem: 0, nome: 'A', valorContratado: tetoPrimeira, taxaAnual: 0.15 },
+        { ...comum, ordem: 1, nome: 'B', valorContratado: 50_000_000, taxaAnual: 0.05 },
+      ],
+    };
+  };
+
+  it('a segunda saca só o que sobrou da primeira', () => {
+    const out = calcular(comDuas(300_000));
+    let sacadoPelaPrimeira = 0;
+    for (const m of out.meses) {
+      const a = m.porFacilidade.find((f) => f.indice === 0)!;
+      const b = m.porFacilidade.find((f) => f.indice === 1)!;
+      sacadoPelaPrimeira += a.draw;
+      // A primeira nunca passa do teto dela — nem no mês, nem acumulado (ela
+      // não é rotativa, então capacidade consumida não volta).
+      expect(sacadoPelaPrimeira).toBeLessThanOrEqual(300_000 + DOLAR);
+      // A CASCATA: a segunda só saca depois de a primeira ter esgotado a
+      // capacidade DELA naquele mês. Nos meses em que a capacidade da primeira
+      // já acabou, `capacidadeSaque` é zero e ela saca zero — o que a segunda
+      // cobre é justamente o que a primeira não pôde.
+      if (b.draw > DOLAR) expect(a.draw).toBeCloseTo(a.capacidadeSaque, 2);
+    }
+    // E a primeira de fato chegou ao teto: sem isso a cascata nunca teria sido
+    // exercitada e o teste passaria vazio.
+    expect(sacadoPelaPrimeira).toBeCloseTo(300_000, 2);
+  });
+
+  it('trocar a ordem muda o resultado — é por isso que ela é do contrato', () => {
+    const normal = calcular(comDuas(300_000));
+    const invertido = comDuas(300_000);
+    invertido.financiamentos = [
+      { ...invertido.financiamentos![1], ordem: 0 },
+      { ...invertido.financiamentos![0], ordem: 1 },
+    ];
+    const out = calcular(invertido);
+    // Com a facilidade sem teto na frente, ela absorve a demanda inteira e a de
+    // teto baixo não saca nada. O juro total do projeto muda.
+    expect(out.meses.some((m) => m.porFacilidade[1].draw > DOLAR)).toBe(false);
+    expect(out.apuracao.jurosTotais).not.toBeCloseTo(normal.apuracao.jurosTotais, 2);
+  });
+
+  it('o fee é por facilidade, sobre o contratado de cada uma', () => {
+    const base = comDuas(300_000);
+    base.financiamentos = base.financiamentos!.map((f) => ({ ...f, feeEstruturacaoPct: 0.01 }));
+    const out = calcular(base);
+    // 1% de $300.000 mais 1% de $50.000.000 — e NÃO 1% de um contratado somado
+    // que não existe em contrato nenhum.
+    expect(out.apuracao.baseFeeEstruturacao).toBeCloseTo(300_000 + 50_000_000, 2);
+  });
+
+  it('facilidade inativa não entra no fluxo e não desloca os índices', () => {
+    const base = comDuas(300_000);
+    base.financiamentos![0] = { ...base.financiamentos![0], ativo: false };
+    const out = calcular(base);
+    for (const m of out.meses) {
+      // Só a segunda aparece — e continua com `indice` 1, que é o endereço das
+      // chaves de override.
+      expect(m.porFacilidade).toHaveLength(1);
+      expect(m.porFacilidade[0].indice).toBe(1);
+    }
+  });
+});

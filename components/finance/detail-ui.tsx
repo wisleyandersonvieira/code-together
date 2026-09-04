@@ -43,7 +43,13 @@ export const financeDetailTabsTriggerCompactClassName =
   'min-h-[38px] rounded-lg border border-slate-700/70 bg-slate-700 px-3 py-2 text-[13px] font-semibold text-white transition-all duration-200 hover:border-slate-800 hover:bg-slate-800 hover:text-white data-[state=active]:border-slate-900 data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-[0_12px_30px_-18px_rgba(15,23,42,0.7)]';
 
 interface FinanceDetailHeaderProps {
-  title: string;
+  /**
+   * ReactNode, e não string: o cabeçalho da modelagem precisa acomodar um selo
+   * ao lado do nome (o modo de negócio, que não muda depois de criada). Toda
+   * chamada existente passa string, e string É um ReactNode — nenhuma delas
+   * muda de comportamento.
+   */
+  title: React.ReactNode;
   subtitle: string;
   onBack: () => void;
 }

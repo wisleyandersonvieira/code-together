@@ -5,7 +5,10 @@ export {
   agruparCustosPorCategoria,
   basesDeCalculo,
   calcular,
+  ciclosDeRefinanciamento,
+  facilidadePrincipal,
   fatorJurosDoMes,
+  normalizarFacilidades,
   resolverCustos,
   valorEfetivoCusto,
 } from './motor';

@@ -4,14 +4,14 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { calcular, ROTULO_MODO_SAQUE } from '@/lib/modelagem';
-import type { ModelInput, ModelOutput } from '@/lib/modelagem';
+import { calcular, ROTULO_MODO_SAQUE, facilidadePrincipal } from '@/lib/modelagem';
+import type { Financiamento, ModelInput, ModelOutput } from '@/lib/modelagem';
 import { dinheiro, mesAno, multiplo, percentual } from './formato';
 
 interface Props {
   rascunho: ModelInput;
   resultado: ModelOutput;
-  aplicarDimensionamento: (novo: ModelInput['financiamento']) => void;
+  aplicarDimensionamento: (novo: Financiamento) => void;
 }
 
 // Par categórico validado: ΔE 27,4 em protanopia, 35,3 em visão normal.
@@ -35,7 +35,10 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
     return mapa;
   }, [rascunho.aportes?.parcelas]);
   const d = (v: number | null | undefined) => dinheiro(v, moeda);
-  const colchao = rascunho.financiamento.colchaoMinimoCaixa;
+  // A PRIMEIRA facilidade ativa: é ela que esta aba lê e dimensiona. Com uma
+  // só — o estado de toda modelagem já gravada — é exatamente a de antes.
+  const finPrincipal = facilidadePrincipal(rascunho);
+  const colchao = finPrincipal?.colchaoMinimoCaixa ?? 0;
   const teto = resultado.apuracao.tetoDivida;
 
   // Escala única para todas as barras: comparar meses só faz sentido num eixo só.
@@ -47,13 +50,30 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
     return maximo;
   }, [resultado.meses]);
 
-  const financiamentoDimensionado = (): ModelInput['financiamento'] => ({
-    ...rascunho.financiamento,
-    modoSaque: 'cash_demand',
-  });
+  /**
+   * A PRIMEIRA facilidade, redimensionada por demanda de caixa.
+   *
+   * `finPrincipal` nulo é um projeto sem dívida: não há o que dimensionar, e a
+   * prévia é a própria modelagem. Devolver um contrato vazio aqui simularia um
+   * financiamento que não existe.
+   */
+  const financiamentoDimensionado = (): Financiamento | null =>
+    finPrincipal ? { ...finPrincipal, modoSaque: 'cash_demand' } : null;
 
   const simular = () => {
-    setPrevia(calcular({ ...rascunho, financiamento: financiamentoDimensionado() }));
+    const novo = financiamentoDimensionado();
+    setPrevia(
+      calcular(
+        novo
+          ? {
+              ...rascunho,
+              // Só a PRIMEIRA facilidade é redimensionada — as demais ficam como
+              // estão. É a mesma facilidade que a leitura desta aba examina.
+              financiamentos: (rascunho.financiamentos ?? []).map((f, i) => (i === 0 ? novo : f)),
+            }
+          : rascunho,
+      ),
+    );
   };
 
   const diff = previa
@@ -73,7 +93,7 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
         <div className="text-sm text-slate-600">
           Modo de saque atual:{' '}
           <strong className="text-slate-900">
-            {ROTULO_MODO_SAQUE[rascunho.financiamento.modoSaque] ?? rascunho.financiamento.modoSaque}
+            {finPrincipal ? (ROTULO_MODO_SAQUE[finPrincipal.modoSaque] ?? finPrincipal.modoSaque) : 'Sem financiamento'}
           </strong>{' '}
           ·
           teto de dívida:{' '}
@@ -119,7 +139,10 @@ export function AbaDemandaCaixa({ rascunho, resultado, aplicarDimensionamento }:
             <Button
               type="button"
               onClick={() => {
-                aplicarDimensionamento(financiamentoDimensionado());
+                {
+                  const novo = financiamentoDimensionado();
+                  if (novo) aplicarDimensionamento(novo);
+                }
                 setPrevia(null);
               }}
             >

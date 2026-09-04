@@ -30,8 +30,8 @@ import {
 } from '@/lib/modelagem';
 import type {
   AporteParcela,
+  ChaveOverride,
   Financiamento,
-  LinhaFluxo,
   ModelInput,
   PlanoAportes,
 } from '@/lib/modelagem';
@@ -67,6 +67,14 @@ import deleteModelagemFaseAction from '@/actions/deleteModelagemFase';
 import saveModelagemUnidadeFaseAction from '@/actions/saveModelagemUnidadeFase';
 import deleteModelagemUnidadeFaseAction from '@/actions/deleteModelagemUnidadeFase';
 import saveModelagemFinanciamentoAction from '@/actions/saveModelagemFinanciamento';
+import createModelagemFacilidadeAction from '@/actions/createModelagemFacilidade';
+import deleteModelagemFacilidadeAction from '@/actions/deleteModelagemFacilidade';
+import saveModelagemLocacaoAction from '@/actions/saveModelagemLocacao';
+import createModelagemOpexAction from '@/actions/createModelagemOpex';
+import updateModelagemOpexAction from '@/actions/updateModelagemOpex';
+import deleteModelagemOpexAction from '@/actions/deleteModelagemOpex';
+import saveModelagemOcupacaoAction from '@/actions/saveModelagemOcupacao';
+import deleteModelagemOcupacaoAction from '@/actions/deleteModelagemOcupacao';
 import saveModelagemBenchmarkPontoAction from '@/actions/saveModelagemBenchmarkPonto';
 import deleteModelagemBenchmarkPontoAction from '@/actions/deleteModelagemBenchmarkPonto';
 import saveModelagemReceitaAction from '@/actions/saveModelagemReceita';
@@ -87,15 +95,29 @@ import { AbaTimeline } from './AbaTimeline';
 import { AbaFinanciamento } from './AbaFinanciamento';
 import { AbaSocios } from './AbaSocios';
 import { AbaReceita } from './AbaReceita';
+import { AbaLocacaoSaida } from './AbaLocacaoSaida';
+import { AbaOperacao } from './AbaOperacao';
+import { SeloTipoModelagem } from './ModelagensList';
 import { AbaFluxoCaixa } from './AbaFluxoCaixa';
 import { AbaResultado } from './AbaResultado';
 import { AbaDemandaCaixa } from './AbaDemandaCaixa';
 import { AbaSensibilidade } from './AbaSensibilidade';
 import { PainelConferencias } from './PainelConferencias';
 import { exportarFluxoCsv, exportarModelagemPdf, exportarPdfSocios, exportarXlsx } from './exportar';
-import { dinheiro, multiplo, percentual } from './formato';
+import { dinheiro, multiplo, numero, percentual } from './formato';
 
-const ABAS = [
+/**
+ * As abas do editor, por modo de negócio.
+ *
+ * NENHUMA aba do modo venda muda — nem de rótulo, nem de ordem, nem de conteúdo.
+ * O modo locação troca UMA (Receita vira "Locação e saída", porque não há venda
+ * de unidade a modelar) e ACRESCENTA uma (Operação: OPEX e curva de ocupação).
+ *
+ * A grade do TabsList é de 6 colunas com o Exportar na 12ª célula. No modo
+ * locação são 13 itens, então a última linha passa a ter uma célula a mais —
+ * o `grid` acomoda sozinho, sem quebrar o alinhamento das duas primeiras.
+ */
+const ABAS_VENDA = [
   { valor: 'premissas', rotulo: 'Premissas' },
   { valor: 'unidades', rotulo: 'Unidades' },
   { valor: 'aportes', rotulo: 'Aportes' },
@@ -103,6 +125,22 @@ const ABAS = [
   { valor: 'financiamento', rotulo: 'Financiamento' },
   { valor: 'socios', rotulo: 'Sócios' },
   { valor: 'receita', rotulo: 'Receita' },
+  { valor: 'fluxo', rotulo: 'Fluxo de caixa' },
+  { valor: 'timeline', rotulo: 'Linha do tempo' },
+  { valor: 'resultado', rotulo: 'Resultado' },
+  { valor: 'demanda', rotulo: 'Demanda de caixa' },
+  { valor: 'sensibilidade', rotulo: 'Sensibilidade' },
+];
+
+const ABAS_LOCACAO = [
+  { valor: 'premissas', rotulo: 'Premissas' },
+  { valor: 'unidades', rotulo: 'Ativo locável' },
+  { valor: 'operacao', rotulo: 'Operação' },
+  { valor: 'aportes', rotulo: 'Aportes' },
+  { valor: 'custos', rotulo: 'Custos' },
+  { valor: 'financiamento', rotulo: 'Financiamento' },
+  { valor: 'socios', rotulo: 'Sócios' },
+  { valor: 'receita', rotulo: 'Locação e saída' },
   { valor: 'fluxo', rotulo: 'Fluxo de caixa' },
   { valor: 'timeline', rotulo: 'Linha do tempo' },
   { valor: 'resultado', rotulo: 'Resultado' },
@@ -159,6 +197,14 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   const [salvarAlocacao] = useMutateAction(saveModelagemUnidadeFaseAction);
   const [removerAlocacao] = useMutateAction(deleteModelagemUnidadeFaseAction);
   const [salvarFinanciamento] = useMutateAction(saveModelagemFinanciamentoAction);
+  const [criarFacilidade] = useMutateAction(createModelagemFacilidadeAction);
+  const [removerFacilidade] = useMutateAction(deleteModelagemFacilidadeAction);
+  const [salvarLocacao] = useMutateAction(saveModelagemLocacaoAction);
+  const [criarOpex] = useMutateAction(createModelagemOpexAction);
+  const [atualizarOpex] = useMutateAction(updateModelagemOpexAction);
+  const [removerOpex] = useMutateAction(deleteModelagemOpexAction);
+  const [salvarOcupacao] = useMutateAction(saveModelagemOcupacaoAction);
+  const [apagarOcupacao] = useMutateAction(deleteModelagemOcupacaoAction);
   const [salvarBenchmark] = useMutateAction(saveModelagemBenchmarkPontoAction);
   const [apagarBenchmark] = useMutateAction(deleteModelagemBenchmarkPontoAction);
   const [salvarReceita] = useMutateAction(saveModelagemReceitaAction);
@@ -217,6 +263,14 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     setRascunho((atual) => (atual ? { ...atual, ...patch } : atual));
   }, []);
 
+  /**
+   * O modo de negócio da modelagem. Sai do RASCUNHO, não de um estado próprio,
+   * porque ele é imutável depois de criada: não há caminho de edição, e portanto
+   * não há o que sincronizar. Ausente = 'venda', como em todo o módulo.
+   */
+  const ehLocacao = (rascunho?.tipoModelagem ?? 'venda') === 'locacao';
+  const abas = ehLocacao ? ABAS_LOCACAO : ABAS_VENDA;
+
   // O motor roda a cada mudança: sem botão de "recalcular", sem estado intermediário.
   const resultado = useMemo(() => (rascunho ? calcular(rascunho) : null), [rascunho]);
   /** Mesma modelagem sem override nenhum — é o que o tooltip da célula mostra. */
@@ -267,7 +321,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   };
 
   // ─── Overrides: persistem na hora, não esperam o botão salvar ──────────────
-  const aplicarOverride = async (mes: number, linha: LinhaFluxo, valor: number | null) => {
+  const aplicarOverride = async (mes: number, linha: ChaveOverride, valor: number | null) => {
     if (!rascunho || cenarioId == null) return;
 
     // Com cronograma por sócio a linha de aporte não aceita override: o motor
@@ -334,7 +388,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     }
   };
 
-  const reverterCelula = async (mes: number, linha: LinhaFluxo) => {
+  const reverterCelula = async (mes: number, linha: ChaveOverride) => {
     if (!rascunho || cenarioId == null) return;
 
     // Mesma guarda do aplicarOverride: não há o que reverter numa célula que
@@ -363,7 +417,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     await apagarOverride({ modelagemId, cenarioId, mes, linha }).catch(() => undefined);
   };
 
-  const reverterLinha = async (linha: LinhaFluxo) => {
+  const reverterLinha = async (linha: ChaveOverride) => {
     if (!rascunho || cenarioId == null) return;
     setRascunho({ ...rascunho, overrides: (rascunho.overrides ?? []).filter((o) => o.linha !== linha) });
     await apagarOverridesLinha({ modelagemId, cenarioId, linha }).catch(() => undefined);
@@ -650,24 +704,108 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         await salvarAlocacao({ modelagemId, unidadeId, faseId, quantidade: a.quantidade });
       }
 
-      await salvarFinanciamento({ modelagemId, ...rascunho.financiamento });
+      // ─── Facilidades de crédito (migration 1764200000) ───────────────────
+      //
+      // Diff por id como as demais listas. DUAS passadas, e a separação não é
+      // estilo: `refinanciaFacilidadeId` é uma FK para a PRÓPRIA tabela, e a
+      // facilidade apontada pode ser uma que ainda não existe quando a primeira é
+      // gravada. Mandar o vínculo na primeira passada faria a FK estourar — ou,
+      // pior, gravar `null` em silêncio.
+      //
+      // Por isso: passada 1 cria/atualiza tudo SEM o vínculo e colhe os ids;
+      // passada 2 volta e grava só o `refinanciaFacilidadeId`, já com o mapa de
+      // índice → id completo. É a mesma dança do `grupo_pai` na duplicação.
+      const facilidadesAtuais = rascunho.financiamentos ?? [];
+      const idsFacilidades = await sincronizar(
+        facilidadesAtuais,
+        original.financiamentos ?? [],
+        (f, i) => criarFacilidade({ modelagemId, ordem: i, nome: f.nome ?? 'Financiamento' }),
+        (f, i) =>
+          salvarFinanciamento({
+            modelagemId,
+            ...f,
+            ordem: i,
+            // Passada 1: sem o vínculo. Ver acima.
+            refinanciaFacilidadeId: null,
+          }),
+        (id) => removerFacilidade({ id }),
+      );
 
-      // Curva do benchmark. Gravada pelo MÊS, que é a chave natural — o ponto não
-      // tem identidade própria na tela, e o banco tem UNIQUE (financiamento, mês).
+      // Passada 2: o vínculo de refinanciamento, agora que todos os ids existem.
+      // Só as facilidades que DECLARAM refinanciamento são revisitadas — um
+      // UPDATE a mais por facilidade sem vínculo seria round-trip puro.
+      for (let i = 0; i < facilidadesAtuais.length; i++) {
+        const f = facilidadesAtuais[i];
+        const alvo = f.refinanciaIndex;
+        const id = idsFacilidades[i];
+        if (id == null || alvo == null) continue;
+        await salvarFinanciamento({
+          modelagemId,
+          ...f,
+          id,
+          ordem: i,
+          refinanciaFacilidadeId: idsFacilidades[alvo] ?? null,
+        });
+      }
+
+      // Curva do benchmark, POR FACILIDADE. Gravada pelo MÊS, que é a chave
+      // natural — o ponto não tem identidade própria na tela, e o banco tem
+      // UNIQUE (financiamento, mês).
       //
       // Apagar um ponto é diferente de gravá-lo com zero: sem linha, o motor usa
       // `benchmarkPadrao`. Por isso o que sumiu da tela é DELETE, não UPDATE 0.
-      const curvaAtual = rascunho.financiamento.benchmarkCurva ?? [];
-      const mesesAtuais = new Set(curvaAtual.map((p) => Math.trunc(p.mes)));
-      for (const antigo of original.financiamento.benchmarkCurva ?? []) {
-        if (!mesesAtuais.has(Math.trunc(antigo.mes))) {
-          await apagarBenchmark({ modelagemId, mes: antigo.mes });
+      for (let i = 0; i < facilidadesAtuais.length; i++) {
+        const financiamentoId = idsFacilidades[i];
+        if (financiamentoId == null) continue;
+        const curvaAtual = facilidadesAtuais[i].benchmarkCurva ?? [];
+        const mesesAtuais = new Set(curvaAtual.map((ponto) => Math.trunc(ponto.mes)));
+        // A facilidade ANTIGA na mesma posição: é dela que veio a curva que está
+        // no banco. Uma facilidade recém-criada não tem curva anterior.
+        const curvaAnterior = (original.financiamentos ?? [])[i]?.benchmarkCurva ?? [];
+        for (const antigo of curvaAnterior) {
+          if (!mesesAtuais.has(Math.trunc(antigo.mes))) {
+            await apagarBenchmark({ modelagemId, financiamentoId, mes: antigo.mes });
+          }
+        }
+        for (const ponto of curvaAtual) {
+          await salvarBenchmark({ modelagemId, financiamentoId, mes: ponto.mes, valor: ponto.valor });
         }
       }
-      for (const p of curvaAtual) {
-        await salvarBenchmark({ modelagemId, mes: p.mes, valor: p.valor });
-      }
       await salvarReceita({ modelagemId, ...rascunho.receita });
+
+      // ─── Modo locação (migration 1764100000) ─────────────────────────────
+      //
+      // Gravado só quando o tipo é 'locacao'. Numa modelagem de venda os três
+      // blocos não têm o que gravar, e chamá-los criaria linha de cabeçalho —
+      // inofensiva, mas mentirosa: a tabela passaria a dizer que existe uma
+      // operação onde não existe.
+      if (ehLocacao && rascunho.locacao) {
+        await salvarLocacao({ modelagemId, ...rascunho.locacao });
+
+        await sincronizar(
+          rascunho.opex ?? [],
+          original.opex ?? [],
+          (o, i) => criarOpex({ modelagemId, ordem: i, ...o }),
+          (o, i) => atualizarOpex({ id: o.id, ordem: i, ...o }),
+          (id) => removerOpex({ id }),
+        );
+
+        // Curva de ocupação: chave natural é o MÊS, como a do benchmark. A
+        // diferença é que aqui mês ausente é ocupação ZERO, não um padrão —
+        // então apagar e gravar zero dão o mesmo número no fluxo. O DELETE
+        // continua sendo o certo mesmo assim: um mês sem linha diz "ainda não
+        // preenchi", e um zero declarado diz "aqui é vazio de propósito".
+        const ocupacaoAtual = rascunho.ocupacao ?? [];
+        const mesesOcupacao = new Set(ocupacaoAtual.map((ponto) => Math.trunc(ponto.mes)));
+        for (const antigo of original.ocupacao ?? []) {
+          if (!mesesOcupacao.has(Math.trunc(antigo.mes))) {
+            await apagarOcupacao({ modelagemId, mes: antigo.mes });
+          }
+        }
+        for (const ponto of ocupacaoAtual) {
+          await salvarOcupacao({ modelagemId, mes: ponto.mes, ocupacaoPct: ponto.ocupacaoPct });
+        }
+      }
 
       for (const venda of rascunho.receita.vendasPorUnidade ?? []) {
         const unidade = rascunho.unidades[venda.unidadeIndex];
@@ -744,9 +882,26 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
 
   return (
     <div className="space-y-6">
+      {/* O SELO DO TIPO fica no título, e o tipo é SOMENTE LEITURA: ele não muda
+          depois de criada. Cada modo tem campos que o outro ignora — preço de
+          venda e takedowns de um lado; aluguel, OPEX e ocupação do outro —, e
+          trocar deixaria campos órfãos de um modo dentro do outro, invisíveis
+          para o motor e para a tela. Quem quer o outro modo, duplica: é o que a
+          faixa logo abaixo diz, em vez de oferecer um select que não existe. */}
       <FinanceDetailHeader
-        title={rascunho.nome || 'Modelagem'}
-        subtitle={`${rascunho.localizacao || 'Sem localização'} · ${resultado.cronograma.prazoTotal} meses · VGV ${dinheiro(resultado.agregados.vgv, rascunho.moeda)}`}
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            {rascunho.nome || 'Modelagem'}
+            <SeloTipoModelagem tipo={ehLocacao ? 'locacao' : 'venda'} />
+          </span>
+        }
+        subtitle={
+          ehLocacao
+            ? // Numa locação o VGV é ignorado pelo motor: o subtítulo mostraria
+              // zero, ou pior, um número que não entra em conta nenhuma.
+              `${rascunho.localizacao || 'Sem localização'} · ${resultado.cronograma.prazoTotal} meses · ABL ${numero(resultado.agregados.ablSf)} sf · Saída ${dinheiro(resultado.indicadores.valorSaida ?? 0, rascunho.moeda)}`
+            : `${rascunho.localizacao || 'Sem localização'} · ${resultado.cronograma.prazoTotal} meses · VGV ${dinheiro(resultado.agregados.vgv, rascunho.moeda)}`
+        }
         onBack={onBack}
       />
 
@@ -828,7 +983,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         */}
         <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50/85 p-2 shadow-sm sm:grid-cols-3 xl:grid-cols-6">
           <TabsList className="contents">
-            {ABAS.map((a) => (
+            {abas.map((a) => (
               <TabsTrigger
                 key={a.valor}
                 value={a.valor}
@@ -904,9 +1059,26 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
           <TabsContent value="socios">
             <AbaSocios rascunho={rascunho} alterar={alterar} resultado={resultado} />
           </TabsContent>
+          {/* A MESMA chave de aba ('receita') serve os dois modos, e é
+              deliberado: o rótulo muda, o componente muda, mas o endereço não —
+              a aba Linha do tempo navega para 'receita' ao clicar num takedown, e
+              um segundo nome quebraria essa navegação no modo venda sem ganho
+              nenhum. */}
           <TabsContent value="receita">
-            <AbaReceita rascunho={rascunho} alterar={alterar} resultado={resultado} />
+            {ehLocacao ? (
+              <AbaLocacaoSaida rascunho={rascunho} alterar={alterar} resultado={resultado} />
+            ) : (
+              <AbaReceita rascunho={rascunho} alterar={alterar} resultado={resultado} />
+            )}
           </TabsContent>
+          {/* Só existe no modo locação. Renderizar o TabsContent sempre não faria
+              mal (o Radix só monta o ativo), mas o trigger correspondente não
+              existe no modo venda e uma aba inalcançável é dívida esperando. */}
+          {ehLocacao ? (
+            <TabsContent value="operacao">
+              <AbaOperacao rascunho={rascunho} alterar={alterar} resultado={resultado} />
+            </TabsContent>
+          ) : null}
           <TabsContent value="fluxo">
             <AbaFluxoCaixa
               rascunho={rascunho}
@@ -928,7 +1100,16 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
             <AbaDemandaCaixa
               rascunho={rascunho}
               resultado={resultado}
-              aplicarDimensionamento={(fin: Financiamento) => alterar({ financiamento: fin })}
+              // A aba dimensiona a PRIMEIRA facilidade — é a que a leitura dela
+              // examina. Com uma só, que é o caso de toda modelagem já gravada, é
+              // exatamente o comportamento de antes.
+              aplicarDimensionamento={(fin: Financiamento) =>
+                alterar({
+                  financiamentos: (rascunho.financiamentos ?? []).map((f, i) =>
+                    i === 0 ? fin : f,
+                  ),
+                })
+              }
             />
           </TabsContent>
           <TabsContent value="sensibilidade">

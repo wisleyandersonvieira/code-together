@@ -657,6 +657,58 @@ export interface Financiamento {
 }
 
 /**
+ * Contrato de crédito NEUTRO: sem taxa, sem teto, sem janela útil.
+ *
+ * Existe para os consumidores que precisam de UM contrato para ler campos — as
+ * conferências, o relatório em PDF, a planilha — quando o projeto não tem
+ * facilidade nenhuma. Sem ele, cada um desses lugares precisaria de `?.` em
+ * dezenas de campos, e a primeira omissão viraria `undefined` no meio de uma
+ * conta.
+ *
+ * NÃO é um default de cálculo: `facilidadePrincipal` devolve `null` quando não
+ * há facilidade, justamente para o motor não confundir "sem dívida" com "dívida
+ * de taxa zero". Quem usa este objeto é a camada de LEITURA, que precisa
+ * imprimir alguma coisa.
+ *
+ * `modoSaque` e `modoAmortizacao` são 'manual' de propósito: um projeto sem
+ * dívida não saca e não amortiza nada automaticamente.
+ */
+export const FACILIDADE_NEUTRA: Financiamento = {
+  ordem: 0,
+  nome: 'Sem financiamento',
+  ativo: false,
+  refinanciaIndex: null,
+  taxaAnual: 0,
+  feeEstruturacaoPct: 0,
+  feeTiming: 'first_draw',
+  feeMes: null,
+  mesInicioSaque: 1,
+  mesFimSaque: 1,
+  modoSaque: 'manual',
+  maxLtcPct: null,
+  valorContratado: null,
+  custoFinanceiroNaDemanda: false,
+  modoAmortizacao: 'manual',
+  capitalizarJuros: false,
+  colchaoMinimoCaixa: 0,
+  linhaRotativa: false,
+  reservaJuros: 0,
+  reservaJurosSacada: true,
+  prazoMeses: null,
+  carenciaMeses: 0,
+  amortizacaoMeses: null,
+  balloonNoVencimento: true,
+  releasePrice: 0,
+  releasePricePct: null,
+  convencaoJuros: 'mensal_12',
+  tipoTaxa: 'fixa',
+  spread: 0,
+  benchmarkNome: null,
+  benchmarkPadrao: 0,
+  benchmarkCurva: [],
+};
+
+/**
  * Um aporte de capital de UM sócio (migration 1763100000).
  *
  * Dois aportes do mesmo sócio no mesmo mês SOMAM em vez de um sobrescrever o

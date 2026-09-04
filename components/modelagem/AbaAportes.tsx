@@ -14,8 +14,7 @@ import {
   PLANO_NEUTRO,
   REGRAS_RATEIO_CAPITAL,
   ROTULO_REGRA_CAPITAL,
-  somarMeses,
-} from '@/lib/modelagem';
+  somarMeses, facilidadePrincipal } from '@/lib/modelagem';
 import type {
   AporteParcela,
   LinhaFluxo,
@@ -174,7 +173,7 @@ export function AbaAportes({ rascunho, alterar, resultado, substituirParcelas, r
     // que já entrou em vez do aporte base declarado. É melhoria, não defeito — e
     // ainda assim é mudança de resultado, então o usuário decide antes.
     const avisoSaque =
-      rascunho.financiamento.modoSaque === 'equity_first'
+      facilidadePrincipal(rascunho)?.modoSaque === 'equity_first'
         ? '\n\nAtenção: com o saque em "equity first", a curva de financiamento muda. ' +
           'O plano informa em que mês o capital entra, e a dívida passa a ser dimensionada por isso ' +
           'em vez de pelo aporte base.'

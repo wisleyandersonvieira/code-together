@@ -24,8 +24,7 @@ import {
   totalAnual,
   SUFIXO_BASE_CALCULO,
   VARIACOES_CUSTO,
-  VARIACOES_PRECO,
-} from '@/lib/modelagem';
+  VARIACOES_PRECO, facilidadePrincipal, FACILIDADE_NEUTRA } from '@/lib/modelagem';
 import type { LinhaFluxo, MesFluxo, ModelInput, ModelOutput, Semaforo } from '@/lib/modelagem';
 import { nomeArquivoModelagem } from './exportarPdf';
 
@@ -275,12 +274,22 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
   const { apuracao: ap, indicadores: ind, agregados: ag, cronograma: cr, meses } = resultado;
   const nome = input.nome || 'Modelagem sem nome';
   const temQuantidade = input.unidades.some((u) => u.quantidade !== undefined && u.quantidade !== null);
+  /**
+   * Modo de negócio. NENHUMA aba do modo venda muda — as diferenças são rótulos
+   * atrás desta flag, duas colunas trocadas na aba do ativo e uma aba NOVA, que
+   * simplesmente não é criada na venda.
+   */
+  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+  const loc = input.locacao;
   const usaFases = !!input.usaFases && (input.fases?.length ?? 0) > 0 && cr.fases.length > 0;
   const plano = input.aportes;
 
   abaSumario();
   abaPremissas();
   abaTipologias();
+  // Só existe no modo locação: numa venda a aba viria vazia, e uma aba vazia
+  // numa planilha é pior que aba nenhuma — quem abre procura o que faltou.
+  if (ehLocacao) abaOperacao();
   abaUsosFontes();
   abaAnual();
   abaFluxo();
@@ -332,14 +341,17 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     ], true);
     l += 3;
 
+    // A PRIMEIRA facilidade ativa (migration 1764200000). Com uma só — o estado
+    // de toda modelagem já gravada — é exatamente o contrato de antes.
+    const finPrincipal = facilidadePrincipal(input) ?? FACILIDADE_NEUTRA;
     barraSecao(ws, l, 2, ULT, 'Modo de operação do fluxo');
     l += 1;
-    par(ws, l, 2, 'Saque', ROTULO_SAQUE[input.financiamento.modoSaque] ?? input.financiamento.modoSaque, { entrada: true });
-    par(ws, l, 5, 'Amortização', ROTULO_AMORTIZACAO[input.financiamento.modoAmortizacao] ?? input.financiamento.modoAmortizacao, { entrada: true });
+    par(ws, l, 2, 'Saque', ROTULO_SAQUE[finPrincipal.modoSaque] ?? finPrincipal.modoSaque, { entrada: true });
+    par(ws, l, 5, 'Amortização', ROTULO_AMORTIZACAO[finPrincipal.modoAmortizacao] ?? finPrincipal.modoAmortizacao, { entrada: true });
     par(ws, l, 8, 'Venda', ROTULO_VENDA[input.receita.modoVenda] ?? input.receita.modoVenda, { entrada: true });
     l += 1;
     par(ws, l, 2, 'Aporte', plano ? (ROTULO_APORTE[plano.modoAporte] ?? plano.modoAporte) : 'Por demanda de caixa', { entrada: true });
-    par(ws, l, 5, 'Capitalização de juros', input.financiamento.capitalizarJuros ? 'Sim' : 'Não', { entrada: true });
+    par(ws, l, 5, 'Capitalização de juros', finPrincipal.capitalizarJuros ? 'Sim' : 'Não', { entrada: true });
     par(ws, l, 8, 'Fases', usaFases ? `${cr.fases.length} fase(s)` : 'Frente única', { entrada: true });
     l += 2;
 
@@ -528,7 +540,10 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     l += 1;
 
     barraSecao(ws, l++, 2, ULT, 'Financiamento');
-    const fin = input.financiamento;
+    // A PRIMEIRA facilidade ativa — ver o comentário em exportarPdf. As demais
+    // aparecem no fluxo consolidado; abrir uma folha por facilidade é o próximo
+    // passo natural desta planilha.
+    const fin = facilidadePrincipal(input) ?? FACILIDADE_NEUTRA;
     par(ws, l++, 2, 'Taxa ao ano', fin.taxaAnual, { numFmt: FMT_PCT2, entrada: true });
     par(ws, l++, 2, 'Fee de estruturação', fin.feeEstruturacaoPct, { numFmt: FMT_PCT2, entrada: true });
     par(ws, l++, 2, 'Momento do fee', fin.feeTiming === 'first_draw' ? 'No primeiro saque' : `Mês ${fin.feeMes ?? '–'}`, { entrada: true });
@@ -586,20 +601,150 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 3, showGridLines: false }];
   }
 
+  // ── 3b · Operação (só no modo locação) ────────────────────────────────────
+  //
+  // Duas tabelas numa aba só: o plano de contas da operação e a curva de
+  // ocupação mês a mês. A curva vai INTEIRA aqui, ao contrário do PDF — numa
+  // planilha ela é insumo, e quem abre quer poder somar e filtrar.
+  function abaOperacao() {
+    const larguras = [5, 34, 16, 18, 14, 12];
+    const ws = novaAba(wb, 'Operação', larguras);
+    const ULT = 1 + larguras.length;
+    tituloAba(
+      ws,
+      1,
+      2,
+      ULT,
+      `${nome.toUpperCase()}  ·  OPERAÇÃO`,
+      'O OPEX bruto NÃO varia com a ocupação — prédio vazio custa property tax, seguro e manutenção igual. O que varia é o reembolso, porque só quem está lá paga.',
+    );
+
+    const linhasOpex = input.opex ?? [];
+    const abl = ag.ablSf;
+    const anualDa = (l: (typeof linhasOpex)[number]) => (l.valorSfAno || 0) * abl;
+    const opexBrutoAnual = linhasOpex.reduce((a, l) => a + anualDa(l), 0);
+    const opexReembolsavelAnual = linhasOpex
+      .filter((l) => l.reembolsavel !== false)
+      .reduce((a, l) => a + anualDa(l), 0);
+
+    let l = 4;
+    barraSecao(ws, l++, 2, ULT, 'Despesas operacionais');
+    cabecalhoTabela(ws, l, 2, [
+      { titulo: '#', align: 'right' },
+      { titulo: 'Despesa' },
+      { titulo: '$/sf/ano', align: 'right' },
+      { titulo: '$/ano', align: 'right' },
+      { titulo: '% receita', align: 'right' },
+      { titulo: 'Reembolsável', align: 'right' },
+    ]);
+    const primeiraOpex = l + 1;
+    linhasOpex.forEach((linhaOpex, i) => {
+      const linha = ws.getRow(primeiraOpex + i);
+      const valores: (string | number)[] = [
+        i + 1,
+        linhaOpex.label || '–',
+        linhaOpex.valorSfAno || 0,
+        anualDa(linhaOpex),
+        ag.receitaBrutaAnual100 === 0 ? 0 : anualDa(linhaOpex) / ag.receitaBrutaAnual100,
+        linhaOpex.reembolsavel !== false ? 'Sim' : 'Não',
+      ];
+      valores.forEach((v, k) => {
+        const cel = linha.getCell(2 + k);
+        cel.value = v;
+        cel.font = fonte();
+        cel.alignment = k === 1 ? esq : dir;
+        if (k === 3) cel.numFmt = MOEDA;
+        if (k === 4) cel.numFmt = FMT_PCT2;
+      });
+    });
+    const linhaTotal = primeiraOpex + linhasOpex.length;
+    const totais: (string | number)[] = [
+      '',
+      `Subtotal (${linhasOpex.length} linha(s))`,
+      abl > 0 ? opexBrutoAnual / abl : 0,
+      opexBrutoAnual,
+      ag.receitaBrutaAnual100 === 0 ? 0 : opexBrutoAnual / ag.receitaBrutaAnual100,
+      opexReembolsavelAnual,
+    ];
+    totais.forEach((v, k) => {
+      const cel = ws.getRow(linhaTotal).getCell(2 + k);
+      cel.value = v;
+      cel.font = fonte({ bold: true, color: { argb: T.navy } });
+      cel.alignment = k === 1 ? esq : dir;
+      cel.fill = fundo(T.faixa);
+      if (k === 3 || k === 5) cel.numFmt = MOEDA;
+      if (k === 4) cel.numFmt = FMT_PCT2;
+    });
+
+    l = linhaTotal + 2;
+    par(ws, l, 2, 'Taxa de reembolso NNN', loc?.taxaReembolsoPct ?? 0, { numFmt: FMT_PCT2, entrada: true });
+    par(ws, l, 5, 'Perda de crédito', loc?.perdaCreditoPct ?? 0, { numFmt: FMT_PCT2, entrada: true });
+    l += 1;
+    par(ws, l, 2, 'Ocupação estabilizada', loc?.ocupacaoEstabilizadaPct ?? 1, { numFmt: FMT_PCT2, entrada: true });
+    par(ws, l, 5, 'Cap rate de saída', loc?.capRateSaida ?? 0, { numFmt: FMT_PCT2, entrada: true });
+    l += 2;
+
+    barraSecao(ws, l++, 2, ULT, 'Curva de ocupação e NOI');
+    cabecalhoTabela(ws, l, 2, [
+      { titulo: 'Mês', align: 'right' },
+      { titulo: 'Data' },
+      { titulo: 'Ocupação', align: 'right' },
+      { titulo: 'Receita de aluguel', align: 'right' },
+      { titulo: 'OPEX líquido', align: 'right' },
+      { titulo: 'NOI', align: 'right' },
+    ]);
+    const primeiraCurva = l + 1;
+    resultado.meses.forEach((m, i) => {
+      const linha = ws.getRow(primeiraCurva + i);
+      const valores: (string | number)[] = [
+        m.mes,
+        m.data,
+        m.ocupacao,
+        m.rentalRevenue,
+        m.opex,
+        m.noiMes,
+      ];
+      valores.forEach((v, k) => {
+        const cel = linha.getCell(2 + k);
+        cel.value = v;
+        cel.font = fonte();
+        cel.alignment = k === 1 ? esq : dir;
+        if (k === 2) cel.numFmt = FMT_PCT2;
+        if (k >= 3) cel.numFmt = MOEDA;
+      });
+    });
+  }
+
   // ── 3 · Tipologias ────────────────────────────────────────────────────────
   function abaTipologias() {
     const larguras = [5, 28, 18, ...(temQuantidade ? [8] : []), 12, 16, 16, 16, 16, 14, 16, 16, 16, 16, 12];
-    const ws = novaAba(wb, 'Tipologias', larguras);
+    const ws = novaAba(wb, ehLocacao ? 'Ativo locável' : 'Tipologias', larguras);
     const ULT = 1 + larguras.length;
-    tituloAba(ws, 1, 2, ULT, `${nome.toUpperCase()}  ·  TIPOLOGIAS`,
-      'Todo valor monetário e de área é o TOTAL das unidades da tipologia.');
+    tituloAba(
+      ws,
+      1,
+      2,
+      ULT,
+      `${nome.toUpperCase()}  ·  ${ehLocacao ? 'ATIVO LOCÁVEL' : 'TIPOLOGIAS'}`,
+      ehLocacao
+        ? 'Todo valor monetário e de área é o TOTAL das unidades da tipologia; o aluguel é por pé quadrado e por ano. Preço de venda e property tax da tipologia NÃO entram no modo locação.'
+        : 'Todo valor monetário e de área é o TOTAL das unidades da tipologia.',
+    );
 
     const colunas: ColunaAba[] = [
       { titulo: '#', align: 'right' }, { titulo: 'Nome' }, { titulo: 'Cidade' },
       ...(temQuantidade ? [{ titulo: 'Qtd', align: 'right' as const }] : []),
       { titulo: 'Área sf', align: 'right' }, { titulo: 'Terreno', align: 'right' },
       { titulo: 'Obra', align: 'right' }, { titulo: 'Custo direto', align: 'right' },
-      { titulo: 'Preço de venda', align: 'right' }, { titulo: 'Tax/ano', align: 'right' },
+      ...(ehLocacao
+        ? [
+            { titulo: 'Aluguel $/sf/ano', align: 'right' as const },
+            { titulo: 'Receita anual 100%', align: 'right' as const },
+          ]
+        : [
+            { titulo: 'Preço de venda', align: 'right' as const },
+            { titulo: 'Tax/ano', align: 'right' as const },
+          ]),
       { titulo: 'Custo total', align: 'right' }, { titulo: 'Custo unitário', align: 'right' },
       { titulo: 'Receita líquida', align: 'right' },
       { titulo: 'Lucro', align: 'right' }, { titulo: 'Margem', align: 'right' },
@@ -619,8 +764,9 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
         (u.custoTerreno || 0) * qtd,
         (u.custoObra || 0) * qtd,
         r?.custoDireto ?? 0,
-        (u.precoVenda || 0) * qtd,
-        (u.propertyTaxAno || 0) * qtd,
+        ...(ehLocacao
+          ? [u.aluguelSfAno || 0, (u.areaSf || 0) * (u.aluguelSfAno || 0) * qtd]
+          : [(u.precoVenda || 0) * qtd, (u.propertyTaxAno || 0) * qtd]),
         r?.custoTotal ?? 0,
         // Tudo incluído, já com o rateio de property tax, juros e fee. Vem do
         // motor: a planilha não divide por conta própria.
@@ -1081,6 +1227,7 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     estiloTotal(ws, totalLinha, 2, ULT);
 
     const r0 = totalLinha + 2;
+    const finPrincipal = facilidadePrincipal(input) ?? FACILIDADE_NEUTRA;
     barraSecao(ws, r0, 2, ULT, 'Custo da dívida');
     par(ws, r0 + 1, 2, 'Dívida sacada', ap.dividaSacada, { numFmt: MOEDA });
     par(ws, r0 + 2, 2, 'Juros totais', ap.jurosTotais, { numFmt: MOEDA });
@@ -1092,9 +1239,9 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     // teto cobra ali; o por desembolso no caso não rotativo.
     par(
       ws, r0 + 3, 5,
-      input.financiamento.linhaRotativa ? 'LTC de pico' : 'LTC por desembolso',
-      (input.financiamento.linhaRotativa ? ind.ltcPico : ind.ltc) ?? '–',
-      { numFmt: (input.financiamento.linhaRotativa ? ind.ltcPico : ind.ltc) == null ? undefined : FMT_PCT },
+      finPrincipal.linhaRotativa ? 'LTC de pico' : 'LTC por desembolso',
+      (finPrincipal.linhaRotativa ? ind.ltcPico : ind.ltc) ?? '–',
+      { numFmt: (finPrincipal.linhaRotativa ? ind.ltcPico : ind.ltc) == null ? undefined : FMT_PCT },
     );
     par(ws, r0 + 4, 5, 'Custo total da dívida', ind.custoTotalDividaPct ?? '–', { numFmt: ind.custoTotalDividaPct == null ? undefined : FMT_PCT });
     // O mesmo custo financeiro sobre o PICO do saldo devedor. Vai junto do
@@ -1105,7 +1252,7 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     // da linha, não o total sacado.
     par(ws, r0 + 5, 2, 'Base do fee de estruturação', ap.baseFeeEstruturacao, { numFmt: MOEDA });
 
-    nota(ws, r0 + 6, 2, ULT, input.financiamento.capitalizarJuros
+    nota(ws, r0 + 6, 2, ULT, finPrincipal.capitalizarJuros
       ? 'Capitalização de juros LIGADA: os juros do mês somam ao saldo devedor em vez de sair do caixa. Por isso a coluna "Juros do mês" não aparece no fluxo de caixa como pagamento.'
       : 'Capitalização de juros desligada: os juros de cada mês são pagos no próprio mês e aparecem na linha "Juros e taxas" do fluxo de caixa.');
 
@@ -1396,14 +1543,35 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
 
     const HEADER = 4;
     barraSecao(ws, HEADER, 2, 3, 'Apuração do resultado');
+    // A COLUNA TEM DE FECHAR: cada linha é parcela da soma acima dela. O OPEX
+    // aparece UMA vez só, no bloco de custo; o NOI acumulado é MEMÓRIA e sai
+    // depois do lucro, fora da coluna que soma.
     const dre: { rotulo: string; valor: number; negativo?: boolean; total?: boolean }[] = [
-      { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta },
-      { rotulo: '(−) Comissões', valor: -ap.comissoes, negativo: true },
-      { rotulo: '(−) Cartório / closing', valor: -ap.cartorio, negativo: true },
-      { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+      ...(ehLocacao
+        ? [
+            { rotulo: 'Receita de aluguel (líq. perda de crédito)', valor: ap.receitaAluguel },
+            {
+              rotulo: `Valor de saída (NOI ÷ cap ${((loc?.capRateSaida ?? 0) * 100).toFixed(2)}%)`,
+              valor: ind.valorSaida ?? 0,
+            },
+            {
+              rotulo: `(−) Custo de venda (${((loc?.custoVendaPct ?? 0) * 100).toFixed(2)}%)`,
+              valor: -ap.custoVenda,
+              negativo: true,
+            },
+            { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+          ]
+        : [
+            { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta },
+            { rotulo: '(−) Comissões', valor: -ap.comissoes, negativo: true },
+            { rotulo: '(−) Cartório / closing', valor: -ap.cartorio, negativo: true },
+            { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+          ]),
       { rotulo: '(−) Terrenos', valor: -ap.custoTerrenos, negativo: true },
       { rotulo: '(−) Obra', valor: -ap.custoObra, negativo: true },
-      { rotulo: '(−) Property taxes', valor: -ap.custoPropertyTax, negativo: true },
+      ...(ehLocacao
+        ? [{ rotulo: '(−) OPEX (líq. de reembolso)', valor: -ap.opexTotal, negativo: true }]
+        : [{ rotulo: '(−) Property taxes', valor: -ap.custoPropertyTax, negativo: true }]),
       { rotulo: '(−) Outros custos', valor: -ap.custoOutros, negativo: true },
       { rotulo: '(=) Custo do empreendimento', valor: -ap.custoEmpreendimento, total: true },
       { rotulo: '(−) Juros', valor: -ap.jurosTotais, negativo: true },
@@ -1412,6 +1580,14 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
       { rotulo: '(=) LUCRO DO PROJETO', valor: ap.lucroProjeto, total: true },
       { rotulo: 'Lucro dos investidores', valor: ap.lucroInvestidores },
       { rotulo: 'Lucro do sponsor', valor: ap.lucroSponsor },
+      // Memória: explicam o spread sobre o cap, e não são parcelas de nada acima.
+      ...(ehLocacao
+        ? [
+            { rotulo: 'NOI de referência (ao ano)', valor: ind.noiEstabilizado ?? 0 },
+            { rotulo: 'NOI acumulado do fluxo', valor: ap.noiTotal },
+            { rotulo: 'Custo de desenvolvimento', valor: ap.custoDesenvolvimento },
+          ]
+        : []),
     ];
     dre.forEach((item, i) => {
       const l = HEADER + 1 + i;

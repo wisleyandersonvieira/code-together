@@ -41,8 +41,7 @@ import {
   sensibilidadePrazo,
   totalAnual,
   VARIACOES_CUSTO,
-  VARIACOES_PRECO,
-} from '@/lib/modelagem';
+  VARIACOES_PRECO, facilidadePrincipal } from '@/lib/modelagem';
 import type { MesFluxo, ModelInput, ModelOutput, RateioSocio } from '@/lib/modelagem';
 import { dinheiro, dinheiroCurto, numero } from './formato';
 import { distribuir, mesAnoLongo } from './exportarPdf';
@@ -332,10 +331,21 @@ function desenharCapa(d: Documento, input: ModelInput, r: ModelOutput, c: Contex
   // ── Contexto em uma linha ────────────────────────────────────────────────
   const cidades = [...new Set(input.unidades.map((u) => (u.cidade || '').trim()).filter(Boolean))];
   const local = input.localizacao || cidades.join(' e ') || '—';
+  /**
+   * Modo de negócio. Nada do relatório de venda muda: as diferenças são o
+   * contexto do cabeçalho e o bloco de receita da apuração, os dois atrás desta
+   * flag. Numa locação o VGV é ignorado pelo motor, e imprimi-lo no cabeçalho
+   * daria ao investidor um número que não entra em conta nenhuma.
+   */
+  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
   const contexto = [
-    plural(ag.unidadesTotal, 'unidade', 'unidades'),
+    ehLocacao
+      ? `${numero(ag.ablSf, 0)} sf de ABL`
+      : plural(ag.unidadesTotal, 'unidade', 'unidades'),
     local,
-    `VGV $${c.dc(ag.vgv)}`,
+    ehLocacao
+      ? `saída $${c.dc(ind.valorSaida ?? 0)} a cap ${pct(input.locacao?.capRateSaida ?? 0, 2)}`
+      : `VGV $${c.dc(ag.vgv)}`,
     `início ${mesAnoLongo(cr.dataInicio)}`,
     `saída ${mesAnoLongo(cr.dataSaida)}`,
   ].join(' · ');
@@ -765,7 +775,7 @@ function desenharGraficoCaixa(d: Documento, input: ModelInput, r: ModelOutput) {
     risco.push(acumulado);
   }
 
-  const colchao = input.financiamento.colchaoMinimoCaixa || 0;
+  const colchao = facilidadePrincipal(input)?.colchaoMinimoCaixa || 0;
   const series = [
     { nome: 'Caixa acumulado', valores: caixa, cor: C.blue, area: C.blueSoft },
     { nome: 'Saldo devedor', valores: divida, cor: C.rose, area: null },
@@ -1028,14 +1038,14 @@ function desenharCronograma(
 
   // ── Financiamento ────────────────────────────────────────────────────────
   const marcos = [
-    { mes: input.financiamento.mesInicioSaque, rotulo: 'Início do saque', cor: C.green },
-    { mes: input.financiamento.mesFimSaque, rotulo: 'Fim do saque', cor: C.gold },
+    { mes: facilidadePrincipal(input)?.mesInicioSaque ?? 1, rotulo: 'Início do saque', cor: C.green },
+    { mes: facilidadePrincipal(input)?.mesFimSaque ?? 1, rotulo: 'Fim do saque', cor: C.gold },
     { mes: cr.mesSaida, rotulo: 'Saída', cor: C.rose },
   ].filter((x) => x.mes >= 1 && x.mes <= prazo);
   if (marcos.length > 0) {
     trilha('Financiamento', (topo) => {
-      const inicio = input.financiamento.mesInicioSaque;
-      const fim = input.financiamento.mesFimSaque;
+      const inicio = facilidadePrincipal(input)?.mesInicioSaque ?? 1;
+      const fim = facilidadePrincipal(input)?.mesFimSaque ?? 1;
       if (fim >= inicio) {
         ctx.sf(C.navySoft);
         doc.rect(xDe(inicio), topo, larguraDe(inicio, fim), ALTURA_TRILHA, 'F');
@@ -1105,14 +1115,38 @@ function desenharApuracao(
   ctx.addPage('portrait');
   secao(d, 'Apuração do resultado');
 
+  // Ver o comentário do `ehLocacao` da capa: nada do relatório de venda muda.
+  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+
+  // A COLUNA TEM DE FECHAR: cada linha é parcela da soma acima dela. O OPEX
+  // aparece UMA vez só, no bloco de custo; o NOI de referência é MEMÓRIA e sai
+  // depois do lucro, fora da coluna que soma.
   const dre: { rotulo: string; valor: number; negativo?: boolean; total?: boolean }[] = [
-    { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta },
-    { rotulo: '(-) Comissões', valor: ap.comissoes, negativo: true },
-    { rotulo: '(-) Cartório / closing', valor: ap.cartorio, negativo: true },
-    { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+    ...(ehLocacao
+      ? [
+          { rotulo: 'Receita de aluguel (líq. perda de crédito)', valor: ap.receitaAluguel },
+          {
+            rotulo: `Valor de saída (NOI ${o.din(ind.noiEstabilizado)} ÷ cap ${pct(input.locacao?.capRateSaida ?? 0, 2)})`,
+            valor: ind.valorSaida ?? 0,
+          },
+          {
+            rotulo: `(-) Custo de venda (${pct(input.locacao?.custoVendaPct ?? 0, 2)})`,
+            valor: ap.custoVenda,
+            negativo: true,
+          },
+          { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+        ]
+      : [
+          { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta },
+          { rotulo: '(-) Comissões', valor: ap.comissoes, negativo: true },
+          { rotulo: '(-) Cartório / closing', valor: ap.cartorio, negativo: true },
+          { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+        ]),
     { rotulo: '(-) Terrenos', valor: ap.custoTerrenos, negativo: true },
     { rotulo: '(-) Obra', valor: ap.custoObra, negativo: true },
-    { rotulo: '(-) Property taxes', valor: ap.custoPropertyTax, negativo: true },
+    ...(ehLocacao
+      ? [{ rotulo: '(-) OPEX (líq. de reembolso)', valor: ap.opexTotal, negativo: true }]
+      : [{ rotulo: '(-) Property taxes', valor: ap.custoPropertyTax, negativo: true }]),
     { rotulo: '(-) Outros custos', valor: ap.custoOutros, negativo: true },
     { rotulo: '(=) Custo do empreendimento', valor: ap.custoEmpreendimento, negativo: true, total: true },
     { rotulo: '(-) Juros', valor: ap.jurosTotais, negativo: true },
@@ -1121,6 +1155,13 @@ function desenharApuracao(
     { rotulo: '(=) LUCRO DO PROJETO', valor: ap.lucroProjeto, total: true },
     { rotulo: `Lucro dos investidores (${pct(rec.lucroInvestidoresPct, 0)})`, valor: ap.lucroInvestidores },
     { rotulo: `Lucro do sponsor (${pct(rec.lucroSponsorPct, 0)})`, valor: ap.lucroSponsor },
+    // Memória: explicam o spread sobre o cap, que é o negócio inteiro, e não são
+    // parcelas de nada acima.
+    ...(ehLocacao
+      ? [
+          { rotulo: 'Custo de desenvolvimento (base do yield on cost)', valor: ap.custoDesenvolvimento },
+        ]
+      : []),
   ];
 
   drawTabela(

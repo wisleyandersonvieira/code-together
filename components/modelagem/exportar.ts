@@ -29,21 +29,62 @@ const nomeArquivo = (input: ModelInput, extensao: string) =>
  * correção) não é grandeza nenhuma. A tela e a planilha já não somavam essas
  * três; só o CSV somava.
  */
-function linhasDoFluxo(resultado: ModelOutput) {
+function linhasDoFluxo(input: ModelInput, resultado: ModelOutput) {
   const m = resultado.meses;
+  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+  // Facilidades ATIVAS, na ordem. Com uma só, nenhuma linha por facilidade é
+  // acrescentada e o CSV é exatamente o de antes.
+  const facilidades = m[0]?.porFacilidade ?? [];
+  const varias = facilidades.length > 1;
+  const daFacilidade = (i: number, campo: 'draw' | 'amortization' | 'saldoDevedor') =>
+    m.map((x) => x.porFacilidade.find((f) => f.indice === i)?.[campo] ?? 0);
+
   return [
     ['Terrenos', m.map((x) => x.land), true],
     ['Obra', m.map((x) => x.construction), true],
     ['Property taxes', m.map((x) => x.propertyTax), true],
     // Rótulo idêntico ao da grade. O CSV leva o total do mês, sem as filhas.
     ['Custos', m.map((x) => x.otherCosts), true],
+    // ─── Operação (modo locação) ────────────────────────────────────────────
+    // Zeradas no modo venda, então saem da lista em vez de virarem colunas de
+    // zeros: o CSV é lido por máquina, e uma linha constante zero é ruído.
+    ...(ehLocacao
+      ? ([
+          ['Ocupacao', m.map((x) => x.ocupacao), false],
+          ['OPEX bruto', m.map((x) => x.opexBruto), true],
+          ['OPEX reembolso', m.map((x) => x.opexReembolso), true],
+          ['OPEX liquido', m.map((x) => x.opex), true],
+        ] as [string, number[], boolean][])
+      : []),
     ['Juros e taxas', m.map((x) => x.custoFinanceiroCaixa), true],
     ['Total de pagamentos', m.map((x) => x.pagamentos), true],
-    ['Receita', m.map((x) => x.revenue), true],
+    ...(ehLocacao
+      ? ([
+          ['Receita de aluguel', m.map((x) => x.rentalRevenue), true],
+          ['NOI do mes', m.map((x) => x.noiMes), true],
+          ['Venda do ativo', m.map((x) => x.revenue), true],
+        ] as [string, number[], boolean][])
+      : ([['Receita', m.map((x) => x.revenue), true]] as [string, number[], boolean][])),
+    // Com mais de uma facilidade, uma linha por facilidade ANTES do consolidado.
+    ...(varias
+      ? (facilidades.flatMap((f) => [
+          [`Saque — ${f.nome}`, daFacilidade(f.indice, 'draw'), true],
+        ]) as [string, number[], boolean][])
+      : []),
     ['Saque', m.map((x) => x.draw), true],
+    ...(varias
+      ? (facilidades.flatMap((f) => [
+          [`Amortizacao — ${f.nome}`, daFacilidade(f.indice, 'amortization'), true],
+        ]) as [string, number[], boolean][])
+      : []),
     ['Amortizacao', m.map((x) => x.amortization), true],
     ['Aporte de equity', m.map((x) => x.equityCall), true],
     ['Distribuicao', m.map((x) => x.distribution), true],
+    ...(varias
+      ? (facilidades.flatMap((f) => [
+          [`Saldo devedor — ${f.nome}`, daFacilidade(f.indice, 'saldoDevedor'), false],
+        ]) as [string, number[], boolean][])
+      : []),
     ['Saldo devedor', m.map((x) => x.saldoDevedor), false],
     ['Equity acumulado', m.map((x) => x.equityAcumulado), false],
     ['Caixa do mes', m.map((x) => x.caixaMes), true],
@@ -62,7 +103,7 @@ function baixar(conteudo: BlobPart, nome: string, tipo: string) {
 
 export function exportarFluxoCsv(input: ModelInput, resultado: ModelOutput) {
   const cabecalho = ['Linha', ...resultado.meses.map((m) => `${m.mes} (${m.data})`), 'Total'];
-  const corpo = linhasDoFluxo(resultado).map(([rotulo, valores, somavel]) => [
+  const corpo = linhasDoFluxo(input, resultado).map(([rotulo, valores, somavel]) => [
     rotulo,
     ...valores.map((v) => v.toFixed(2)),
     // Estoque não soma: a coluna Total fica VAZIA, e não zero — zero seria um

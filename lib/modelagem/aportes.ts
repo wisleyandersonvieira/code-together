@@ -7,7 +7,7 @@
  * duas telas — se morasse, as duas precisariam se sincronizar, que é exatamente o
  * que este módulo não faz. Sendo função pura, também dá para testar sem DOM.
  */
-import type { AporteParcela, LinhaFluxo, ModelInput, ModelOutput, PlanoAportes } from './tipos';
+import type { AporteParcela, ChaveOverride, ModelInput, ModelOutput, PlanoAportes } from './tipos';
 
 /** Plano de uma modelagem que nunca teve plano: reproduz o comportamento antigo. */
 export const PLANO_NEUTRO: PlanoAportes = {
@@ -31,7 +31,7 @@ const ordenar = (parcelas: AporteParcela[]) => [...parcelas].sort((a, b) => a.me
  * Só a linha de aporte, e só com o plano ligado. Manter override E parcela ativos
  * na mesma célula seria criar duas fontes para o mesmo número.
  */
-export function editaPlanoDeAportes(input: ModelInput, linha: LinhaFluxo): boolean {
+export function editaPlanoDeAportes(input: ModelInput, linha: ChaveOverride): boolean {
   if (linha !== 'equity_call') return false;
   // Com cronograma por sócio a célula não é editável por NENHUM dos dois
   // caminhos: nem parcela, nem override. O valor do mês é a soma de aportes
@@ -49,7 +49,7 @@ export function editaPlanoDeAportes(input: ModelInput, linha: LinhaFluxo): boole
  * Sem ela, a tela teria de repetir a regra — e as duas divergiriam na primeira
  * mudança.
  */
-export function aporteSomenteLeitura(input: ModelInput, linha: LinhaFluxo): boolean {
+export function aporteSomenteLeitura(input: ModelInput, linha: ChaveOverride): boolean {
   return linha === 'equity_call' && input.aportes?.regraRateioCapital === 'cronograma_socio';
 }
 

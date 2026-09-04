@@ -33,6 +33,14 @@ const UNIDADE_NOVA: Unidade = {
 const qtd = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
 
 export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
+  /**
+   * No modo locação a tipologia deixa de ser "casa a vender" e passa a ser "tipo
+   * de espaço a locar". É a MESMA tabela e o mesmo componente — nome, área,
+   * terreno, obra e quantidade significam o mesmo nos dois modos. O que muda são
+   * duas colunas, e a troca é simétrica: sai preço de venda e property tax,
+   * entra aluguel por sf/ano.
+   */
+  const ehLocacao = (rascunho.tipoModelagem ?? 'venda') === 'locacao';
   const unidades = rascunho.unidades;
   const fases = rascunho.fases ?? [];
   const alocacoes = rascunho.alocacoes ?? [];
@@ -97,8 +105,12 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
   return (
     <div className="space-y-6">
     <FinanceDetailSectionCard
-      title="Tipologias"
-      description="Cada linha é uma tipologia com N unidades iguais. Os valores da linha são por unidade; os totais consideram a quantidade."
+      title={ehLocacao ? 'Ativo locável' : 'Tipologias'}
+      description={
+        ehLocacao
+          ? 'Cada linha é um tipo de espaço locável com N unidades iguais. Os valores da linha são por unidade; os totais consideram a quantidade. Preço de venda e property tax não aparecem: no modo locação o valor de saída vem do cap rate e o imposto vem de uma linha de OPEX.'
+          : 'Cada linha é uma tipologia com N unidades iguais. Os valores da linha são por unidade; os totais consideram a quantidade.'
+      }
       action={
         <Button
           type="button"
@@ -120,11 +132,27 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
               <th className={`${cabecalho} text-right`}>Área sf</th>
               <th className={`${cabecalho} text-right`}>Terreno</th>
               <th className={`${cabecalho} text-right`}>Obra</th>
-              <th className={`${cabecalho} text-right`}>Preço de venda</th>
-              <th className={`${cabecalho} text-right`}>Tax/ano</th>
+              {/* SIMETRIA DOS DOIS MODOS. No modo locação, `precoVenda` e
+                  `propertyTaxAno` são IGNORADOS pelo motor — o valor de saída
+                  vem do cap rate e o imposto vem de uma linha de OPEX —, então
+                  as colunas somem em vez de mostrar campos que não entram em
+                  conta nenhuma. No lugar entra o aluguel, que é o que faz a
+                  receita ali. Nada é apagado: os valores continuam gravados, e
+                  `preco_venda_ignorado` / `property_tax_duplicado` acendem âmbar
+                  se estiverem preenchidos. */}
+              {ehLocacao ? (
+                <th className={`${cabecalho} text-right`}>Aluguel $/sf/ano</th>
+              ) : (
+                <>
+                  <th className={`${cabecalho} text-right`}>Preço de venda</th>
+                  <th className={`${cabecalho} text-right`}>Tax/ano</th>
+                </>
+              )}
               <th className={`${cabecalho} bg-slate-50 text-right`}>Terreno total</th>
               <th className={`${cabecalho} bg-slate-50 text-right`}>Obra total</th>
-              <th className={`${cabecalho} bg-slate-50 text-right`}>VGV total</th>
+              <th className={`${cabecalho} bg-slate-50 text-right`}>
+                {ehLocacao ? 'Receita anual a 100%' : 'VGV total'}
+              </th>
               <th className={`${cabecalho} bg-slate-50 text-right`}>Custo total</th>
               <th className={`${cabecalho} bg-slate-50 text-right`}>Custo unitário</th>
               <th className={`${cabecalho} bg-slate-50 text-right`}>Margem</th>
@@ -163,13 +191,20 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
                       }
                     />
                   </td>
-                  {([
-                    ['areaSf', u.areaSf],
-                    ['custoTerreno', u.custoTerreno],
-                    ['custoObra', u.custoObra],
-                    ['precoVenda', u.precoVenda],
-                    ['propertyTaxAno', u.propertyTaxAno],
-                  ] as const).map(([campo, valor]) => (
+                  {((ehLocacao
+                    ? [
+                        ['areaSf', u.areaSf],
+                        ['custoTerreno', u.custoTerreno],
+                        ['custoObra', u.custoObra],
+                        ['aluguelSfAno', u.aluguelSfAno],
+                      ]
+                    : [
+                        ['areaSf', u.areaSf],
+                        ['custoTerreno', u.custoTerreno],
+                        ['custoObra', u.custoObra],
+                        ['precoVenda', u.precoVenda],
+                        ['propertyTaxAno', u.propertyTaxAno],
+                      ]) as readonly (readonly [keyof Unidade, number | undefined])[]).map(([campo, valor]) => (
                     <td key={campo} className="px-1 py-1.5">
                       <Input
                         type="number"
@@ -182,7 +217,13 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
                   ))}
                   <td className={lido}>{dinheiro((u.custoTerreno || 0) * n, rascunho.moeda)}</td>
                   <td className={lido}>{dinheiro((u.custoObra || 0) * n, rascunho.moeda)}</td>
-                  <td className={lido}>{dinheiro((u.precoVenda || 0) * n, rascunho.moeda)}</td>
+                  {/* No modo locação a coluna vira a receita anual a 100% de
+                      ocupação daquela tipologia: área × aluguel × quantidade. */}
+                  <td className={lido}>
+                    {ehLocacao
+                      ? dinheiro((u.areaSf || 0) * (u.aluguelSfAno || 0) * n, rascunho.moeda)
+                      : dinheiro((u.precoVenda || 0) * n, rascunho.moeda)}
+                  </td>
                   <td className={lido}>
                     {dinheiro(res?.custoTotal ?? ((u.custoTerreno || 0) + (u.custoObra || 0)) * n, rascunho.moeda)}
                   </td>
@@ -207,7 +248,7 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
             })}
             {unidades.length === 0 ? (
               <tr>
-                <td colSpan={15} className="px-2 py-8 text-center text-sm text-slate-500">
+                <td colSpan={ehLocacao ? 14 : 15} className="px-2 py-8 text-center text-sm text-slate-500">
                   Nenhuma tipologia cadastrada.
                 </td>
               </tr>
@@ -229,7 +270,9 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
                 {/* Terreno, Obra, Preço e Tax são POR UNIDADE: somar valores
                     unitários de tipologias diferentes não significa nada. Os
                     totais estão nas colunas calculadas à direita. */}
-                <td className="px-2 py-2" colSpan={4} />
+                {/* Uma coluna a menos no modo locação: `precoVenda` e
+                    `propertyTaxAno` saíram e só o aluguel entrou. */}
+                <td className="px-2 py-2" colSpan={ehLocacao ? 3 : 4} />
                 <td className="px-2 py-2 text-right text-sm tabular-nums">
                   {dinheiro(resultado.agregados.terrenosTotal, rascunho.moeda)}
                 </td>
@@ -237,7 +280,10 @@ export function AbaUnidades({ rascunho, alterar, resultado }: Props) {
                   {dinheiro(resultado.agregados.obraTotal, rascunho.moeda)}
                 </td>
                 <td className="px-2 py-2 text-right text-sm tabular-nums">
-                  {dinheiro(resultado.agregados.vgv, rascunho.moeda)}
+                  {dinheiro(
+                    ehLocacao ? resultado.agregados.receitaBrutaAnual100 : resultado.agregados.vgv,
+                    rascunho.moeda,
+                  )}
                 </td>
                 <td className="px-2 py-2 text-right text-sm tabular-nums">
                   {dinheiro(

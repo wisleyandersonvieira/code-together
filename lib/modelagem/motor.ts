@@ -91,6 +91,24 @@ export function normalizarFacilidades(input: ModelInput): Financiamento[] {
 }
 
 /**
+ * A facilidade PRINCIPAL de um input: a primeira ATIVA, na ordem de precedência.
+ *
+ * Existe para a interface e as exportações, que em vários pontos precisam de um
+ * contrato para ler — o modo de saque, o colchão, a janela, a flag de linha
+ * rotativa. Antes da migration 1764200000 essas leituras iam direto em
+ * `input.financiamento`; com 1:N, ir direto ali devolveria `undefined` para toda
+ * modelagem carregada do banco, e a tela quebraria em tempo de execução.
+ *
+ * Devolve `null` quando não há facilidade ativa nenhuma — um projeto sem dívida é
+ * input legítimo, e quem chama decide o que mostrar. NÃO devolve um objeto
+ * neutro: um contrato falso com taxa zero e janela do mês 1 ao 1 seria lido como
+ * um contrato de verdade, e a tela mostraria premissas que ninguém declarou.
+ */
+export function facilidadePrincipal(input: ModelInput): Financiamento | null {
+  return normalizarFacilidades(input).find((f) => f.ativo !== false) ?? null;
+}
+
+/**
  * Índices das facilidades que participam de um CICLO de refinanciamento.
  *
  * A → B → A é a forma óbvia; A → A, uma facilidade que refinancia a si mesma, é
@@ -2462,7 +2480,33 @@ export function calcular(input: ModelInput): ModelOutput {
       custoDiretoInput > 0 ? custoDireto / custoDiretoInput : unidades.length > 0 ? 1 / unidades.length : 0;
     const custosCompartilhados = fatorRateio * (custoPropertyTax + custoOutros);
     const custoFinanceiroUnidade = fatorRateio * custoFinanceiro;
-    const receitaLiquidaUnidade = (u.precoVenda || 0) * n * fatorLiquido;
+    /**
+     * Receita líquida DESTA tipologia.
+     *
+     * Venda: preço × quantidade × fator líquido — a receita é da unidade, e cada
+     * uma tem a sua.
+     *
+     * Locação: a receita NÃO é da tipologia. O aluguel é dela, mas o valor de
+     * saída é do ATIVO INTEIRO — ninguém vende meio galpão a um fundo —, e o
+     * cap rate se aplica ao NOI consolidado. Então a receita líquida do projeto
+     * é rateada pela ÁREA LOCÁVEL, que é a grandeza que produz tanto o aluguel
+     * quanto o valor de saída.
+     *
+     * Ler `precoVenda` aqui seria o erro silencioso clássico: o campo é IGNORADO
+     * pelo motor no modo locação (o valor de saída vem do cap rate), então a
+     * tabela por tipologia mostraria receita zero — ou, pior, uma receita que
+     * não existe em conta nenhuma — e Σ lucro das tipologias deixaria de bater
+     * com o lucro do projeto, que é a identidade que este bloco existe para
+     * manter.
+     *
+     * Sem área declarada em tipologia nenhuma o denominador é zero: cai no
+     * `fatorRateio` do custo direto, que é a única outra fração disponível e
+     * também soma 1.
+     */
+    const receitaLiquidaUnidade = ehLocacao
+      ? receitaLiquida *
+        (bases.areaSf > 0 ? ((u.areaSf || 0) * n) / bases.areaSf : fatorRateio)
+      : (u.precoVenda || 0) * n * fatorLiquido;
     const extraRateado =
       fatorRateio * (custoEmpreendimento - custoDiretoInput - custoPropertyTax - custoOutros);
     const custoTotal =

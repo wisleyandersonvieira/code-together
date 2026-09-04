@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { FinanceDetailSectionCard } from '@/components/finance/detail-ui';
+import { facilidadePrincipal } from '@/lib/modelagem';
 import type { ModelInput, ModelOutput } from '@/lib/modelagem';
 import { dinheiro, mesAno } from './formato';
 
@@ -119,7 +120,7 @@ export function AbaTimeline({ rascunho, resultado, irParaAba }: Props) {
   const marcadoresVenda = [...vendasPorMes.entries()].sort((a, b) => a[0] - b[0]);
 
   // ─── Trilha 4: marcos do financiamento ─────────────────────────────────────
-  const fin = rascunho.financiamento;
+  const fin = facilidadePrincipal(rascunho);
   const marcos = [
     { mes: fin.mesInicioSaque, rotulo: 'Início do saque', cor: '#2E7D6B' },
     { mes: fin.mesFimSaque, rotulo: 'Fim da janela de saque', cor: '#8A5A2B' },

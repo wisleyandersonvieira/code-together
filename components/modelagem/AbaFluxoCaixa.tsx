@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type {
   CategoriaCusto,
+  ChaveOverride,
   DetalheCusto,
-  LinhaFluxo,
+  FacilidadeMes,
   MesFluxo,
   ModelInput,
   ModelOutput,
@@ -20,9 +21,9 @@ interface Props {
   resultado: ModelOutput;
   /** Mesma modelagem sem nenhum override — alimenta o tooltip do valor automático. */
   resultadoAutomatico: ModelOutput;
-  aplicarOverride: (mes: number, linha: LinhaFluxo, valor: number | null) => void;
-  reverterCelula: (mes: number, linha: LinhaFluxo) => void;
-  reverterLinha: (linha: LinhaFluxo) => void;
+  aplicarOverride: (mes: number, linha: ChaveOverride, valor: number | null) => void;
+  reverterCelula: (mes: number, linha: ChaveOverride) => void;
+  reverterLinha: (linha: ChaveOverride) => void;
   reverterTudo: () => void;
 }
 
@@ -41,17 +42,43 @@ interface DefinicaoLinha {
   dicaDoMes?: (m: MesFluxo) => string;
   valor: (m: MesFluxo) => number;
   /** Linhas calculadas não recebem override: elas são consequência, não entrada. */
-  linha?: LinhaFluxo;
+  linha?: ChaveOverride;
   destaque?: boolean;
   separador?: boolean;
   somavel?: boolean;
 }
 
-/** Ordem fixa da grade. Cada linha editável carrega seu `line_key` estável. */
-const LINHAS: DefinicaoLinha[] = [
+/**
+ * A grade, montada a partir do modo de negócio e das facilidades.
+ *
+ * Deixou de ser constante de módulo por duas razões, e as duas mudam LINHAS, não
+ * números: o modo locação acrescenta receita de aluguel, OPEX e NOI; e saque e
+ * amortização passaram a ter um bloco por facilidade quando há mais de uma.
+ *
+ * NO MODO VENDA COM UMA FACILIDADE — o estado de toda modelagem já gravada — a
+ * lista devolvida é EXATAMENTE a de antes, na mesma ordem e com as mesmas
+ * chaves. É isso que faz a grade não mudar uma célula na não-regressão.
+ */
+function linhasDoFluxo(ehLocacao: boolean, facilidades: FacilidadeMes[]): DefinicaoLinha[] {
+  const varias = facilidades.length > 1;
+  const nomeDa = (i: number) => facilidades.find((f) => f.indice === i)?.nome || `Facilidade ${i + 1}`;
+
+  return [
   { chave: 'land', rotulo: 'Terrenos', valor: (m) => m.land, linha: 'land' },
   { chave: 'construction', rotulo: 'Obra', valor: (m) => m.construction, linha: 'construction' },
-  { chave: 'property_tax', rotulo: 'Property taxes', valor: (m) => m.propertyTax, linha: 'property_tax' },
+  // No modo locação a linha vale ZERO o projeto inteiro: o property tax vem de
+  // uma linha de OPEX. Esconder a linha, em vez de mostrar zeros, evita a
+  // pergunta "por que meu property tax sumiu?" — a resposta está na aba Operação.
+  ...(ehLocacao
+    ? []
+    : [
+        {
+          chave: 'property_tax',
+          rotulo: 'Property taxes',
+          valor: (m: MesFluxo) => m.propertyTax,
+          linha: 'property_tax' as const,
+        },
+      ]),
   {
     chave: 'other_costs',
     rotulo: 'Custos',
@@ -61,34 +88,156 @@ const LINHAS: DefinicaoLinha[] = [
     valor: (m) => m.otherCosts,
     linha: 'other_costs',
   },
+  // ─── Operação (modo locação) ───────────────────────────────────────────────
+  ...(ehLocacao
+    ? [
+        {
+          chave: 'opex',
+          rotulo: 'OPEX',
+          subrotulo: 'líquido de reembolso',
+          dica:
+            'O que sai do bolso do dono: OPEX bruto menos o reembolso dos inquilinos. O bruto NÃO varia com a ocupação — prédio vazio custa property tax, seguro e manutenção igual; o que varia é o reembolso, porque só quem está lá paga.',
+          dicaDoMes: (m: MesFluxo) =>
+            `Bruto: ${dinheiroCurto(m.opexBruto)} · Reembolso: ${dinheiroCurto(m.opexReembolso)} · Ocupação: ${(m.ocupacao * 100).toFixed(1)}%`,
+          valor: (m: MesFluxo) => m.opex,
+          linha: 'opex' as const,
+        },
+      ]
+    : []),
   { chave: 'custo_fin', rotulo: 'Juros e taxas', valor: (m) => m.custoFinanceiroCaixa },
   { chave: 'pagamentos', rotulo: 'Total de pagamentos', valor: (m) => m.pagamentos, destaque: true },
-  { chave: 'revenue', rotulo: 'Receita', valor: (m) => m.revenue, linha: 'revenue', separador: true },
-  { chave: 'draw', rotulo: 'Saque', valor: (m) => m.draw, linha: 'draw' },
-  {
-    chave: 'amortization',
-    rotulo: 'Amortização',
-    // Decomposição do mês na dica: quanto saiu por release de unidade vendida e
-    // quanto por quitação na saída. Os dois somam a amortização do mês, e sem
-    // isso o degrau de um mês de venda parece vir do nada.
-    dicaDoMes: (m) =>
-      `Release: ${dinheiroCurto(m.amortizacaoRelease)} · Saída: ${dinheiroCurto(m.amortization - m.amortizacaoRelease)}`,
-    valor: (m) => m.amortization,
-    linha: 'amortization',
-  },
+  ...(ehLocacao
+    ? [
+        {
+          chave: 'rental_revenue',
+          rotulo: 'Receita de aluguel',
+          subrotulo: 'líquida de perda de crédito',
+          dica:
+            'Receita anual a 100% ÷ 12 × ocupação do mês × (1 − perda de crédito). A perda de crédito incide sobre o que foi FATURADO, não sobre a receita a 100%: inquilino que não existe não deixa de pagar.',
+          dicaDoMes: (m: MesFluxo) => `Ocupação: ${(m.ocupacao * 100).toFixed(1)}%`,
+          valor: (m: MesFluxo) => m.rentalRevenue,
+          linha: 'rental_revenue' as const,
+          separador: true,
+        },
+        {
+          chave: 'noi',
+          rotulo: 'NOI do mês',
+          subrotulo: 'receita de aluguel − OPEX',
+          dica:
+            'Linha CALCULADA, como "Total de pagamentos": é consequência das duas de cima e não recebe override. Negativo em ocupação baixa é o modelo funcionando — o OPEX bruto corre inteiro desde o primeiro mês.',
+          valor: (m: MesFluxo) => m.noiMes,
+          destaque: true,
+        },
+        {
+          chave: 'revenue',
+          rotulo: 'Venda do ativo',
+          subrotulo: 'líquida do custo de venda',
+          dica:
+            'NOI de referência ÷ cap rate, menos o custo de venda. Um único lançamento, no mês de saída — nenhuma unidade é vendida no modo locação.',
+          valor: (m: MesFluxo) => m.revenue,
+          linha: 'revenue' as const,
+        },
+      ]
+    : [
+        {
+          chave: 'revenue',
+          rotulo: 'Receita',
+          valor: (m: MesFluxo) => m.revenue,
+          linha: 'revenue' as const,
+          separador: true,
+        },
+      ]),
+  // ─── Saque e amortização ───────────────────────────────────────────────────
+  // Com UMA facilidade a linha é a de sempre, com a chave `draw`/`amortization`
+  // sem sufixo — que o motor canonicaliza para a facilidade 1. Com várias, entra
+  // um bloco por facilidade MAIS o consolidado: o consolidado é leitura (não
+  // aceita override, porque não se sabe de qual dívida seria) e cada facilidade
+  // recebe o override na chave dela.
+  ...(varias
+    ? [
+        ...facilidades.map((f) => ({
+          chave: `draw_${f.indice}`,
+          rotulo: 'Saque',
+          subrotulo: nomeDa(f.indice),
+          valor: (m: MesFluxo) =>
+            m.porFacilidade.find((x) => x.indice === f.indice)?.draw ?? 0,
+          linha: `draw:${f.indice + 1}` as ChaveOverride,
+        })),
+        {
+          chave: 'draw',
+          rotulo: 'Saque total',
+          valor: (m: MesFluxo) => m.draw,
+          destaque: true,
+        },
+        ...facilidades.map((f) => ({
+          chave: `amortization_${f.indice}`,
+          rotulo: 'Amortização',
+          subrotulo: nomeDa(f.indice),
+          valor: (m: MesFluxo) =>
+            m.porFacilidade.find((x) => x.indice === f.indice)?.amortization ?? 0,
+          linha: `amortization:${f.indice + 1}` as ChaveOverride,
+        })),
+        {
+          chave: 'amortization',
+          rotulo: 'Amortização total',
+          dicaDoMes: (m: MesFluxo) =>
+            `Release: ${dinheiroCurto(m.amortizacaoRelease)} · Saída e refinanciamento: ${dinheiroCurto(m.amortization - m.amortizacaoRelease)}`,
+          valor: (m: MesFluxo) => m.amortization,
+          destaque: true,
+        },
+      ]
+    : [
+        { chave: 'draw', rotulo: 'Saque', valor: (m: MesFluxo) => m.draw, linha: 'draw' as const },
+        {
+          chave: 'amortization',
+          rotulo: 'Amortização',
+          // Decomposição do mês na dica: quanto saiu por release de unidade vendida e
+          // quanto por quitação na saída. Os dois somam a amortização do mês, e sem
+          // isso o degrau de um mês de venda parece vir do nada.
+          dicaDoMes: (m: MesFluxo) =>
+            `Release: ${dinheiroCurto(m.amortizacaoRelease)} · Saída: ${dinheiroCurto(m.amortization - m.amortizacaoRelease)}`,
+          valor: (m: MesFluxo) => m.amortization,
+          linha: 'amortization' as const,
+        },
+      ]),
   { chave: 'equity_call', rotulo: 'Aporte de equity', valor: (m) => m.equityCall, linha: 'equity_call', destaque: true },
   { chave: 'distribution', rotulo: 'Distribuição', valor: (m) => m.distribution, linha: 'distribution' },
-  { chave: 'saldo', rotulo: 'Saldo devedor', valor: (m) => m.saldoDevedor, separador: true, somavel: false },
+  ...(varias
+    ? facilidades.map((f) => ({
+        chave: `saldo_${f.indice}`,
+        rotulo: 'Saldo devedor',
+        subrotulo: nomeDa(f.indice),
+        valor: (m: MesFluxo) =>
+          m.porFacilidade.find((x) => x.indice === f.indice)?.saldoDevedor ?? 0,
+        somavel: false,
+        separador: f.indice === facilidades[0]?.indice,
+      }))
+    : []),
+  { chave: 'saldo', rotulo: varias ? 'Saldo devedor total' : 'Saldo devedor', valor: (m) => m.saldoDevedor, separador: !varias, somavel: false },
   // Linhas de LEITURA das migrations 1762100000 a 1762500000: explicam degraus
   // que, sem elas, pareceriam vir do nada. Nenhuma aceita override — são
   // consequência, não entrada. Com os defaults, todas ficam zeradas ou constantes.
   { chave: 'reserva_juros', rotulo: 'Saldo da reserva de juros', valor: (m) => m.saldoReservaJuros, somavel: false },
-  { chave: 'unidades_vendidas', rotulo: 'Unidades vendidas no mês', valor: (m) => m.unidadesVendidas },
+  // No modo locação nenhuma unidade fecha em mês nenhum — a linha seria zero o
+  // projeto inteiro. No lugar dela, a ocupação, que é o que explica os degraus
+  // da receita de aluguel e do reembolso.
+  ...(ehLocacao
+    ? [
+        {
+          chave: 'ocupacao',
+          rotulo: 'Ocupação',
+          subrotulo: 'fração do mês',
+          valor: (m: MesFluxo) => m.ocupacao,
+          somavel: false,
+        },
+      ]
+    : [{ chave: 'unidades_vendidas', rotulo: 'Unidades vendidas no mês', valor: (m: MesFluxo) => m.unidadesVendidas }]),
   { chave: 'taxa_efetiva', rotulo: 'Taxa efetiva (a.a.)', valor: (m) => m.taxaEfetivaAno, somavel: false },
   { chave: 'equity_ac', rotulo: 'Equity acumulado', valor: (m) => m.equityAcumulado, somavel: false },
   { chave: 'caixa_mes', rotulo: 'Caixa do mês', valor: (m) => m.caixaMes },
   { chave: 'caixa_ac', rotulo: 'Caixa acumulado', valor: (m) => m.caixaAcumulado, destaque: true, somavel: false },
-];
+  ];
+}
 
 const COL_ROTULO = 'sticky left-0 z-20 bg-white px-3 py-1.5 text-left text-sm';
 const COL_TOTAL = 'sticky right-0 z-20 border-l border-slate-300 bg-slate-50 px-3 py-1.5 text-right text-sm tabular-nums';
@@ -116,7 +265,19 @@ export function AbaFluxoCaixa({
   reverterLinha,
   reverterTudo,
 }: Props) {
-  const [editando, setEditando] = useState<{ mes: number; linha: LinhaFluxo } | null>(null);
+  /**
+   * A grade do mês, montada a partir do modo e das facilidades ATIVAS.
+   *
+   * As facilidades saem do primeiro mês do resultado — é a mesma lista em todos
+   * eles, porque uma facilidade inativa não aparece em mês nenhum e uma ativa
+   * aparece em todos. Ler do resultado, e não do rascunho, garante que a grade
+   * mostre exatamente as facilidades que o motor calculou.
+   */
+  const facilidadesAtivas = resultado.meses[0]?.porFacilidade ?? [];
+  const ehLocacao = (rascunho.tipoModelagem ?? 'venda') === 'locacao';
+  const linhas = linhasDoFluxo(ehLocacao, facilidadesAtivas);
+
+  const [editando, setEditando] = useState<{ mes: number; linha: ChaveOverride } | null>(null);
   const [rascunhoTexto, setRascunhoTexto] = useState('');
 
   const overridePorChave = useMemo(() => {
@@ -125,7 +286,7 @@ export function AbaFluxoCaixa({
     return mapa;
   }, [rascunho.overrides]);
 
-  const temOverride = (mes: number, linha?: LinhaFluxo) =>
+  const temOverride = (mes: number, linha?: ChaveOverride) =>
     !!linha && overridePorChave.has(`${mes}:${linha}`);
 
   const meses = resultado.meses;
@@ -133,7 +294,7 @@ export function AbaFluxoCaixa({
   /** Com o plano ligado, editar a linha de aporte grava parcela, não override. */
   const planoLigado = rascunho.aportes?.modoAporte === 'plano';
 
-  const confirmar = (mes: number, linha: LinhaFluxo) => {
+  const confirmar = (mes: number, linha: ChaveOverride) => {
     const valor = paraNumero(rascunhoTexto);
     if (valor !== null) aplicarOverride(mes, linha, valor);
     setEditando(null);
@@ -369,7 +530,7 @@ export function AbaFluxoCaixa({
             </tr>
           </thead>
           <tbody>
-            {LINHAS.map((def) => {
+            {linhas.map((def) => {
               const total = def.somavel === false ? null : meses.reduce((a, m) => a + def.valor(m), 0);
               const linhaTemManual = def.linha ? meses.some((m) => temOverride(m.mes, def.linha)) : false;
               const expansivel = def.chave === 'other_costs';

@@ -25,7 +25,7 @@ import type {
   TipoModelagem,
 } from './tipos';
 import type { BasesDeCalculo, ResolucaoCustos } from './motor';
-import { ROTULO_CATEGORIA, ROTULO_GATILHO, interpretarChaveOverride } from './tipos';
+import { FACILIDADE_NEUTRA, ROTULO_CATEGORIA, ROTULO_GATILHO, interpretarChaveOverride } from './tipos';
 import { TOLERANCIA } from './indicadores';
 
 /** Tolerância de participação: 0,01 ponto percentual. */
@@ -107,46 +107,6 @@ interface Contexto {
   /** Indicadores já apurados — daqui sai o spread sobre o cap. */
   indicadores: Indicadores;
 }
-
-/**
- * Contrato NEUTRO, usado quando o projeto não tem facilidade nenhuma.
- *
- * Existe para as conferências de financiamento seguirem lendo campos sem
- * guardas espalhadas: um projeto sem dívida tem janela vazia, taxa zero e
- * nenhum teto, e todas elas acendem verde ou simplesmente não se aplicam.
- * Devolver `undefined` aqui obrigaria a testar `fin?.` em vinte lugares, e a
- * primeira omissão viraria um `undefined` no meio de uma conta.
- */
-const FACILIDADE_NEUTRA: Financiamento = {
-  taxaAnual: 0,
-  feeEstruturacaoPct: 0,
-  feeTiming: 'first_draw',
-  feeMes: null,
-  mesInicioSaque: 1,
-  mesFimSaque: 1,
-  modoSaque: 'manual',
-  maxLtcPct: null,
-  valorContratado: null,
-  custoFinanceiroNaDemanda: false,
-  modoAmortizacao: 'manual',
-  capitalizarJuros: false,
-  colchaoMinimoCaixa: 0,
-  linhaRotativa: false,
-  reservaJuros: 0,
-  reservaJurosSacada: true,
-  prazoMeses: null,
-  carenciaMeses: 0,
-  amortizacaoMeses: null,
-  balloonNoVencimento: true,
-  releasePrice: 0,
-  releasePricePct: null,
-  convencaoJuros: 'mensal_12',
-  tipoTaxa: 'fixa',
-  spread: 0,
-  benchmarkNome: null,
-  benchmarkPadrao: 0,
-  benchmarkCurva: [],
-};
 
 export function montarConferencias(ctx: Contexto): Conferencia[] {
   const { input, cronograma, agregados, meses, apuracao, convergiu, orfaos } = ctx;

@@ -32,8 +32,7 @@ import {
   sensibilidadePrazo,
   totalAnual,
   VARIACOES_CUSTO,
-  VARIACOES_PRECO,
-} from '@/lib/modelagem';
+  VARIACOES_PRECO, facilidadePrincipal, FACILIDADE_NEUTRA } from '@/lib/modelagem';
 import type { LinhaFluxo, MesFluxo, ModelInput, ModelOutput, Semaforo } from '@/lib/modelagem';
 import { dinheiro, dinheiroCurto, multiplo, numero, percentual } from './formato';
 
@@ -211,8 +210,18 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
 
   // ── 5 · Premissas ─────────────────────────────────────────────────────────
   drawSectionTitle(ctx, 'Premissas', '', 'eyebrow');
-  const fin = input.financiamento;
+  // A PRIMEIRA facilidade ativa. Desde a migration 1764200000 a modelagem pode
+  // ter várias; o relatório técnico descreve as premissas da principal e o
+  // fluxo consolidado, que é o que ele sempre mostrou. `FIN_VAZIA` cobre o
+  // projeto sem dívida — ali as linhas saem zeradas em vez de o PDF estourar.
+  const fin = facilidadePrincipal(input) ?? FACILIDADE_NEUTRA;
   const rec = input.receita;
+  /**
+   * Modo de negócio. NENHUMA seção do modo venda muda — as diferenças abaixo são
+   * todas aditivas ou substituições de rótulo atrás desta flag.
+   */
+  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+  const loc = input.locacao;
   const tetoDivida = fin.valorContratado != null
     ? `${d(fin.valorContratado)} (contratado)`
     : fin.maxLtcPct != null
@@ -259,17 +268,27 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
   });
   ctx.y = Math.max(yEsq, yDir) + 6;
 
-  // ── 6 · Tipologias ────────────────────────────────────────────────────────
-  drawSectionTitle(ctx, '', 'Tipologias', 'title');
+  // ── 6 · Tipologias / Ativo locável ────────────────────────────────────────
+  // No modo locação a tipologia deixa de ser "casa a vender" e passa a ser "tipo
+  // de espaço a locar": muda o título, e duas colunas trocam de lugar — saem
+  // preço de venda e tax/ano (ignorados pelo motor ali), entra o aluguel.
+  drawSectionTitle(ctx, '', ehLocacao ? 'Ativo Locável' : 'Tipologias', 'title');
   const colsTipologia: ColunaTabela[] = [
     { label: 'Nome', width: temQuantidade ? 26 : 34, align: 'left' },
     { label: 'Cidade', width: 16, align: 'left' },
     ...(temQuantidade ? [{ label: 'Qtd', width: 8, align: 'right' as const }] : []),
-    { label: 'Área sf', width: 14, align: 'right' },
+    { label: ehLocacao ? 'ABL sf' : 'Área sf', width: 14, align: 'right' },
     { label: 'Terreno', width: 18, align: 'right' },
     { label: 'Obra', width: 18, align: 'right' },
-    { label: 'Preço de venda', width: 19, align: 'right' },
-    { label: 'Tax/ano', width: 13, align: 'right' },
+    ...(ehLocacao
+      ? [
+          { label: '$/sf/ano', width: 13, align: 'right' as const },
+          { label: 'Receita 100%', width: 19, align: 'right' as const },
+        ]
+      : [
+          { label: 'Preço de venda', width: 19, align: 'right' as const },
+          { label: 'Tax/ano', width: 13, align: 'right' as const },
+        ]),
     { label: 'Custo total', width: 19, align: 'right' },
     { label: 'Lucro', width: 19, align: 'right' },
     { label: 'Margem', width: 13, align: 'right' },
@@ -288,8 +307,12 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
         u.areaSf ? numero((u.areaSf || 0) * qtd, 0) : '—',
         dc((u.custoTerreno || 0) * qtd),
         dc((u.custoObra || 0) * qtd),
-        dc((u.precoVenda || 0) * qtd),
-        dc((u.propertyTaxAno || 0) * qtd),
+        ...(ehLocacao
+          ? [
+              numero(u.aluguelSfAno ?? 0, 2),
+              dc((u.areaSf || 0) * (u.aluguelSfAno || 0) * qtd),
+            ]
+          : [dc((u.precoVenda || 0) * qtd), dc((u.propertyTaxAno || 0) * qtd)]),
         dc(r?.custoTotal),
         { texto: dc(r?.lucro), cor: (r?.lucro ?? 0) < 0 ? C.rose : C.green, negrito: true },
         { texto: ouTraco(percentual(margem, 1)), cor: margem == null ? C.slate : margem < 0 ? C.rose : C.green },
@@ -307,8 +330,12 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
       somaArea ? numero(somaArea, 0) : '—',
       dc(ag.terrenosTotal),
       dc(ag.obraTotal),
-      dc(ag.vgv),
-      dc(ag.taxAnoTotal),
+      ...(ehLocacao
+        ? [
+            ouTraco(ind.aluguelPorSf == null ? null : numero(ind.aluguelPorSf, 2)),
+            dc(ag.receitaBrutaAnual100),
+          ]
+        : [dc(ag.vgv), dc(ag.taxAnoTotal)]),
       dc(resultado.resultadoUnidades.reduce((a, u) => a + u.custoTotal, 0)),
       { texto: dc(somaLucro), cor: somaLucro < 0 ? C.rose : C.green },
       ouTraco(percentual(somaReceitaLiquida === 0 ? null : somaLucro / somaReceitaLiquida, 1)),
@@ -323,11 +350,98 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
   ctx.st(C.slate);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
   const notaTipologias = doc.splitTextToSize(
-    'Área, terreno, obra, preço de venda e tax/ano são o TOTAL das unidades da tipologia. Custos que não pertencem a nenhuma tipologia são rateados pro-rata pelo custo direto. Margem = lucro ÷ receita líquida.',
+    ehLocacao
+      ? 'ABL, terreno, obra e receita são o TOTAL das unidades da tipologia; o aluguel é por pé quadrado e por ano. Preço de venda e property tax da tipologia NÃO entram no modo locação — o valor de saída vem do cap rate e o imposto, de uma linha de OPEX. A receita de cada tipologia é rateada pela área locável.'
+      : 'Área, terreno, obra, preço de venda e tax/ano são o TOTAL das unidades da tipologia. Custos que não pertencem a nenhuma tipologia são rateados pro-rata pelo custo direto. Margem = lucro ÷ receita líquida.',
     ctx.contentWidth,
   );
   doc.text(notaTipologias, ctx.marginX, ctx.y);
   ctx.y += notaTipologias.length * 3 + 5;
+
+  // ── 6b · Operação e saída (só no modo locação) ────────────────────────────
+  //
+  // Duas tabelas e um parágrafo. A primeira é o plano de contas da operação; a
+  // segunda, a curva de ocupação resumida — mês a mês seria uma página inteira
+  // de números que ninguém lê, então saem os marcos: início, estabilização e
+  // saída.
+  if (ehLocacao) {
+    ctx.ensureSpace(40);
+    drawSectionTitle(ctx, '', 'Operação e Saída', 'title');
+
+    const linhasOpex = input.opex ?? [];
+    const abl = ag.ablSf;
+    const anualDa = (l: (typeof linhasOpex)[number]) => (l.valorSfAno || 0) * abl;
+    const opexBrutoAnual = linhasOpex.reduce((a, l) => a + anualDa(l), 0);
+    const opexReembolsavelAnual = linhasOpex
+      .filter((l) => l.reembolsavel !== false)
+      .reduce((a, l) => a + anualDa(l), 0);
+
+    const colsOpex = distribuir(
+      [
+        { label: 'Despesa operacional', width: 70, align: 'left' },
+        { label: '$/sf/ano', width: 24, align: 'right' },
+        { label: '$/ano', width: 30, align: 'right' },
+        { label: '% receita', width: 22, align: 'right' },
+        { label: 'Reemb.', width: 18, align: 'right' },
+      ] as ColunaTabela[],
+      ctx.contentWidth,
+    );
+    const linhasTabelaOpex: LinhaTabela[] = linhasOpex.map((l) => ({
+      celulas: [
+        l.label || '—',
+        numero(l.valorSfAno || 0, 2),
+        dc(anualDa(l)),
+        ouTraco(
+          ag.receitaBrutaAnual100 === 0
+            ? null
+            : percentual(anualDa(l) / ag.receitaBrutaAnual100, 1),
+        ),
+        l.reembolsavel !== false ? 'Sim' : 'Não',
+      ],
+    }));
+    linhasTabelaOpex.push({
+      celulas: [
+        `Subtotal (${linhasOpex.length} linha(s))`,
+        abl > 0 ? numero(opexBrutoAnual / abl, 2) : '—',
+        dc(opexBrutoAnual),
+        ouTraco(
+          ag.receitaBrutaAnual100 === 0
+            ? null
+            : percentual(opexBrutoAnual / ag.receitaBrutaAnual100, 1),
+        ),
+        dc(opexReembolsavelAnual),
+      ],
+      fundo: C.light,
+      negrito: true,
+      reguaSuperior: true,
+      cor: C.navy,
+    });
+    drawTabela(ctx, colsOpex, linhasTabelaOpex, { tamanhoFonte: 7 });
+    ctx.y += 3;
+
+    // Marcos da curva de ocupação. `find` no PRIMEIRO mês com ocupação > 0 e no
+    // primeiro que atinge a estabilizada — é o que o leitor precisa saber.
+    const curva = resultado.meses;
+    const inicioLease = curva.find((m) => m.ocupacao > 0)?.mes ?? null;
+    const alvo = loc?.ocupacaoEstabilizadaPct ?? 1;
+    const estabilizou = curva.find((m) => m.ocupacao >= alvo - 1e-9)?.mes ?? null;
+
+    ctx.st(C.slate);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    const notaOperacao = doc.splitTextToSize(
+      [
+        `Lease-up: ${inicioLease == null ? 'nenhum mês com ocupação declarada' : `começa no mês ${inicioLease}`}` +
+          `${estabilizou == null ? ' e não chega à ocupação estabilizada dentro do prazo' : `, estabiliza em ${percentual(alvo, 1)} no mês ${estabilizou}`}` +
+          `; saída no mês ${cr.mesSaida}.`,
+        `Reembolso NNN de ${percentual(loc?.taxaReembolsoPct ?? 0, 1)} sobre as linhas reembolsáveis, proporcional à ocupação. Perda de crédito de ${percentual(loc?.perdaCreditoPct ?? 0, 1)} sobre a receita FATURADA — não é vacância, que já está na curva de ocupação.`,
+        `O OPEX bruto NÃO varia com a ocupação: prédio vazio custa property tax, seguro e manutenção igual. O que varia é o reembolso, e é por isso que o NOI é negativo abaixo de ${percentual(ind.ocupacaoBreakevenNoi, 1)} de ocupação.`,
+      ].join(' '),
+      ctx.contentWidth,
+    );
+    doc.text(notaOperacao, ctx.marginX, ctx.y);
+    ctx.y += notaOperacao.length * 3 + 5;
+  }
 
   // ── 7 · Usos e Fontes ─────────────────────────────────────────────────────
   drawSectionTitle(ctx, '', 'Usos e Fontes', 'title');
@@ -465,19 +579,50 @@ export function construirPdfModelagem(input: ModelInput, resultado: ModelOutput)
     { label: 'Valor', width: 52, align: 'right' },
   ], ctx.contentWidth);
   const dre: { rotulo: string; valor: number; negativo?: boolean; total?: boolean }[] = [
-    { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta },
-    { rotulo: '(-) Comissões', valor: ap.comissoes, negativo: true },
-    { rotulo: '(-) Cartório / closing', valor: ap.cartorio, negativo: true },
-    { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+    // No modo locação a receita tem DUAS origens e as deduções são outras: sai
+    // comissão e cartório, entra o custo de venda do ativo. Os três nunca
+    // coexistem — aplicá-los juntos contaria a corretagem duas vezes.
+    // A COLUNA TEM DE FECHAR: cada linha é uma parcela da soma acima dela, sem
+    // exceção. O OPEX aparece UMA vez só, no bloco de custo — pô-lo também aqui,
+    // como dedução da receita de aluguel, faria a receita líquida não bater com
+    // a soma das linhas, e o leitor que confere na mão encontraria a diferença
+    // sem nada explicando de onde ela vem. O NOI acumulado é MEMÓRIA e sai
+    // depois do lucro, fora da coluna que soma.
+    ...(ehLocacao
+      ? [
+          { rotulo: 'Receita de aluguel (líq. perda de crédito)', valor: ap.receitaAluguel },
+          { rotulo: `Valor de saída (NOI ${dc(ind.noiEstabilizado)} ÷ cap ${percentual(loc?.capRateSaida ?? 0, 2)})`, valor: ind.valorSaida ?? 0 },
+          { rotulo: `(-) Custo de venda (${percentual(loc?.custoVendaPct ?? 0, 2)})`, valor: ap.custoVenda, negativo: true },
+          { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+        ]
+      : [
+          { rotulo: 'Receita bruta (VGV)', valor: ap.receitaBruta },
+          { rotulo: '(-) Comissões', valor: ap.comissoes, negativo: true },
+          { rotulo: '(-) Cartório / closing', valor: ap.cartorio, negativo: true },
+          { rotulo: '(=) Receita líquida', valor: ap.receitaLiquida, total: true },
+        ]),
     { rotulo: '(-) Terrenos', valor: ap.custoTerrenos, negativo: true },
     { rotulo: '(-) Obra', valor: ap.custoObra, negativo: true },
-    { rotulo: '(-) Property taxes', valor: ap.custoPropertyTax, negativo: true },
+    ...(ehLocacao
+      ? []
+      : [{ rotulo: '(-) Property taxes', valor: ap.custoPropertyTax, negativo: true }]),
     { rotulo: '(-) Outros custos', valor: ap.custoOutros, negativo: true },
+    // O OPEX entra AQUI, e só aqui: é saída de caixa operacional do
+    // empreendimento como qualquer outra, e é onde o motor o soma.
+    ...(ehLocacao ? [{ rotulo: '(-) OPEX (líq. de reembolso)', valor: ap.opexTotal, negativo: true }] : []),
     { rotulo: '(=) Custo do empreendimento', valor: ap.custoEmpreendimento, negativo: true, total: true },
     { rotulo: '(-) Juros', valor: ap.jurosTotais, negativo: true },
     { rotulo: '(-) Fee de estruturação', valor: ap.feeTotal, negativo: true },
     { rotulo: '(=) Custo financeiro', valor: ap.custoFinanceiro, negativo: true, total: true },
     { rotulo: '(=) LUCRO DO PROJETO', valor: ap.lucroProjeto, total: true },
+    // Memória, fora da coluna que soma: os dois números explicam o spread sobre
+    // o cap, que é o negócio inteiro, e não são parcelas de nada acima.
+    ...(ehLocacao
+      ? [
+          { rotulo: 'NOI acumulado do fluxo (memória)', valor: ap.noiTotal },
+          { rotulo: 'Custo de desenvolvimento (base do yield on cost)', valor: ap.custoDesenvolvimento },
+        ]
+      : []),
     { rotulo: `Lucro dos investidores (${percentual(rec.lucroInvestidoresPct, 0)})`, valor: ap.lucroInvestidores },
     { rotulo: `Lucro do sponsor (${percentual(rec.lucroSponsorPct, 0)})`, valor: ap.lucroSponsor },
   ];
@@ -802,8 +947,8 @@ function desenharTimeline(ctx: ContextoPdf, input: ModelInput, resultado: ModelO
 
   // Trilha 4 — marcos do financiamento.
   const marcos = [
-    { mes: input.financiamento.mesInicioSaque, rotulo: 'Início do saque', cor: C.green },
-    { mes: input.financiamento.mesFimSaque, rotulo: 'Fim do saque', cor: C.gold },
+    { mes: facilidadePrincipal(input)?.mesInicioSaque ?? 1, rotulo: 'Início do saque', cor: C.green },
+    { mes: facilidadePrincipal(input)?.mesFimSaque ?? 1, rotulo: 'Fim do saque', cor: C.gold },
     { mes: cr.mesSaida, rotulo: 'Saída', cor: C.rose },
   ].filter((x) => x.mes >= 1 && x.mes <= prazo);
   if (marcos.length > 0) {
