@@ -7,7 +7,7 @@
  * bisseção sobre o próprio motor, não por fórmula fechada.
  */
 import { calcular } from './motor';
-import type { ModelInput, ModelOutput, Unidade } from './tipos';
+import type { Financiamento, ModelInput, ModelOutput, Unidade } from './tipos';
 
 /** Modo de negócio do input. Ausente = 'venda', como em todo o módulo. */
 const ehLocacao = (input: ModelInput) => (input.tipoModelagem ?? 'venda') === 'locacao';
@@ -136,7 +136,29 @@ export function sensibilidadePrazo(
     // A saída acompanha o atraso; a janela de saque também, senão o saque
     // ficaria travado antes do novo mês de quitação.
     if (input.receita.mesSaida != null) copia.receita.mesSaida = novoPrazo;
-    copia.financiamento.mesFimSaque = Math.max(copia.financiamento.mesFimSaque, novoPrazo);
+
+    // A janela de TODAS as facilidades, e nas DUAS formas de input.
+    //
+    // Ler `copia.financiamento` direto era o que quebrava aqui: desde a migration
+    // 1764200000 `mapearModelInput` devolve `financiamentos` e NUNCA o campo
+    // único, então toda modelagem carregada do banco chegava com ele
+    // `undefined` — e o acesso estourava `TypeError`, derrubando os dois
+    // relatórios em PDF e a aba Sensibilidade inteiros. O caso singular continua
+    // tratado porque o input de teste ainda usa essa forma.
+    //
+    // Estender só a primeira facilidade seria pior que estourar: a segunda
+    // ficaria com a janela travada antes do novo mês de quitação, o saque dela
+    // sumiria e o "efeito do atraso" mediria também a perda de uma linha de
+    // crédito que ninguém mexeu.
+    const estender = (f: Financiamento): Financiamento => ({
+      ...f,
+      mesFimSaque: Math.max(f.mesFimSaque, novoPrazo),
+    });
+    if (copia.financiamentos && copia.financiamentos.length > 0) {
+      copia.financiamentos = copia.financiamentos.map(estender);
+    } else if (copia.financiamento) {
+      copia.financiamento = estender(copia.financiamento);
+    }
     const out: ModelOutput = calcular(copia);
     return {
       mesesAtraso: meses,

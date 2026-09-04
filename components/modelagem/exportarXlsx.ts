@@ -261,6 +261,24 @@ function nota(ws: Worksheet, linha: number, de: number, ate: number, texto: stri
   faixa(ws, linha, de, ate, texto, { font: fonte({ size: 8, color: { argb: T.cinza } }) });
 }
 
+/**
+ * Uma aba POR SÓCIO até 8 sócios; acima disso, uma aba única com todos lado a
+ * lado.
+ *
+ * O limite não é estético: 20 sócios virariam 20 abas, e uma planilha assim
+ * demora para abrir e ninguém navega. O conteúdo é o mesmo dos dois jeitos —
+ * aporte, devolução e fluxo líquido mês a mês —, muda só o arranjo.
+ *
+ * MORA NO ESCOPO DO MÓDULO, e não dentro de `construirWorkbookModelagem`, por
+ * uma razão que não é estilo: ali dentro ele era declarado DEPOIS da linha que
+ * chama `abaSociosDetalhe()`. Declaração de função sobe (hoisting), `const` não
+ * — então a chamada acontecia com o `const` ainda na zona morta temporal e a
+ * planilha inteira estourava com "Cannot access 'LIMITE_ABAS_SOCIO' before
+ * initialization" em toda modelagem com pelo menos um sócio. Um `const` usado
+ * por uma função chamada antes dele nunca pode ficar no meio do arquivo.
+ */
+const LIMITE_ABAS_SOCIO = 8;
+
 // ─── Construção do workbook ─────────────────────────────────────────────────
 
 export async function construirWorkbookModelagem(input: ModelInput, resultado: ModelOutput): Promise<Workbook> {
@@ -1371,16 +1389,6 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
   }
 
   // ── 8b · Extrato por sócio ────────────────────────────────────────────────
-  /**
-   * Uma aba POR SÓCIO até 8 sócios; acima disso, uma aba única com todos lado a
-   * lado.
-   *
-   * O limite não é estético: 20 sócios virariam 20 abas, e uma planilha assim
-   * demora para abrir e ninguém navega. O conteúdo é o mesmo dos dois jeitos —
-   * aporte, devolução e fluxo líquido mês a mês —, muda só o arranjo.
-   */
-  const LIMITE_ABAS_SOCIO = 8;
-
   function abaSociosDetalhe() {
     const socios = resultado.rateioSocios;
     if (socios.length === 0) return;
