@@ -18,16 +18,41 @@ export interface ApuracaoAnual {
   /** Quantos meses do cronograma caem neste ano. O primeiro e o último são parciais. */
   meses: number;
 
+  /**
+   * Σ `MesFluxo.rentalRevenue` do ano, líquida de perda de crédito. ZERO em
+   * todo ano do modo venda, e é por isso que a linha some do quadro ali:
+   * `linhasAnuaisVisiveis` corta linha zerada em todas as colunas.
+   */
+  receitaAluguel: number;
   receitaBruta: number;
   comissoes: number;
   cartorio: number;
+  /**
+   * `receitaAluguel + receitaBruta − comissoes − cartorio`.
+   *
+   * O aluguel entra AQUI, e não fora da coluna, porque é receita como a de
+   * venda: deixá-lo de fora fazia a demonstração anual somar 133 mil a mais que
+   * a apuração num projeto de locação — a receita de aluguel sumia e o OPEX
+   * também, e a diferença entre os dois vazava para o resultado.
+   *
+   * No modo venda `receitaAluguel` é zero e este campo continua sendo
+   * exatamente Σ `meses.revenue`, como sempre foi.
+   */
   receitaLiquida: number;
 
   custoTerrenos: number;
   custoObra: number;
   custoPropertyTax: number;
   custoOutros: number;
-  /** Soma das quatro linhas acima. */
+  /**
+   * Σ `MesFluxo.opex` do ano — já LÍQUIDO do reembolso dos inquilinos, que é o
+   * que de fato sai do caixa. Zero no modo venda.
+   */
+  opex: number;
+  /**
+   * Soma das CINCO linhas acima, OPEX incluído — a mesma definição de
+   * `Apuracao.custoEmpreendimento`, para as duas não poderem divergir.
+   */
   custoEmpreendimento: number;
 
   jurosTotais: number;
@@ -102,6 +127,7 @@ export function apuracaoAnual(saida: ModelOutput): ApuracaoAnual[] {
       linha = {
         ano,
         meses: 0,
+        receitaAluguel: 0,
         receitaBruta: 0,
         comissoes: 0,
         cartorio: 0,
@@ -110,6 +136,7 @@ export function apuracaoAnual(saida: ModelOutput): ApuracaoAnual[] {
         custoObra: 0,
         custoPropertyTax: 0,
         custoOutros: 0,
+        opex: 0,
         custoEmpreendimento: 0,
         jurosTotais: 0,
         feeTotal: 0,
@@ -131,13 +158,18 @@ export function apuracaoAnual(saida: ModelOutput): ApuracaoAnual[] {
     linha.cartorio += bruta * pctCartorio;
     // Somado do próprio fluxo, e não de `bruta − descontos`: assim o total dos
     // anos fecha com Σ meses.revenue por identidade, sem depender do arredondamento
-    // do caminho de volta.
-    linha.receitaLiquida += m.revenue;
+    // do caminho de volta. O aluguel entra junto porque é receita do ano como a
+    // de venda — e no modo venda o termo é zero, então nada muda ali.
+    linha.receitaAluguel += m.rentalRevenue;
+    linha.receitaLiquida += m.revenue + m.rentalRevenue;
 
     linha.custoTerrenos += m.land;
     linha.custoObra += m.construction;
     linha.custoPropertyTax += m.propertyTax;
     linha.custoOutros += m.otherCosts;
+    // Já LÍQUIDO do reembolso dos inquilinos: é o que sai do caixa, e é a mesma
+    // parcela que `Apuracao.custoEmpreendimento` soma. Zero no modo venda.
+    linha.opex += m.opex;
     linha.jurosTotais += m.juros;
     linha.feeTotal += m.fee;
   }
@@ -146,7 +178,11 @@ export function apuracaoAnual(saida: ModelOutput): ApuracaoAnual[] {
   let acumulado = 0;
   for (const linha of anos) {
     linha.custoEmpreendimento =
-      linha.custoTerrenos + linha.custoObra + linha.custoPropertyTax + linha.custoOutros;
+      linha.custoTerrenos +
+      linha.custoObra +
+      linha.custoPropertyTax +
+      linha.custoOutros +
+      linha.opex;
     linha.custoFinanceiro = linha.jurosTotais + linha.feeTotal;
     linha.resultado = linha.receitaLiquida - linha.custoEmpreendimento - linha.custoFinanceiro;
     acumulado += linha.resultado;
@@ -167,6 +203,7 @@ export function totalAnual(anos: ApuracaoAnual[]): ApuracaoAnual {
   const zero: ApuracaoAnual = {
     ano: 0,
     meses: 0,
+    receitaAluguel: 0,
     receitaBruta: 0,
     comissoes: 0,
     cartorio: 0,
@@ -175,6 +212,7 @@ export function totalAnual(anos: ApuracaoAnual[]): ApuracaoAnual {
     custoObra: 0,
     custoPropertyTax: 0,
     custoOutros: 0,
+    opex: 0,
     custoEmpreendimento: 0,
     jurosTotais: 0,
     feeTotal: 0,
@@ -186,6 +224,7 @@ export function totalAnual(anos: ApuracaoAnual[]): ApuracaoAnual {
     (a, x) => ({
       ...a,
       meses: a.meses + x.meses,
+      receitaAluguel: a.receitaAluguel + x.receitaAluguel,
       receitaBruta: a.receitaBruta + x.receitaBruta,
       comissoes: a.comissoes + x.comissoes,
       cartorio: a.cartorio + x.cartorio,
@@ -194,6 +233,7 @@ export function totalAnual(anos: ApuracaoAnual[]): ApuracaoAnual {
       custoObra: a.custoObra + x.custoObra,
       custoPropertyTax: a.custoPropertyTax + x.custoPropertyTax,
       custoOutros: a.custoOutros + x.custoOutros,
+      opex: a.opex + x.opex,
       custoEmpreendimento: a.custoEmpreendimento + x.custoEmpreendimento,
       jurosTotais: a.jurosTotais + x.jurosTotais,
       feeTotal: a.feeTotal + x.feeTotal,
@@ -206,15 +246,31 @@ export function totalAnual(anos: ApuracaoAnual[]): ApuracaoAnual {
   return total;
 }
 
-/** Linhas da demonstração, na ordem em que a tela e a planilha as mostram. */
-export const LINHAS_ANUAL: {
+/** Uma linha da demonstração anual. */
+export interface LinhaAnual {
   chave: keyof ApuracaoAnual;
   rotulo: string;
   /** Entra na demonstração como dedução — a tela mostra entre parênteses. */
   deducao?: boolean;
   subtotal?: boolean;
   total?: boolean;
-}[] = [
+  /**
+   * Linha que só existe num dos modos de negócio: some quando o valor é zero em
+   * TODA coluna. Ver `linhasAnuaisVisiveis`.
+   */
+  ocultarSeZerada?: boolean;
+}
+
+/** Linhas da demonstração, na ordem em que a tela e a planilha as mostram. */
+export const LINHAS_ANUAL: LinhaAnual[] = [
+  // As duas linhas de locação são declaradas AQUI, e não num segundo array atrás
+  // de um `if (ehLocacao)`: a demonstração é uma só, e quem decide se a linha
+  // aparece é o dado, não o chamador. Ver `linhasAnuaisVisiveis`.
+  {
+    chave: 'receitaAluguel',
+    rotulo: 'Receita de aluguel (líq. perda de crédito)',
+    ocultarSeZerada: true,
+  },
   { chave: 'receitaBruta', rotulo: 'Receita bruta' },
   { chave: 'comissoes', rotulo: '(−) Comissões', deducao: true },
   { chave: 'cartorio', rotulo: '(−) Cartório / closing', deducao: true },
@@ -223,6 +279,12 @@ export const LINHAS_ANUAL: {
   { chave: 'custoObra', rotulo: '(−) Obra', deducao: true },
   { chave: 'custoPropertyTax', rotulo: '(−) Property taxes', deducao: true },
   { chave: 'custoOutros', rotulo: '(−) Outros custos', deducao: true },
+  {
+    chave: 'opex',
+    rotulo: '(−) OPEX (líq. de reembolso)',
+    deducao: true,
+    ocultarSeZerada: true,
+  },
   { chave: 'custoEmpreendimento', rotulo: '(=) Custo do empreendimento', subtotal: true, deducao: true },
   { chave: 'jurosTotais', rotulo: '(−) Juros', deducao: true },
   { chave: 'feeTotal', rotulo: '(−) Fee de estruturação', deducao: true },
@@ -230,3 +292,22 @@ export const LINHAS_ANUAL: {
   { chave: 'resultado', rotulo: '(=) Resultado do ano', total: true },
   { chave: 'resultadoAcumulado', rotulo: 'Resultado acumulado' },
 ];
+
+/**
+ * As linhas que este projeto de fato tem. Uma linha marcada `ocultarSeZerada`
+ * some quando é zero em todos os anos — que é o estado de aluguel e OPEX num
+ * projeto de venda.
+ *
+ * Existe para os quatro consumidores da demonstração (tela, dois PDFs e
+ * planilha) não repetirem cada um a sua regra de "modo locação": eles pedem a
+ * lista de linhas e desenham o que vier. Nenhum deles precisa saber o que é
+ * locação.
+ *
+ * A tolerância é a mesma do resto do módulo — meio centavo. Um OPEX de
+ * `1e-12` vindo de arredondamento não é uma linha de despesa.
+ */
+export function linhasAnuaisVisiveis(anos: ApuracaoAnual[]): LinhaAnual[] {
+  return LINHAS_ANUAL.filter(
+    (l) => !l.ocultarSeZerada || anos.some((a) => Math.abs(a[l.chave] as number) > 0.005),
+  );
+}

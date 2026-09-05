@@ -26,7 +26,7 @@ import {
 import {
   apuracaoAnual,
   gradeSensibilidade,
-  LINHAS_ANUAL,
+  linhasAnuaisVisiveis,
   pontosDeEquilibrio,
   ROTULO_MODO_SAQUE,
   sensibilidadePrazo,
@@ -809,7 +809,7 @@ function desenharAnual(ctx: ContextoPdf, resultado: ModelOutput) {
     ctx.contentWidth,
   );
 
-  const linhas: LinhaTabela[] = LINHAS_ANUAL.map((def) => ({
+  const linhas: LinhaTabela[] = linhasAnuaisVisiveis(anos).map((def) => ({
     celulas: [
       def.rotulo,
       ...[...anos, total].map((col) => {

@@ -22,4 +22,5 @@ export type {
 export * from './mapear';
 export * from './aportes';
 export * from './anual';
+export * from './locacao';
 export * from './sensibilidade';

@@ -18,7 +18,7 @@ import {
   resolverCustos,
   ROTULO_CATEGORIA,
   ROTULO_MODO_SAQUE,
-  LINHAS_ANUAL,
+  linhasAnuaisVisiveis,
   ROTULO_GATILHO,
   sensibilidadePrazo,
   totalAnual,
@@ -1004,7 +1004,7 @@ export async function construirWorkbookModelagem(input: ModelInput, resultado: M
     l += 1;
 
     const totalAnos = totalAnual(anos);
-    for (const def of LINHAS_ANUAL) {
+    for (const def of linhasAnuaisVisiveis(anos)) {
       const linha = ws.getRow(l);
       linha.getCell(2).value = def.rotulo;
       linha.getCell(2).alignment = esq;

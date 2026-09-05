@@ -244,22 +244,30 @@ export const VARIACOES_ALUGUEL = [-3, -2, -1, 0, 1, 2];
  * nenhum parte de zero, e a linha de baixo da grade fica negativa — que é a
  * leitura correta.
  */
-export function gradeLocacao(
-  input: ModelInput,
-  variacoesAluguel: number[] = VARIACOES_ALUGUEL,
-  variacoesCapRate: number[] = VARIACOES_CAP_RATE,
-): CelulaLocacao[][] {
+/**
+ * Aluguel médio PONDERADO PELA ÁREA — a mesma conta de `Indicadores.aluguelPorSf`:
+ * receita a 100% ÷ ABL.
+ *
+ * Uma média simples entre tipologias de áreas diferentes daria um centro de grade
+ * que não corresponde a modelagem nenhuma. Está numa função só porque as três
+ * grades de locação partem exatamente deste ponto.
+ */
+function aluguelMedioSf(input: ModelInput): number {
   const qtd = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
-  // Aluguel médio PONDERADO PELA ÁREA, que é a mesma conta de
-  // `Indicadores.aluguelPorSf`: receita a 100% ÷ ABL. Uma média simples entre
-  // tipologias de áreas diferentes daria um centro de grade que não corresponde
-  // a modelagem nenhuma.
   const abl = input.unidades.reduce((a, u) => a + (u.areaSf || 0) * qtd(u), 0);
   const receita = input.unidades.reduce(
     (a, u) => a + (u.areaSf || 0) * (u.aluguelSfAno || 0) * qtd(u),
     0,
   );
-  const aluguelBase = abl > 0 ? receita / abl : 0;
+  return abl > 0 ? receita / abl : 0;
+}
+
+export function gradeLocacao(
+  input: ModelInput,
+  variacoesAluguel: number[] = VARIACOES_ALUGUEL,
+  variacoesCapRate: number[] = VARIACOES_CAP_RATE,
+): CelulaLocacao[][] {
+  const aluguelBase = aluguelMedioSf(input);
   const capBase = input.locacao?.capRateSaida ?? 0;
 
   return variacoesAluguel.map((da) =>
@@ -289,8 +297,28 @@ export interface PontosEquilibrioLocacao {
    * o projeto suporta.
    */
   capRateMaximo: number | null;
+  /**
+   * `capRateMaximo − capRateSaida`, em PONTOS-BASE. É o quanto o cap pode abrir
+   * antes de o projeto deixar de dar lucro — a grandeza que o mercado de fato
+   * cota, e a que a capa do relatório para sócios anuncia.
+   *
+   * Existe como campo, e não como conta na página, pela mesma razão de todo o
+   * resto: um número no relatório sai da apuração ou de uma função pura testada,
+   * nunca de aritmética feita dentro do desenho.
+   */
+  expansaoMaximaCapBps: number | null;
   /** Aluguel por sf/ano MÍNIMO que zera o lucro. */
   aluguelMinimoSf: number | null;
+  /**
+   * NOI anual de referência no ponto em que o lucro zera — o NOI que sustenta o
+   * projeto no limite.
+   *
+   * Sai de rodar o motor com `aluguelMinimoSf` e LER `indicadores.noiEstabilizado`
+   * da rodada, e não de multiplicar o aluguel de equilíbrio por área: assim a
+   * vacância, a perda de crédito e o reembolso entram pela mesma conta que faz o
+   * NOI de referência em qualquer outro lugar.
+   */
+  noiMinimo: number | null;
   /**
    * Ocupação estabilizada MÍNIMA que zera o lucro. Não é a mesma coisa que
    * `Indicadores.ocupacaoBreakevenNoi`, e a diferença importa: aquela é a
@@ -314,16 +342,16 @@ export interface PontosEquilibrioLocacao {
  */
 export function pontosDeEquilibrioLocacao(input: ModelInput): PontosEquilibrioLocacao {
   if (!ehLocacao(input)) {
-    return { capRateMaximo: null, aluguelMinimoSf: null, ocupacaoMinima: null };
+    return {
+      capRateMaximo: null,
+      expansaoMaximaCapBps: null,
+      aluguelMinimoSf: null,
+      noiMinimo: null,
+      ocupacaoMinima: null,
+    };
   }
 
-  const qtd = (u: Unidade) => Math.max(1, Math.trunc(u.quantidade || 1));
-  const abl = input.unidades.reduce((a, u) => a + (u.areaSf || 0) * qtd(u), 0);
-  const receita = input.unidades.reduce(
-    (a, u) => a + (u.areaSf || 0) * (u.aluguelSfAno || 0) * qtd(u),
-    0,
-  );
-  const aluguelBase = abl > 0 ? receita / abl : 0;
+  const aluguelBase = aluguelMedioSf(input);
   const capBase = input.locacao?.capRateSaida ?? 0;
   const ocupBase = input.locacao?.ocupacaoEstabilizadaPct ?? 1;
 
@@ -361,5 +389,96 @@ export function pontosDeEquilibrioLocacao(input: ModelInput): PontosEquilibrioLo
   };
   const ocupacaoMinima = fatorDeEquilibrio(input, comOcupacao, 0, 1);
 
-  return { capRateMaximo, aluguelMinimoSf, ocupacaoMinima };
+  // O NOI do ponto de equilíbrio sai do MOTOR rodado no aluguel de equilíbrio, e
+  // não de uma fórmula refeita aqui: é o mesmo `noiEstabilizado` que divide o cap
+  // em qualquer outra tela, e por isso não tem como divergir dele.
+  const noiMinimo =
+    aluguelMinimoSf === null
+      ? null
+      : calcular(perturbarLocacao(input, capBase > 0 ? capBase : 0.075, aluguelMinimoSf))
+          .indicadores.noiEstabilizado;
+
+  return {
+    capRateMaximo,
+    expansaoMaximaCapBps: capRateMaximo === null ? null : (capRateMaximo - capBase) * 10_000,
+    aluguelMinimoSf,
+    noiMinimo,
+    ocupacaoMinima,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A GRADE DO RELATÓRIO PARA SÓCIOS: CAP DE SAÍDA × CUSTO DE OBRA
+//
+// `gradeLocacao` — aluguel × cap — é a grade da TELA, e continua como está: lá o
+// leitor está calibrando as duas premissas que ele próprio digitou.
+//
+// O relatório para sócios pede outra pergunta. Nele o eixo horizontal é o custo
+// de obra nos dois modos, porque estouro de obra é o risco que o investidor
+// reconhece; o que muda é o eixo vertical. Num projeto de venda é o preço; num de
+// locação o preço de venda NÃO EXISTE, e uma matriz de preço sai constante em
+// toda linha — foi o que produziu, na capa, a frase "não há queda de preço que o
+// leve ao prejuízo", que num documento de abertura se lê como "sem risco de
+// queda". O que ocupa esse lugar é o CAP DE SAÍDA: é ele que decide quanto o
+// comprador paga, e é a variável que ninguém no projeto controla.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CelulaCapObra {
+  /** Deslocamento em pontos-base sobre o cap contratado. −50 = 50 bps abaixo. */
+  deltaCapBps: number;
+  /** Cap rate ABSOLUTO desta linha, já com o piso aplicado. */
+  capRate: number;
+  /** Variação do custo de obra, como fração. 0.1 = obra 10% mais cara. */
+  variacaoCusto: number;
+  lucroProjeto: number;
+  moic: number | null;
+  tirAnual: number | null;
+  valorSaida: number | null;
+}
+
+/**
+ * Cap de saída em PONTOS-BASE ao redor do contratado — como o mercado cota.
+ *
+ * Assimétrico de propósito: um cap comprime pouco e abre muito. Um ciclo de alta
+ * de juros move o cap de saída 150 bps para cima sem dificuldade nenhuma, e é
+ * esse lado que o investidor precisa ver.
+ */
+export const VARIACOES_CAP_BPS = [-100, -50, 0, 50, 100, 150];
+
+/**
+ * Grade do relatório: cap de saída nas linhas, custo de obra nas colunas.
+ *
+ * Cada célula é uma rodada completa do motor. Nada é interpolado, e pelo mesmo
+ * motivo de sempre: mexer na obra mexe na curva de saque, que mexe nos juros, que
+ * mexem no lucro — e mexer no cap mexe no valor de saída, que mexe na
+ * distribuição e no MOIC. Nenhum dos dois eixos é linear.
+ *
+ * O piso de 0,25% no cap é o mesmo de `gradeLocacao`: cap zero devolveria valor
+ * de saída zero na linha inteira e a leitura ficaria sem sentido.
+ */
+export function gradeCapObra(
+  input: ModelInput,
+  variacoesCapBps: number[] = VARIACOES_CAP_BPS,
+  variacoesCusto: number[] = VARIACOES_CUSTO,
+): CelulaCapObra[][] {
+  const capBase = input.locacao?.capRateSaida ?? 0;
+  return variacoesCapBps.map((bps) => {
+    const capRate = Math.max(0.0025, capBase + bps / 10_000);
+    return variacoesCusto.map((vc) => {
+      // O cap entra pela config de locação e a obra pelo fator multiplicativo das
+      // tipologias — as duas perturbações que o módulo já sabe aplicar, uma
+      // depois da outra, sem uma terceira forma de mexer no input.
+      const comCap = perturbarLocacao(input, capRate, aluguelMedioSf(input));
+      const out = calcular(perturbar(comCap, 1, 1 + vc));
+      return {
+        deltaCapBps: bps,
+        capRate,
+        variacaoCusto: vc,
+        lucroProjeto: out.apuracao.lucroProjeto,
+        moic: out.indicadores.moic,
+        tirAnual: out.indicadores.tirAnual,
+        valorSaida: out.indicadores.valorSaida,
+      };
+    });
+  });
 }

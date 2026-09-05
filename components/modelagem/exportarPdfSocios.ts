@@ -34,12 +34,19 @@ import {
 import {
   agruparCustosPorCategoria,
   apuracaoAnual,
+  ativoPorTipologia,
+  gradeCapObra,
   gradeSensibilidade,
-  LINHAS_ANUAL,
+  linhasAnuaisVisiveis,
+  linhasDaPonteNoi,
+  ponteNoi,
   pontosDeEquilibrio,
+  pontosDeEquilibrioLocacao,
   ROTULO_CATEGORIA,
+  ROTULO_NOI_REFERENCIA,
   sensibilidadePrazo,
   totalAnual,
+  VARIACOES_CAP_BPS,
   VARIACOES_CUSTO,
   VARIACOES_PRECO, facilidadePrincipal } from '@/lib/modelagem';
 import type { MesFluxo, ModelInput, ModelOutput, RateioSocio } from '@/lib/modelagem';
@@ -132,6 +139,9 @@ function abrirDocumento(doc: jsPDF): Documento {
 /** Altura do título de seção mais três linhas de conteúdo. A regra do órfão. */
 const RESERVA_ORFAO = 16 + 3 * 7;
 
+/** O respiro entre uma tabela e a nota que a fecha. Entra na reserva do fecho. */
+const RESPIRO_NOTA = 2;
+
 /**
  * Abre uma seção do corpo. Nunca quebra página por conta própria: só garante
  * que o título não fique sozinho no pé — o defeito mais visível de um relatório
@@ -164,6 +174,43 @@ function anexo(d: Documento, letra: string, titulo: string, subtitulo: string) {
   doc.setFontSize(7.5);
   doc.text(textoPdf(subtitulo), ctx.marginX + ctx.contentWidth - 5, ctx.y + 13.5, { align: 'right' });
   ctx.y += h + 4;
+}
+
+/** Quanto `paragrafo` vai consumir com este texto e este corpo, em mm. */
+function alturaParagrafo(ctx: ContextoPdf, texto: string, tamanho = 8): number {
+  const { doc } = ctx;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(tamanho);
+  const linhas = doc.splitTextToSize(textoPdf(texto), ctx.contentWidth) as string[];
+  return linhas.length * (tamanho * 0.42) + 3;
+}
+
+/**
+ * REGRA DO ÓRFÃO DE FECHO: uma nota nunca abre página sozinha.
+ *
+ * Desenha `conteudo` com a margem de pé AUMENTADA pela altura do fecho que vem
+ * depois dele. Como `ensureSpace` e a paginação interna de `drawTabela` leem
+ * `ctx.bottomReserve` a cada linha, a reserva vale para TODA quebra que
+ * acontecer lá dentro — inclusive no meio de uma tabela de quarenta linhas.
+ *
+ * O efeito é o pedido: quando tabela e nota não cabem juntas, quem desce para a
+ * página seguinte é o FIM DA TABELA, levando a nota junto. A nota sozinha no
+ * alto de uma folha em branco — a página 9 e a página 15 do relatório de locação
+ * — deixa de ser alcançável, porque no instante da quebra o espaço dela já
+ * estava reservado.
+ *
+ * Reservas ANINHAM: dentro do Anexo B valem ao mesmo tempo a do disclaimer do
+ * documento e a da nota das TIRs, e a última tabela de sócio quebra cedo o
+ * bastante para as duas.
+ */
+function comReservaDeFecho<T>(ctx: ContextoPdf, alturaFecho: number, desenhar: () => T): T {
+  const original = ctx.bottomReserve;
+  ctx.bottomReserve = original + alturaFecho;
+  try {
+    return desenhar();
+  } finally {
+    ctx.bottomReserve = original;
+  }
 }
 
 /** Parágrafo corrido. Devolve a altura consumida. */
@@ -202,6 +249,14 @@ function blocoDestaque(
 
 // ─── Documento ──────────────────────────────────────────────────────────────
 
+/**
+ * O fecho legal do documento. É constante para poder ser MEDIDO antes de ser
+ * desenhado: é essa medida que reserva o espaço dele no pé do Anexo B.
+ */
+const TEXTO_DISCLAIMER =
+  'Este material não constitui oferta de investimento. Os valores são projeções baseadas nas premissas informadas e não representam garantia de resultado.';
+
+
 /** Constrói o documento. Separado do download para poder ser inspecionado. */
 export function construirPdfSocios(input: ModelInput, resultado: ModelOutput): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
@@ -218,41 +273,67 @@ export function construirPdfSocios(input: ModelInput, resultado: ModelOutput): j
     agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
   const nomeModelagem = input.nome || 'Modelagem sem nome';
+  /**
+   * Modo de negócio. Nada do relatório de VENDA muda com nada deste bloco: todo
+   * acréscimo de locação está atrás desta flag, e no modo venda as funções de
+   * locação nem são chamadas — cada uma delas roda o motor dezenas de vezes.
+   */
+  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+  // O equilíbrio de OBRA vale nos dois modos: obra mais cara derruba o lucro de
+  // um projeto de locação exatamente como derruba o de venda.
   const equilibrio = pontosDeEquilibrio(input);
+  // O de CAP e NOI só existe na locação, e é o que substitui ali o VGV mínimo e
+  // a queda máxima de preço — que num projeto sem preço de venda não dizem nada.
+  const equilibrioLoc = ehLocacao ? pontosDeEquilibrioLocacao(input) : null;
+  const ponte = ponteNoi(input, resultado);
 
-  desenharCapa(d, input, resultado, { emitidoLabel, nomeModelagem, equilibrio, agora, din, dc });
+  desenharCapa(d, input, resultado, {
+    emitidoLabel,
+    nomeModelagem,
+    equilibrio,
+    equilibrioLoc,
+    ehLocacao,
+    agora,
+    din,
+    dc,
+  });
 
   // A capa é a primeira das três quebras deliberadas do documento.
   ctx.addPage('portrait');
 
   desenharIdentificacao(d, input, resultado, { nomeModelagem, moeda, agora });
-  desenharAtivo(d, input, resultado, { dc });
-  desenharUsosFontes(d, resultado, { dc, din });
+  desenharAtivo(d, input, resultado, { dc, ehLocacao });
+  desenharUsosFontes(d, input, resultado, { dc, din, ehLocacao });
   desenharGraficoCaixa(d, input, resultado);
-  desenharCronograma(d, input, resultado, { agora, dc });
-  desenharApuracao(d, input, resultado, { din });
+  desenharCronograma(d, input, resultado, { agora, dc, ehLocacao });
+  // Volta ao retrato depois da paisagem do cronograma. Ficava dentro da
+  // apuração; saiu de lá porque agora há uma seção entre as duas.
+  ctx.addPage('portrait');
+  desenharPremissasLocacao(d, input, resultado, { din, ponte });
+  desenharApuracao(d, input, resultado, { din, ehLocacao });
   desenharInvestidores(d, input, resultado, { dc });
   desenharAnual(d, resultado);
-  desenharSensibilidade(d, input, resultado, { dc, equilibrio });
+  desenharSensibilidade(d, input, resultado, { dc, equilibrio, equilibrioLoc, ehLocacao });
   desenharAnexoFluxo(d, input, resultado);
-  desenharAnexoSocios(d, resultado, { dc, din });
+
+  // O disclaimer FECHA o Anexo B, e a altura dele é reservada lá dentro, na
+  // última tabela de sócio — a única que pode terminar colada no pé da folha.
+  // Sem essa reserva o disclaimer abria uma página em branco só para si: a
+  // página 15 do relatório de locação. Ver `comReservaDeFecho`.
+  //
+  // O `+ 4` são os dois respiros de 2 mm entre o fim do anexo e o texto.
+  desenharAnexoSocios(d, resultado, {
+    dc,
+    din,
+    alturaDisclaimer: alturaParagrafo(ctx, TEXTO_DISCLAIMER, 7.5) + 4,
+  });
 
   // ── Fecho ────────────────────────────────────────────────────────────────
-  ctx.ensureSpace(16);
   ctx.y += 2;
   ctx.st(C.slate);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.text(
-    doc.splitTextToSize(
-      textoPdf(
-        'Este material não constitui oferta de investimento. Os valores são projeções baseadas nas premissas informadas e não representam garantia de resultado.',
-      ),
-      ctx.contentWidth,
-    ),
-    ctx.marginX,
-    ctx.y,
-  );
+  doc.text(doc.splitTextToSize(textoPdf(TEXTO_DISCLAIMER), ctx.contentWidth), ctx.marginX, ctx.y);
   ctx.y += 8;
   d.ocupacao.set(d.pagina(), Math.max(d.ocupacao.get(d.pagina()) ?? 0, ctx.y));
 
@@ -277,6 +358,8 @@ interface ContextoCapa {
   emitidoLabel: string;
   nomeModelagem: string;
   equilibrio: ReturnType<typeof pontosDeEquilibrio>;
+  equilibrioLoc: ReturnType<typeof pontosDeEquilibrioLocacao> | null;
+  ehLocacao: boolean;
   agora: Date;
   din: (v: number | null | undefined) => string;
   dc: (v: number | null | undefined) => string;
@@ -315,29 +398,64 @@ function desenharCapa(d: Documento, input: ModelInput, r: ModelOutput, c: Contex
   ctx.y += 2;
 
   // ── A linha de resistência ───────────────────────────────────────────────
-  // Os dois números saem da bisseção de `pontosDeEquilibrio`, que roda o motor
-  // de novo. Não são interpolação, e não são recalculados aqui.
-  const queda = c.equilibrio.quedaMaximaPreco;
+  // Os números saem da bisseção sobre o próprio motor. Não são interpolação, e
+  // não são recalculados aqui.
+  //
+  // No modo locação a primeira alavanca NÃO é o preço de venda: não existe preço
+  // de venda. A frase anterior dizia "não há queda de preço que o leve ao
+  // prejuízo" — verdade trivial num projeto que não vende unidade nenhuma, e que
+  // numa página de abertura se lê como "sem risco de queda". Quem ocupa esse
+  // lugar é a EXPANSÃO DO CAP DE SAÍDA, que é o risco de mercado de verdade.
   const alta = c.equilibrio.altaMaximaCusto;
-  const resistencia = finito(queda) && finito(alta)
-    ? `Este projeto suporta uma queda de ${pct(queda)} no preço de venda ou uma alta de ${pct(alta)} no custo de obra antes de deixar de dar lucro.`
-    : finito(queda)
-      ? `Este projeto suporta uma queda de ${pct(queda)} no preço de venda antes de deixar de dar lucro. Não há alta de custo de obra que o leve ao prejuízo dentro do intervalo testado.`
-      : finito(alta)
-        ? `Este projeto suporta uma alta de ${pct(alta)} no custo de obra antes de deixar de dar lucro. Não há queda de preço que o leve ao prejuízo dentro do intervalo testado.`
-        : 'O intervalo testado não encontrou ponto de equilíbrio para preço nem para custo de obra.';
+  const bps = c.equilibrioLoc?.expansaoMaximaCapBps ?? null;
+  const primeira = c.ehLocacao
+    ? finito(bps) && bps > 0
+      ? `suporta uma expansão de ${numero(bps, 0)} bps no cap de saída`
+      : null
+    : finito(c.equilibrio.quedaMaximaPreco)
+      ? `suporta uma queda de ${pct(c.equilibrio.quedaMaximaPreco)} no preço de venda`
+      : null;
+  const segunda = finito(alta) ? `uma alta de ${pct(alta)} no custo de obra` : null;
+  const semPrimeira = c.ehLocacao
+    ? 'Nenhuma expansão de cap dentro do intervalo testado o leva ao prejuízo.'
+    : 'Não há queda de preço que o leve ao prejuízo dentro do intervalo testado.';
+  const resistencia = primeira && segunda
+    ? `Este projeto ${primeira} ou ${segunda} antes de deixar de dar lucro.`
+    : primeira
+      ? `Este projeto ${primeira} antes de deixar de dar lucro. Não há alta de custo de obra que o leve ao prejuízo dentro do intervalo testado.`
+      : segunda
+        ? `Este projeto suporta ${segunda} antes de deixar de dar lucro. ${semPrimeira}`
+        : 'O intervalo testado não encontrou ponto de equilíbrio para nenhuma das duas alavancas.';
   blocoDestaque(ctx, resistencia, { fundo: C.navySoft, borda: C.navy, texto: C.navy }, 10.5);
+
+  // ── A tese do negócio, em três números ───────────────────────────────────
+  // Yield on cost, cap de saída e spread são o argumento inteiro de um projeto
+  // de locação — o ativo rende mais sobre o custo do que o comprador exige — e
+  // não estavam em lugar nenhum do documento. A capa tinha o vão para eles.
+  if (c.ehLocacao) {
+    drawIndicatorCards(
+      ctx,
+      [
+        { label: 'Yield on cost', value: pct(ind.yieldOnCost, 2), tone: 'positive' },
+        { label: 'Cap de saída', value: pct(input.locacao?.capRateSaida ?? null, 2), tone: 'default' },
+        {
+          label: 'Spread sobre o cap',
+          value: finito(ind.spreadSobreCap) ? `${numero(ind.spreadSobreCap * 10_000, 0)} bps` : '—',
+          tone: (ind.spreadSobreCap ?? 0) < 0 ? 'negative' : 'accent',
+        },
+      ],
+      3,
+      { altura: 21, tamanhoValor: 12 },
+    );
+    ctx.y += 2;
+  }
 
   // ── Contexto em uma linha ────────────────────────────────────────────────
   const cidades = [...new Set(input.unidades.map((u) => (u.cidade || '').trim()).filter(Boolean))];
   const local = input.localizacao || cidades.join(' e ') || '—';
-  /**
-   * Modo de negócio. Nada do relatório de venda muda: as diferenças são o
-   * contexto do cabeçalho e o bloco de receita da apuração, os dois atrás desta
-   * flag. Numa locação o VGV é ignorado pelo motor, e imprimi-lo no cabeçalho
-   * daria ao investidor um número que não entra em conta nenhuma.
-   */
-  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+  // Numa locação o VGV é ignorado pelo motor, e imprimi-lo no cabeçalho daria ao
+  // investidor um número que não entra em conta nenhuma.
+  const ehLocacao = c.ehLocacao;
   const contexto = [
     ehLocacao
       ? `${numero(ag.ablSf, 0)} sf de ABL`
@@ -516,11 +634,16 @@ function desenharAtivo(
   d: Documento,
   input: ModelInput,
   r: ModelOutput,
-  o: { dc: (v: number | null | undefined) => string },
+  o: { dc: (v: number | null | undefined) => string; ehLocacao: boolean },
 ) {
   const { ctx } = d;
   const ag = r.agregados;
   secao(d, 'O ativo');
+
+  if (o.ehLocacao) {
+    desenharAtivoLocacao(d, input, r, o);
+    return;
+  }
 
   // O preço POR UNIDADE é o número que se compara com o mercado, e até aqui ele
   // só existia numa nota de rodapé. O cabeçalho passa a dizer o que é unitário
@@ -596,12 +719,109 @@ function desenharAtivo(
   ctx.y += 4;
 }
 
+/**
+ * O ativo no modo LOCAÇÃO: as colunas da operação, não as da venda.
+ *
+ * Preço por unidade e preço total saem — num projeto que não vende unidade
+ * nenhuma as duas eram $0.00 em toda linha. Entram ABL, aluguel por sf, NOI por
+ * sf e valor de saída por sf, que é como uma pro forma de locação descreve um
+ * ativo.
+ *
+ * Os quatro números por tipologia vêm de `ativoPorTipologia`, e o NOI por sf ali
+ * é EXATO, não rateado: Σ (NOI/sf x ABL) reconstitui o `noiEstabilizado` do
+ * motor, com teste cobrando.
+ */
+function desenharAtivoLocacao(
+  d: Documento,
+  input: ModelInput,
+  r: ModelOutput,
+  o: { dc: (v: number | null | undefined) => string },
+) {
+  const { ctx } = d;
+  const ag = r.agregados;
+  const ind = r.indicadores;
+  const tipologias = ativoPorTipologia(input);
+
+  const colunas: ColunaTabela[] = [
+    { label: 'Nome', width: 30, align: 'left' },
+    { label: 'Cidade', width: 20, align: 'left' },
+    { label: 'Qtd', width: 10, align: 'right' },
+    { label: 'ABL (sf)', width: 20, align: 'right' },
+    { label: 'Aluguel $/sf', width: 20, align: 'right' },
+    { label: 'NOI/sf', width: 18, align: 'right' },
+    { label: 'Saída/sf', width: 20, align: 'right' },
+    { label: 'Custo total', width: 22, align: 'right' },
+    { label: 'Custo/sf', width: 18, align: 'right' },
+  ];
+
+  const porSf = (v: number) => `$${numero(v, 2)}`;
+
+  const linhas: LinhaTabela[] = tipologias.map((t, i) => {
+    const res = r.resultadoUnidades[i];
+    const custoSf = t.ablSf > 0 ? (res?.custoTotal ?? 0) / t.ablSf : null;
+    return {
+      celulas: [
+        t.nome,
+        input.unidades[i]?.cidade || '—',
+        String(t.quantidade),
+        numero(t.ablSf, 0),
+        porSf(t.aluguelSfAno),
+        { texto: porSf(t.noiSf), cor: t.noiSf < 0 ? C.rose : C.green },
+        { texto: porSf(t.valorSaidaSf), negrito: true },
+        o.dc(res?.custoTotal),
+        finito(custoSf) ? porSf(custoSf) : '—',
+      ],
+    };
+  });
+
+  // A linha de totais usa os indicadores do MOTOR — `aluguelPorSf`,
+  // `noiEstabilizado`, `valorSaida`, `custoDesenvolvimentoPorSf` —, e não a
+  // média das linhas acima: se as duas leituras divergirem, é bug de rateio, e o
+  // relatório tem de mostrar a do motor.
+  const custoTotal = r.resultadoUnidades.reduce((a, u) => a + u.custoTotal, 0);
+  linhas.push({
+    celulas: [
+      `Totais (${plural(input.unidades.length, 'tipologia', 'tipologias')})`,
+      '',
+      String(ag.unidadesTotal),
+      numero(ag.ablSf, 0),
+      finito(ind.aluguelPorSf) ? porSf(ind.aluguelPorSf) : '—',
+      finito(ind.noiEstabilizado) && ag.ablSf > 0 ? porSf(ind.noiEstabilizado / ag.ablSf) : '—',
+      finito(ind.valorSaida) && ag.ablSf > 0 ? porSf(ind.valorSaida / ag.ablSf) : '—',
+      o.dc(custoTotal),
+      finito(ind.custoDesenvolvimentoPorSf) ? porSf(ind.custoDesenvolvimentoPorSf) : '—',
+    ],
+    fundo: C.light,
+    negrito: true,
+    reguaSuperior: true,
+    cor: C.navy,
+  });
+
+  drawTabela(ctx, distribuir(colunas, ctx.contentWidth), linhas, {
+    tamanhoFonte: 6.5,
+    tamanhoCabecalho: 6.5,
+  });
+  ctx.y += 2;
+  paragrafo(
+    ctx,
+    'NOI/sf e saída/sf são anuais e na ocupação estabilizada. Custo/sf da linha de totais é o custo de DESENVOLVIMENTO por sf — terreno, obra, orçamento e custo financeiro, sem o OPEX da operação. É esse o denominador do yield on cost.',
+    6.5,
+    C.slate,
+  );
+  ctx.y += 2;
+}
+
 // ─── Usos e fontes ──────────────────────────────────────────────────────────
 
 function desenharUsosFontes(
   d: Documento,
+  input: ModelInput,
   r: ModelOutput,
-  o: { dc: (v: number | null | undefined) => string; din: (v: number | null | undefined) => string },
+  o: {
+    dc: (v: number | null | undefined) => string;
+    din: (v: number | null | undefined) => string;
+    ehLocacao: boolean;
+  },
 ) {
   const { ctx } = d;
   const { apuracao: ap, indicadores: ind, agregados: ag } = r;
@@ -683,7 +903,15 @@ function desenharUsosFontes(
       ],
     },
     {
-      celulas: [{ texto: 'A diferença é coberta pela receita de vendas.', cor: C.slate, tamanho: 6.5 }],
+      celulas: [
+        {
+          texto: o.ehLocacao
+            ? 'A diferença é coberta pela receita de aluguel e pela venda do ativo.'
+            : 'A diferença é coberta pela receita de vendas.',
+          cor: C.slate,
+          tamanho: 6.5,
+        },
+      ],
       linhaLarga: true,
       fundo: C.white,
       altura: 6,
@@ -722,29 +950,61 @@ function desenharUsosFontes(
   );
   ctx.y = Math.max(yEsq, yDir) + 6;
 
-  // ── Economia por unidade ─────────────────────────────────────────────────
-  // É como se avalia um projeto residencial: o que custa e o que vale cada casa.
+  // ── A economia do ativo ──────────────────────────────────────────────────
+  // No modo venda: o que custa e o que vale cada casa — é como se avalia um
+  // projeto residencial.
+  //
+  // No modo locação o trio de venda não existe: 'preço médio por unidade' saía
+  // $0.00 num projeto que não vende unidade nenhuma. Quem ocupa o lugar é a tese
+  // do negócio — o ativo rende mais sobre o custo do que o comprador exige.
   ctx.ensureSpace(28);
   ctx.st(C.slate);
   ctx.doc.setFont('helvetica', 'bold');
   ctx.doc.setFontSize(8);
-  ctx.doc.text(textoPdf('ECONOMIA POR UNIDADE'), ctx.marginX, ctx.y);
+  ctx.doc.text(textoPdf(o.ehLocacao ? 'A TESE DO NEGÓCIO' : 'ECONOMIA POR UNIDADE'), ctx.marginX, ctx.y);
   ctx.y += 4;
-  const cartoes: CartaoIndicador[] = [
-    { label: 'Custo total por unidade', value: finito(ind.custoPorUnidade) ? o.din(ind.custoPorUnidade) : '—' },
-    {
-      label: 'Preço médio por unidade',
-      value: finito(ind.precoMedioPorUnidade) ? o.din(ind.precoMedioPorUnidade) : '—',
-      tone: 'highlight',
-    },
-    {
-      label: 'Margem por unidade',
-      value: finito(ind.margemPorUnidade) ? o.din(ind.margemPorUnidade) : '—',
-      tone: (ind.margemPorUnidade ?? 0) < 0 ? 'negative' : 'positive',
-    },
-  ];
+  const cartoes: CartaoIndicador[] = o.ehLocacao
+    ? [
+        {
+          label: 'Yield on cost',
+          value: pct(ind.yieldOnCost, 2),
+          tone: (ind.yieldOnCost ?? 0) < 0 ? 'negative' : 'positive',
+        },
+        {
+          label: 'Cap de saída',
+          value: pct(input.locacao?.capRateSaida ?? null, 2),
+          tone: 'highlight',
+        },
+        {
+          label: 'Spread sobre o cap',
+          value: finito(ind.spreadSobreCap) ? `${numero(ind.spreadSobreCap * 10_000, 0)} bps` : '—',
+          tone: (ind.spreadSobreCap ?? 0) < 0 ? 'negative' : 'accent',
+        },
+      ]
+    : [
+        { label: 'Custo total por unidade', value: finito(ind.custoPorUnidade) ? o.din(ind.custoPorUnidade) : '—' },
+        {
+          label: 'Preço médio por unidade',
+          value: finito(ind.precoMedioPorUnidade) ? o.din(ind.precoMedioPorUnidade) : '—',
+          tone: 'highlight',
+        },
+        {
+          label: 'Margem por unidade',
+          value: finito(ind.margemPorUnidade) ? o.din(ind.margemPorUnidade) : '—',
+          tone: (ind.margemPorUnidade ?? 0) < 0 ? 'negative' : 'positive',
+        },
+      ];
   drawIndicatorCards(ctx, cartoes, 3, { altura: 20, tamanhoValor: 11 });
   ctx.y += 2;
+  if (o.ehLocacao) {
+    paragrafo(
+      ctx,
+      `Yield on cost é o NOI estabilizado sobre o custo de desenvolvimento (${o.din(r.apuracao.custoDesenvolvimento)}) — terreno, obra, orçamento e custo financeiro, sem o OPEX da operação. O spread é a diferença entre ele e o cap que o comprador exige, e é o negócio inteiro.`,
+      6.5,
+      C.slate,
+    );
+    ctx.y += 1;
+  }
 }
 
 // ─── O caixa em gráfico ─────────────────────────────────────────────────────
@@ -766,13 +1026,19 @@ function desenharGraficoCaixa(d: Documento, input: ModelInput, r: ModelOutput) {
   const divida = meses.map((m) => m.saldoDevedor);
   // Capital em risco: o que os sócios puseram menos o que já voltou, acumulado.
   // Exato, e só usa campos que já existem em `rateioSocios`.
+  //
+  // CORTADO NO ZERO: depois da devolução final o acumulado fica negativo — os
+  // sócios receberam mais do que puseram —, e a série descia a -$5,0M numa curva
+  // rotulada 'capital em risco'. Capital em risco é o que ainda está exposto:
+  // devolvido tudo, o risco é zero, não é negativo. O lucro devolvido é a curva
+  // de distribuição, e essa é outra leitura.
   const risco: number[] = [];
   let acumulado = 0;
   for (let i = 0; i < meses.length; i++) {
     for (const s of r.rateioSocios) {
       acumulado += (s.chamadasPorMes[i] || 0) - (s.devolucoesPorMes[i] || 0);
     }
-    risco.push(acumulado);
+    risco.push(Math.max(0, acumulado));
   }
 
   const colchao = facilidadePrincipal(input)?.colchaoMinimoCaixa || 0;
@@ -936,7 +1202,7 @@ function desenharCronograma(
   d: Documento,
   input: ModelInput,
   r: ModelOutput,
-  o: { agora: Date; dc: (v: number | null | undefined) => string },
+  o: { agora: Date; dc: (v: number | null | undefined) => string; ehLocacao: boolean },
 ) {
   const { ctx } = d;
   const { doc } = ctx;
@@ -976,9 +1242,12 @@ function desenharCronograma(
   ctx.y += 4;
   const topoTrilhas = ctx.y;
 
-  const ALTURA_TRILHA = 13;
+  // 9 mm de barra e 3 de respiro, contra os 13 + 5 de antes: com quatro trilhas
+  // a folha paisagem inteira ficava com uns três quartos de branco. A régua e os
+  // rótulos não encolhem — o que sobrava era espaço entre barras.
+  const ALTURA_TRILHA = 9;
   const trilha = (rotulo: string, desenhar: (topo: number) => void) => {
-    ctx.ensureSpace(ALTURA_TRILHA + 6);
+    ctx.ensureSpace(ALTURA_TRILHA + 4);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     ctx.st(C.graphite);
@@ -986,7 +1255,7 @@ function desenharCronograma(
     ctx.sf(C.light);
     doc.rect(x0, ctx.y, largura, ALTURA_TRILHA, 'F');
     desenhar(ctx.y);
-    ctx.y += ALTURA_TRILHA + 5;
+    ctx.y += ALTURA_TRILHA + 3;
   };
 
   const barra = (rotulo: string, de: number, ate: number, cor: RgbColor) =>
@@ -1033,6 +1302,33 @@ function desenharCronograma(
           { align: 'center' },
         );
       }
+    });
+  }
+
+  // ── Operação ─────────────────────────────────────────────────────────────
+  // A janela em que o ativo gera aluguel e paga OPEX. Sem ela o cronograma de um
+  // projeto de locação mostrava obra e saída e nada entre as duas — que é
+  // exatamente o período em que o ativo existe.
+  if (o.ehLocacao && cr.mesFimOperacao >= cr.mesInicioOperacao) {
+    trilha('Operação', (topo) => {
+      ctx.sf(C.greenSoft);
+      doc.rect(
+        xDe(cr.mesInicioOperacao),
+        topo,
+        larguraDe(cr.mesInicioOperacao, cr.mesFimOperacao),
+        ALTURA_TRILHA,
+        'F',
+      );
+      ctx.sf(C.green);
+      doc.rect(xPonto(cr.mesInicioOperacao) - 0.5, topo, 1, ALTURA_TRILHA, 'F');
+      ctx.st(C.green);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.5);
+      doc.text(
+        textoPdf(`início da operação · mês ${cr.mesInicioOperacao}`),
+        xPonto(cr.mesInicioOperacao) + 1.5,
+        topo - 1.2,
+      );
     });
   }
 
@@ -1085,6 +1381,14 @@ function desenharCronograma(
     ...(input.mesesConstrucao > 0 ? [{ cor: C.navy, texto: 'Obra' }] : []),
     ...(input.mesesPosObra > 0 ? [{ cor: C.border, texto: 'Pós-obra' }] : []),
     ...(vendas.size > 0 ? [{ cor: C.green, texto: 'Venda (takedown)' }] : []),
+    ...(o.ehLocacao && cr.mesFimOperacao >= cr.mesInicioOperacao
+      ? [
+          {
+            cor: C.green,
+            texto: `Operação · meses ${cr.mesInicioOperacao} a ${cr.mesFimOperacao}`,
+          },
+        ]
+      : []),
     { cor: C.navySoft, texto: 'Janela de saque' },
     ...marcos.map((m) => ({ cor: m.cor, texto: `${m.rotulo} · mês ${m.mes}` })),
     ...(iHoje >= 0 ? [{ cor: C.rose, texto: `Hoje · mês ${iHoje + 1}` }] : []),
@@ -1099,24 +1403,174 @@ function desenharCronograma(
   ctx.y += 6;
 }
 
+// ─── Premissas de locação ───────────────────────────────────────────────────
+
+/**
+ * De onde vem o NOI — a seção que faltava.
+ *
+ * O relatório usava um NOI de referência para gerar um valor de saída que é
+ * quase toda a receita do projeto, e nunca mostrava a conta. Um investidor tem
+ * de conseguir refazer o valor de saída com lápis e papel a partir desta página.
+ *
+ * Nada aqui é calculado no desenho: as premissas saem do `ModelInput` e do
+ * cronograma, e a cadeia inteira sai de `ponteNoi`, que é função pura com teste
+ * cobrando que o último elo bata com o `noiEstabilizado` do motor.
+ *
+ * No modo venda a seção não existe — `ponte` é `null` e a função sai na primeira
+ * linha, sem registrar seção nem mexer no cursor.
+ */
+function desenharPremissasLocacao(
+  d: Documento,
+  input: ModelInput,
+  r: ModelOutput,
+  o: { din: (v: number | null | undefined) => string; ponte: ReturnType<typeof ponteNoi> },
+) {
+  const { ponte } = o;
+  if (!ponte) return;
+  const { ctx } = d;
+  const cr = r.cronograma;
+  const ag = r.agregados;
+  const loc = input.locacao;
+  secao(d, 'Premissas de locação');
+
+  // Só o que ESTÁ preenchido no modelo. Uma premissa em branco não vira linha:
+  // um quadro cheio de travessões faz o leitor procurar o que não existe.
+  const premissas: { label: string; value: string }[] = [];
+  const por = (label: string, value: string | null) => {
+    if (value !== null) premissas.push({ label, value });
+  };
+  por('ABL total', ag.ablSf > 0 ? `${numero(ag.ablSf, 0)} sf` : null);
+  por(
+    'Aluguel médio',
+    finito(r.indicadores.aluguelPorSf) && r.indicadores.aluguelPorSf > 0
+      ? `$${numero(r.indicadores.aluguelPorSf, 2)} /sf/ano`
+      : null,
+  );
+  por(
+    'Receita potencial anual',
+    ag.receitaBrutaAnual100 > 0 ? `${o.din(ag.receitaBrutaAnual100)} a 100%` : null,
+  );
+  por(
+    'Ocupação estabilizada',
+    loc?.ocupacaoEstabilizadaPct ? pct(loc.ocupacaoEstabilizadaPct, 1) : null,
+  );
+  por('Vacância', ponte.vacanciaPct > 0 ? pct(ponte.vacanciaPct, 1) : null);
+  por('Perda de crédito', ponte.perdaCreditoPct > 0 ? pct(ponte.perdaCreditoPct, 1) : null);
+  por(
+    'OPEX',
+    ag.ablSf > 0 && ponte.opexBruto > 0
+      ? `$${numero(ponte.opexBruto / ag.ablSf, 2)} /sf/ano`
+      : null,
+  );
+  por('Reembolso (NNN)', ponte.taxaReembolsoPct > 0 ? pct(ponte.taxaReembolsoPct, 1) : null);
+  por('NOI de referência', ROTULO_NOI_REFERENCIA[ponte.modo]);
+  por(
+    'Início da operação',
+    `mês ${cr.mesInicioOperacao} · ${mesAnoLongo(cr.dataInicioOperacao)}`,
+  );
+  por('Fim da operação', `mês ${cr.mesFimOperacao} · ${mesAnoLongo(cr.dataFimOperacao)}`);
+  por('Cap rate de saída', ponte.capRateSaida > 0 ? pct(ponte.capRateSaida, 2) : null);
+  por('Custo de venda', ponte.custoVendaPct > 0 ? pct(ponte.custoVendaPct, 2) : null);
+  drawInfoBlock(ctx, premissas);
+  ctx.y += 2;
+
+  // ── A curva de ocupação até a estabilização ──────────────────────────────
+  // Só os meses em que a ocupação MUDA, e só até estabilizar: uma linha por mês
+  // de um lease-up de dezoito meses é ruído, e o que interessa é o degrau.
+  const estabilizada = loc?.ocupacaoEstabilizadaPct ?? 1;
+  const degraus: MesFluxo[] = [];
+  let anterior: number | null = null;
+  for (const m of r.meses) {
+    if (m.mes < cr.mesInicioOperacao || m.mes > cr.mesFimOperacao) continue;
+    if (anterior !== null && Math.abs(m.ocupacao - anterior) < 1e-9) continue;
+    degraus.push(m);
+    anterior = m.ocupacao;
+    if (m.ocupacao >= estabilizada - 1e-9) break;
+  }
+  if (degraus.length > 0) {
+    ctx.ensureSpace(RESERVA_ORFAO);
+    ctx.st(C.slate);
+    ctx.doc.setFont('helvetica', 'bold');
+    ctx.doc.setFontSize(8);
+    ctx.doc.text(textoPdf('CURVA DE OCUPAÇÃO ATÉ A ESTABILIZAÇÃO'), ctx.marginX, ctx.y);
+    ctx.y += 4;
+    const estabiliza = degraus[degraus.length - 1];
+    paragrafo(
+      ctx,
+      degraus.length === 1
+        ? `O ativo entra em operação já estabilizado, no mês ${estabiliza.mes} (${mesAnoLongo(estabiliza.data)}).`
+        : `${degraus.map((m) => `mês ${m.mes} · ${pct(m.ocupacao, 0)}`).join('  ·  ')}  —  estabiliza em ${pct(estabiliza.ocupacao, 0)} no mês ${estabiliza.mes} (${mesAnoLongo(estabiliza.data)}).`,
+      7.5,
+      C.graphite,
+    );
+  }
+
+  // ── A ponte aritmética até o NOI ─────────────────────────────────────────
+  ctx.ensureSpace(RESERVA_ORFAO);
+  ctx.st(C.slate);
+  ctx.doc.setFont('helvetica', 'bold');
+  ctx.doc.setFontSize(8);
+  ctx.doc.text(textoPdf('DO ALUGUEL AO VALOR DE SAÍDA'), ctx.marginX, ctx.y);
+  ctx.y += 4;
+
+  drawTabela(
+    ctx,
+    distribuir(
+      [
+        { label: 'Linha', width: 78, align: 'left' as const },
+        { label: 'Valor anual', width: 40, align: 'right' as const },
+        { label: 'De onde vem', width: 72, align: 'left' as const },
+      ],
+      ctx.contentWidth,
+    ),
+    linhasDaPonteNoi(ponte).map((elo) => ({
+      celulas: [
+        elo.rotulo,
+        {
+          texto: elo.deducao ? `(${o.din(elo.valor)})` : o.din(elo.valor),
+          cor: elo.deducao || elo.valor < 0 ? C.rose : C.navy,
+          negrito: !!elo.subtotal,
+        },
+        { texto: elo.memoria ?? '', cor: C.slate, tamanho: 6.2 },
+      ],
+      fundo: elo.subtotal ? C.navySoft : undefined,
+      negrito: elo.subtotal,
+      cor: elo.subtotal ? C.navy : undefined,
+      altura: 6.6,
+    })),
+    { tamanhoFonte: 7.5 },
+  );
+  ctx.y += 3;
+
+  // No modo 'últimos 12 meses' a cadeia acima descreve o ativo MADURO, mas o
+  // numerador que o motor usou é outro. Calar isso faria a página não fechar com
+  // o valor de saída — que é justamente o que ela existe para explicar.
+  if (ponte.modo !== 'estabilizado' && finito(ponte.noiUsado)) {
+    paragrafo(
+      ctx,
+      `O modelo divide o cap pelo ${ROTULO_NOI_REFERENCIA[ponte.modo].toLowerCase()}: ${o.din(ponte.noiUsado)}, que é a soma do NOI dos doze meses terminados na saída. A cadeia acima é a leitura do ativo estabilizado, e as duas divergem enquanto o lease-up não terminar.`,
+      7,
+      C.slate,
+    );
+  }
+  ctx.y += 2;
+}
+
 // ─── Apuração e indicadores ─────────────────────────────────────────────────
 
 function desenharApuracao(
   d: Documento,
   input: ModelInput,
   r: ModelOutput,
-  o: { din: (v: number | null | undefined) => string },
+  o: { din: (v: number | null | undefined) => string; ehLocacao: boolean },
 ) {
   const { ctx } = d;
   const { apuracao: ap, indicadores: ind } = r;
   const rec = input.receita;
 
-  // Volta ao retrato depois da paisagem do cronograma.
-  ctx.addPage('portrait');
   secao(d, 'Apuração do resultado');
 
-  // Ver o comentário do `ehLocacao` da capa: nada do relatório de venda muda.
-  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+  const ehLocacao = o.ehLocacao;
 
   // A COLUNA TEM DE FECHAR: cada linha é parcela da soma acima dela. O OPEX
   // aparece UMA vez só, no bloco de custo; o NOI de referência é MEMÓRIA e sai
@@ -1203,11 +1657,32 @@ function desenharApuracao(
     [
       { label: 'MOIC', value: mult(ind.moic), tone: 'accent' },
       { label: 'ROI', value: pct(ind.roi), tone: 'accent' },
-      { label: 'Margem sobre VGV', value: pct(ind.margemVgv) },
+      // Margem sobre VGV não existe num projeto sem VGV: saía travessão. No lugar
+      // dela, o trio que é a tese de um projeto de locação.
+      ...(ehLocacao
+        ? ([
+            {
+              label: 'Yield on cost',
+              value: pct(ind.yieldOnCost, 2),
+              tone: (ind.yieldOnCost ?? 0) < 0 ? 'negative' : 'positive',
+            },
+            { label: 'Cap de saída', value: pct(input.locacao?.capRateSaida ?? null, 2) },
+            {
+              label: 'Spread sobre o cap',
+              value: finito(ind.spreadSobreCap)
+                ? `${numero(ind.spreadSobreCap * 10_000, 0)} bps`
+                : '—',
+              tone: (ind.spreadSobreCap ?? 0) < 0 ? 'negative' : 'accent',
+            },
+          ] as CartaoIndicador[])
+        : ([{ label: 'Margem sobre VGV', value: pct(ind.margemVgv) }] as CartaoIndicador[])),
       { label: 'LTC por desembolso', value: pct(ind.ltc) },
       { label: 'LTC de pico', value: pct(ind.ltcPico) },
-      { label: 'Custo total da dívida', value: pct(ind.custoTotalDividaPct) },
-      { label: 'Custo sobre o pico', value: pct(ind.custoTotalDividaPicoPct) },
+      // 'Custo total da dívida' ao lado de 'TIR anual' convidava a uma comparação
+      // que não faz sentido: um é ACUMULADO na vida do empréstimo, o outro é ao
+      // ano. O rótulo passa a dizer qual é qual.
+      { label: 'Custo acumulado da dívida', value: pct(ind.custoTotalDividaPct) },
+      { label: 'Custo acumulado sobre o pico', value: pct(ind.custoTotalDividaPicoPct) },
       { label: 'TIR mensal', value: pct(ind.tirMensal, 2), tone: 'accent' },
       { label: 'TIR anual', value: pct(ind.tirAnual), tone: 'accent' },
       { label: 'XIRR', value: pct(ind.xirr), tone: 'accent' },
@@ -1216,6 +1691,13 @@ function desenharApuracao(
     { altura: 19, tamanhoValor: 10 },
   );
   ctx.y += 2;
+  paragrafo(
+    ctx,
+    'O custo da dívida é ACUMULADO na vida do empréstimo — não é taxa ao ano, e não se compara com a TIR anual ao lado.',
+    6.5,
+    C.slate,
+  );
+  ctx.y += 1;
 }
 
 // ─── Quadro de investidores ─────────────────────────────────────────────────
@@ -1332,14 +1814,37 @@ function desenharInvestidores(
   const temPlano = !!plano && (plano.parcelas?.length ?? 0) > 0;
   const totalAportes = r.apuracao.equityTotal;
 
+  // Os meses sem chamada somem, e a omissão é DECLARADA — é a mesma marca do
+  // Anexo B. A tabela pulava do mês 4 para o 16 sem avisar, e um salto desses se
+  // lê como dado faltando.
   const linhasAporte: LinhaTabela[] = [];
+  let omitidos = 0;
   for (const m of r.meses) {
-    if (m.equityCall <= 0.005) continue;
+    if (m.equityCall <= 0.005) {
+      omitidos++;
+      continue;
+    }
+    if (omitidos > 0) {
+      linhasAporte.push({
+        celulas: [
+          {
+            texto: `… ${plural(omitidos, 'mês sem movimento', 'meses sem movimento')}`,
+            cor: C.slate,
+            tamanho: 6.2,
+          },
+        ],
+        linhaLarga: true,
+        fundo: C.white,
+        altura: 5,
+      });
+      omitidos = 0;
+    }
+    const planejado = planejadoPorMes.get(m.mes) ?? 0;
     linhasAporte.push({
       celulas: [
         String(m.mes),
         mesAnoLongo(m.data),
-        ...(temPlano ? [o.dc(planejadoPorMes.get(m.mes) ?? 0)] : []),
+        ...(temPlano ? [planejado > 0.005 ? o.dc(planejado) : '—'] : []),
         o.dc(m.equityCall),
         totalAportes === 0 ? '—' : pct(m.equityCall / totalAportes),
         o.dc(m.equityAcumulado),
@@ -1369,6 +1874,22 @@ function desenharInvestidores(
       reguaSuperior: true,
       cor: C.navy,
     });
+    // Planejado e realizado lado a lado sem a diferença obrigavam o leitor a
+    // subtrair de cabeça — e a diferença é justamente o que ele quer saber.
+    const diferenca = totalAportes - r.agregados.aportePlanejadoTotal;
+    if (temPlano && Math.abs(diferenca) > 0.005) {
+      linhasAporte.push({
+        celulas: [
+          'Realizado - planejado',
+          '',
+          '',
+          { texto: o.dc(diferenca), cor: diferenca < 0 ? C.rose : C.green, negrito: true },
+          '',
+          '',
+          diferenca < 0 ? 'a menos que o plano' : 'a mais que o plano',
+        ],
+      });
+    }
   }
 
   drawTabela(
@@ -1413,7 +1934,7 @@ function desenharAnual(d: Documento, r: ModelOutput) {
   drawTabela(
     ctx,
     colunas,
-    LINHAS_ANUAL.map((def) => ({
+    linhasAnuaisVisiveis(anos).map((def) => ({
       celulas: [
         def.rotulo,
         ...[...anos, total].map((col) => {
@@ -1450,37 +1971,100 @@ function desenharSensibilidade(
   d: Documento,
   input: ModelInput,
   r: ModelOutput,
-  o: { dc: (v: number | null | undefined) => string; equilibrio: ReturnType<typeof pontosDeEquilibrio> },
+  o: {
+    dc: (v: number | null | undefined) => string;
+    equilibrio: ReturnType<typeof pontosDeEquilibrio>;
+    equilibrioLoc: ReturnType<typeof pontosDeEquilibrioLocacao> | null;
+    ehLocacao: boolean;
+  },
 ) {
   const { ctx } = d;
   const { doc } = ctx;
-  const grade = gradeSensibilidade(input);
+  /**
+   * O EIXO VERTICAL muda com o modo; o horizontal — custo de obra — não.
+   *
+   * Num projeto de locação não há preço de venda, e a matriz de preço saía
+   * CONSTANTE em toda linha: a mesma TIR seis vezes, e uma capa afirmando que
+   * "não há queda de preço que o leve ao prejuízo". O que decide quanto o
+   * comprador paga é o CAP DE SAÍDA, e é ele que ocupa as linhas.
+   */
+  const gradeVenda = o.ehLocacao ? [] : gradeSensibilidade(input);
+  const gradeCap = o.ehLocacao ? gradeCapObra(input) : [];
   const atrasos = sensibilidadePrazo(input);
 
   secao(d, 'Sensibilidade e cenários');
 
+  // ── As duas grades, numa forma só ────────────────────────────────────────
+  // O desenho não sabe qual é o eixo vertical: recebe linhas rotuladas e
+  // desenha. Foi assim que a matriz de locação entrou sem uma segunda cópia da
+  // rotina de matriz.
+  interface CelulaMatriz {
+    lucroProjeto: number;
+    moic: number | null;
+    tirAnual: number | null;
+    central: boolean;
+  }
+  interface LinhaMatriz {
+    rotulo: string;
+    celulas: CelulaMatriz[];
+  }
+
+  const sinal = (v: number, casas = 0) => `${v > 0 ? '+' : ''}${v.toFixed(casas)}`;
+  const linhasMatriz: LinhaMatriz[] = o.ehLocacao
+    ? gradeCap.map((linha) => ({
+        // O deslocamento em bps E o cap absoluto: um diz o cenário, o outro diz
+        // o número que o comprador cotaria.
+        rotulo: `${sinal(linha[0]?.deltaCapBps ?? 0)} bps · ${pct(linha[0]?.capRate ?? 0, 2)}`,
+        celulas: linha.map((c) => ({
+          lucroProjeto: c.lucroProjeto,
+          moic: c.moic,
+          tirAnual: c.tirAnual,
+          central: c.deltaCapBps === 0 && c.variacaoCusto === 0,
+        })),
+      }))
+    : gradeVenda.map((linha, i) => ({
+        rotulo: `${sinal(VARIACOES_PRECO[i] * 100)}%`,
+        celulas: linha.map((c) => ({
+          lucroProjeto: c.lucroProjeto,
+          moic: c.moic,
+          tirAnual: c.tirAnual,
+          central: c.variacaoPreco === 0 && c.variacaoCusto === 0,
+        })),
+      }));
+
   // ── A frase de leitura ───────────────────────────────────────────────────
   // Derivada, não escrita: quem lê precisa saber o que a matriz diz, e o que
   // ela diz muda com o projeto.
+  //
+  // No modo locação a comparação é PRAZO CONTRA CAP, e não prazo contra preço:
+  // o preço não é uma alavanca do negócio, e compará-lo com o prazo produzia uma
+  // frase sobre um risco que não existe.
   const base = atrasos.find((a) => a.mesesAtraso === 0) ?? atrasos[0];
   const pior = atrasos[atrasos.length - 1];
-  const iBase = VARIACOES_PRECO.indexOf(0);
-  const iCusto = VARIACOES_CUSTO.indexOf(0);
-  const piorPreco = grade[0]?.[iCusto >= 0 ? iCusto : 0];
-  const tirBase = iBase >= 0 ? grade[iBase]?.[iCusto >= 0 ? iCusto : 0]?.tirAnual ?? r.indicadores.tirAnual : r.indicadores.tirAnual;
+  const iCusto = Math.max(0, VARIACOES_CUSTO.indexOf(0));
+  // O pior cenário do eixo vertical: a maior QUEDA de preço é a primeira linha
+  // da grade de venda; a maior EXPANSÃO de cap é a última da de locação.
+  const piorLinha = o.ehLocacao ? linhasMatriz[linhasMatriz.length - 1] : linhasMatriz[0];
+  const piorEixo = piorLinha?.celulas[iCusto];
+  const central = linhasMatriz.flatMap((l) => l.celulas).find((c) => c.central);
+  const tirBase = central?.tirAnual ?? r.indicadores.tirAnual;
+  const nomeEixo = o.ehLocacao ? 'cap' : 'preço';
+  const piorRotulo = o.ehLocacao
+    ? `uma expansão de ${sinal(VARIACOES_CAP_BPS[VARIACOES_CAP_BPS.length - 1])} bps no cap`
+    : `uma queda de ${pct(Math.abs(VARIACOES_PRECO[0]), 0)} no preço`;
 
   if (base && pior && pior.mesesAtraso > 0 && finito(tirBase)) {
     const quedaPrazo = finito(pior.tirAnual) ? tirBase - pior.tirAnual : null;
-    const quedaPreco = finito(piorPreco?.tirAnual) ? tirBase - (piorPreco.tirAnual as number) : null;
+    const quedaEixo = finito(piorEixo?.tirAnual) ? tirBase - (piorEixo.tirAnual as number) : null;
     const moicMove = finito(base.moic) && finito(pior.moic) ? Math.abs(base.moic - pior.moic) : null;
-    // A comparação é entre os dois piores cenários DESTA seção — o maior atraso
-    // e a maior queda de preço da grade. Dizer "mais sensível a X" sem dizer
-    // contra o quê seria opinião; com os dois números ao lado, é leitura.
+    // A comparação é entre os dois piores cenários DESTA seção. Dizer "mais
+    // sensível a X" sem dizer contra o quê seria opinião; com os dois números ao
+    // lado, é leitura.
     const comparacao =
-      quedaPrazo !== null && quedaPreco !== null
-        ? quedaPrazo >= quedaPreco
-          ? 'a operação é mais sensível ao prazo que ao preço'
-          : 'a operação é mais sensível ao preço que ao prazo'
+      quedaPrazo !== null && quedaEixo !== null
+        ? quedaPrazo >= quedaEixo
+          ? `a operação é mais sensível ao prazo que ao ${nomeEixo}`
+          : `a operação é mais sensível ao ${nomeEixo} que ao prazo`
         : 'a operação responde ao prazo';
     const efeitoMoic =
       moicMove === null
@@ -1488,13 +2072,11 @@ function desenharSensibilidade(
         : moicMove < 0.05
           ? ', enquanto o múltiplo quase não se move'
           : `, e o múltiplo vai de ${mult(base.moic)} para ${mult(pior.moic)}`;
-    const contraPreco =
-      quedaPreco === null
-        ? ''
-        : ` (uma queda de ${pct(Math.abs(VARIACOES_PRECO[0]), 0)} no preço a levaria a ${pct(piorPreco.tirAnual)})`;
+    const contraEixo =
+      quedaEixo === null ? '' : ` (${piorRotulo} a levaria a ${pct(piorEixo.tirAnual)})`;
     paragrafo(
       ctx,
-      `Comparados os dois piores cenários desta seção, ${comparacao}: um atraso de ${plural(pior.mesesAtraso, 'mês', 'meses')} derruba a TIR de ${pct(tirBase)} para ${pct(pior.tirAnual)}${contraPreco}${efeitoMoic}.`,
+      `Comparados os dois piores cenários desta seção, ${comparacao}: um atraso de ${plural(pior.mesesAtraso, 'mês', 'meses')} derruba a TIR de ${pct(tirBase)} para ${pct(pior.tirAnual)}${contraEixo}${efeitoMoic}.`,
       9,
       C.navy,
     );
@@ -1504,18 +2086,18 @@ function desenharSensibilidade(
   // ── As duas matrizes ─────────────────────────────────────────────────────
   const colsGrade = distribuir(
     [
-      { label: 'Preço \\ Obra', width: 32, align: 'left' as const },
+      { label: o.ehLocacao ? 'Cap de saída \\ Obra' : 'Preço \\ Obra', width: 38, align: 'left' as const },
       ...VARIACOES_CUSTO.map((vc) => ({
         label: `${vc > 0 ? '+' : ''}${(vc * 100).toFixed(0)}%`,
-        width: 30,
+        width: 28,
         align: 'right' as const,
       })),
     ],
     ctx.contentWidth,
   );
 
-  const matriz = (titulo: string, valor: (c: (typeof grade)[0][0]) => string, colorir: boolean) => {
-    ctx.ensureSpace(12 + grade.length * 7);
+  const matriz = (titulo: string, valor: (c: CelulaMatriz) => string, colorir: boolean) => {
+    ctx.ensureSpace(12 + linhasMatriz.length * 7);
     ctx.st(C.navy);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
@@ -1524,17 +2106,13 @@ function desenharSensibilidade(
     drawTabela(
       ctx,
       colsGrade,
-      grade.map((linha, i) => ({
+      linhasMatriz.map((linha) => ({
         celulas: [
-          {
-            texto: `${VARIACOES_PRECO[i] > 0 ? '+' : ''}${(VARIACOES_PRECO[i] * 100).toFixed(0)}%`,
-            negrito: true,
-            cor: C.navy,
-          },
-          ...linha.map((c) => ({
+          { texto: linha.rotulo, negrito: true, cor: C.navy },
+          ...linha.celulas.map((c) => ({
             texto: valor(c),
             cor: colorir ? (c.lucroProjeto < 0 ? C.rose : C.green) : C.graphite,
-            fundo: c.variacaoPreco === 0 && c.variacaoCusto === 0 ? C.navySoft : undefined,
+            fundo: c.central ? C.navySoft : undefined,
           })),
         ],
       })),
@@ -1545,6 +2123,15 @@ function desenharSensibilidade(
 
   matriz('Lucro do projeto', (c) => o.dc(c.lucroProjeto), true);
   matriz('MOIC', (c) => mult(c.moic), false);
+  if (o.ehLocacao) {
+    paragrafo(
+      ctx,
+      'As linhas são deslocamentos em pontos-base sobre o cap contratado, como o mercado cota. Um cap comprime pouco e abre muito — por isso a grade vai a +150 bps e só a -100.',
+      6.5,
+      C.slate,
+    );
+    ctx.y += 1;
+  }
 
   // ── Pontos de equilíbrio ─────────────────────────────────────────────────
   ctx.ensureSpace(RESERVA_ORFAO);
@@ -1553,6 +2140,55 @@ function desenharSensibilidade(
   doc.setFontSize(9);
   doc.text(textoPdf('Pontos de equilíbrio'), ctx.marginX, ctx.y);
   ctx.y += 4;
+
+  const eqLoc = o.equilibrioLoc;
+  // Os dois primeiros pontos mudam com o modo; os dois de OBRA valem sempre,
+  // porque obra mais cara derruba os dois tipos de projeto igual.
+  const linhasEquilibrio: LinhaTabela[] = o.ehLocacao
+    ? [
+        {
+          celulas: [
+            'Cap máximo de saída',
+            eqLoc?.capRateMaximo == null ? '—' : pct(eqLoc.capRateMaximo, 2),
+            pct(input.locacao?.capRateSaida ?? null, 2),
+          ],
+        },
+        {
+          celulas: [
+            'Expansão máxima do cap',
+            eqLoc?.expansaoMaximaCapBps == null ? '—' : `${numero(eqLoc.expansaoMaximaCapBps, 0)} bps`,
+            'antes do prejuízo',
+          ],
+        },
+        {
+          celulas: [
+            'NOI mínimo',
+            eqLoc?.noiMinimo == null ? '—' : o.dc(eqLoc.noiMinimo),
+            o.dc(r.indicadores.noiEstabilizado),
+          ],
+        },
+      ]
+    : [
+        {
+          celulas: [
+            'VGV mínimo',
+            o.equilibrio.vgvMinimo === null ? '—' : o.dc(o.equilibrio.vgvMinimo),
+            o.dc(r.agregados.vgv),
+          ],
+        },
+        { celulas: ['Queda máxima no preço', pct(o.equilibrio.quedaMaximaPreco), 'antes do prejuízo'] },
+      ];
+  linhasEquilibrio.push(
+    {
+      celulas: [
+        'Custo de obra máximo',
+        o.equilibrio.custoObraMaximo === null ? '—' : o.dc(o.equilibrio.custoObraMaximo),
+        o.dc(r.agregados.obraTotal),
+      ],
+    },
+    { celulas: ['Alta máxima na obra', pct(o.equilibrio.altaMaximaCusto), 'antes do prejuízo'] },
+  );
+
   drawTabela(
     ctx,
     distribuir(
@@ -1563,24 +2199,7 @@ function desenharSensibilidade(
       ],
       ctx.contentWidth,
     ),
-    [
-      {
-        celulas: [
-          'VGV mínimo',
-          o.equilibrio.vgvMinimo === null ? '—' : o.dc(o.equilibrio.vgvMinimo),
-          o.dc(r.agregados.vgv),
-        ],
-      },
-      { celulas: ['Queda máxima no preço', pct(o.equilibrio.quedaMaximaPreco), 'antes do prejuízo'] },
-      {
-        celulas: [
-          'Custo de obra máximo',
-          o.equilibrio.custoObraMaximo === null ? '—' : o.dc(o.equilibrio.custoObraMaximo),
-          o.dc(r.agregados.obraTotal),
-        ],
-      },
-      { celulas: ['Alta máxima na obra', pct(o.equilibrio.altaMaximaCusto), 'antes do prejuízo'] },
-    ],
+    linhasEquilibrio,
     { tamanhoFonte: 7 },
   );
   ctx.y += 5;
@@ -1622,9 +2241,16 @@ function desenharSensibilidade(
 
 // ─── Anexo A · Fluxo de caixa mensal ────────────────────────────────────────
 
-interface DefinicaoLinhaFluxo {
+export interface DefinicaoLinhaFluxo {
   rotulo: string;
   valor: (m: MesFluxo) => number;
+  /**
+   * Parcela de `MesFluxo.pagamentos`. Para todo mês, Σ das linhas com esta marca
+   * é EXATAMENTE `pagamentos` — é o que faz a coluna fechar à vista, e há teste
+   * cobrando mês a mês. As linhas de DETALHE de custo não levam a marca: elas
+   * abrem a linha 'Custos', que já está somada.
+   */
+  pagamento?: boolean;
   linha?: string;
   destaque?: boolean;
   separador?: boolean;
@@ -1637,21 +2263,22 @@ interface DefinicaoLinhaFluxo {
   italico?: boolean;
 }
 
-function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
-  const { ctx } = d;
-  const { doc } = ctx;
-  const meses = r.meses;
-  if (meses.length === 0) return;
-
-  const overrides = new Set<string>();
-  for (const o of input.overrides ?? []) overrides.add(`${o.mes}:${o.linha}`);
-
+/**
+ * As linhas do Anexo A, na ordem em que ele as imprime.
+ *
+ * Exportada para poder ser COBRADA por teste: a soma das linhas de pagamento tem
+ * de dar `MesFluxo.pagamentos` em toda coluna, e isso é uma afirmação sobre a
+ * LISTA, não sobre os pixels. Faltavam centenas de milhares por mês num projeto
+ * de locação porque a linha de OPEX simplesmente não existia aqui, e nenhum
+ * teste tinha como acusar.
+ */
+export function linhasDoAnexoFluxo(input: ModelInput, r: ModelOutput): DefinicaoLinhaFluxo[] {
   // ── Custos, linha a linha ────────────────────────────────────────────────
   // `agruparCustosPorCategoria` já existe e é a ÚNICA implementação do
   // agrupamento — reagrupar aqui criaria uma segunda verdade.
   const grupos = agruparCustosPorCategoria(r.detalhamentoCustos, r.cronograma.prazoTotal);
   const lancou = (porMes: number[]) => porMes.some((v) => Math.abs(v || 0) > 0.005);
-  const semLancamento = r.detalhamentoCustos.filter((c) => !lancou(c.porMes)).length;
+  const meses = r.meses;
 
   const linhasCusto: DefinicaoLinhaFluxo[] = [];
   for (const g of grupos) {
@@ -1681,15 +2308,53 @@ function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
     linhasCusto.push({ rotulo: 'Ajuste manual da linha de custos', valor: ajuste, recuo: 3 });
   }
 
-  const linhas: DefinicaoLinhaFluxo[] = [
-    { rotulo: 'Terrenos', valor: (m) => m.land, linha: 'land' },
-    { rotulo: 'Obra', valor: (m) => m.construction, linha: 'construction' },
-    { rotulo: 'Property taxes', valor: (m) => m.propertyTax, linha: 'property_tax' },
-    { rotulo: 'Custos', valor: (m) => m.otherCosts, linha: 'other_costs', destaque: true },
+  const ehLocacao = (input.tipoModelagem ?? 'venda') === 'locacao';
+
+  return [
+    { rotulo: 'Terrenos', valor: (m) => m.land, linha: 'land', pagamento: true },
+    { rotulo: 'Obra', valor: (m) => m.construction, linha: 'construction', pagamento: true },
+    { rotulo: 'Property taxes', valor: (m) => m.propertyTax, linha: 'property_tax', pagamento: true },
+    { rotulo: 'Custos', valor: (m) => m.otherCosts, linha: 'other_costs', destaque: true, pagamento: true },
     ...linhasCusto,
-    { rotulo: 'Juros e taxas', valor: (m) => m.custoFinanceiroCaixa, separador: true },
+    // O OPEX é saída de caixa como qualquer outra — o motor já o soma em
+    // `pagamentos` —, e sem esta linha a coluna não fechava: as linhas visíveis
+    // somavam menos que `Total de pagamentos` em todo mês de operação.
+    ...(ehLocacao
+      ? [
+          {
+            rotulo: 'OPEX (líq. reembolso)',
+            valor: (m: MesFluxo) => m.opex,
+            linha: 'opex',
+            pagamento: true,
+          },
+        ]
+      : []),
+    {
+      rotulo: 'Juros e taxas',
+      valor: (m) => m.custoFinanceiroCaixa,
+      separador: true,
+      pagamento: true,
+    },
     { rotulo: 'Total de pagamentos', valor: (m) => m.pagamentos, destaque: true },
-    { rotulo: 'Receita', valor: (m) => m.revenue, linha: 'revenue', separador: true },
+    // O aluguel entra ACIMA da receita de venda, e a de venda é renomeada: no
+    // modo locação uma linha chamada só 'Receita' MENTE, porque exclui todo o
+    // aluguel faturado ao longo da operação.
+    ...(ehLocacao
+      ? [
+          {
+            rotulo: 'Receita de aluguel',
+            valor: (m: MesFluxo) => m.rentalRevenue,
+            linha: 'rental_revenue',
+            separador: true,
+          },
+        ]
+      : []),
+    {
+      rotulo: ehLocacao ? 'Receita de venda' : 'Receita',
+      valor: (m) => m.revenue,
+      linha: 'revenue',
+      separador: !ehLocacao,
+    },
     { rotulo: 'Saque', valor: (m) => m.draw, linha: 'draw' },
     { rotulo: 'Amortização', valor: (m) => m.amortization, linha: 'amortization' },
     { rotulo: 'Aporte de equity', valor: (m) => m.equityCall, linha: 'equity_call', destaque: true },
@@ -1699,9 +2364,41 @@ function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
     { rotulo: 'Caixa do mês', valor: (m) => m.caixaMes },
     { rotulo: 'Caixa acumulado', valor: (m) => m.caixaAcumulado, destaque: true, saldo: true },
   ];
+}
+
+function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
+  const { ctx } = d;
+  const { doc } = ctx;
+  const meses = r.meses;
+  if (meses.length === 0) return;
+
+  const overrides = new Set<string>();
+  for (const o of input.overrides ?? []) overrides.add(`${o.mes}:${o.linha}`);
+
+  const linhas = linhasDoAnexoFluxo(input, r);
+  const semLancamento = r.detalhamentoCustos.filter(
+    (c) => !c.porMes.some((v) => Math.abs(v || 0) > 0.005),
+  ).length;
+
+  // A nota é a MESMA em todo bloco e precisa ser conhecida antes do primeiro:
+  // é a altura dela que dimensiona a linha da tabela e a reserva de pé.
+  const textoNotas = [
+    'Saldo devedor, Equity acumulado e Caixa acumulado são saldos, não fluxos — não somam na coluna Total do projeto.',
+    'A coluna Total do projeto, em cinza, é o período inteiro — não a soma do bloco de meses ao lado.',
+    'Travessão é ausência de lançamento, não zero.',
+    semLancamento > 0
+      ? `${plural(semLancamento, 'custo', 'custos')} sem lançamento no período — sem linha na tabela.`
+      : '',
+    r.celulasManuais > 0
+      ? `${plural(r.celulasManuais, 'célula', 'células')} em modo manual — fundo âmbar.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   const BLOCO = 12;
   let primeiro = true;
+  let alturaNotas = 0;
   // A altura da linha é calculada UMA vez, pela página mais apertada do anexo —
   // a primeira, que ainda carrega a faixa do título. Com ela igual em todos os
   // blocos, cada bloco de 12 meses cabe numa página só: era o estouro de duas
@@ -1716,6 +2413,9 @@ function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
       anexo(d, 'A', 'Fluxo de caixa mensal', 'Todos os meses do projeto, custo a custo');
       primeiro = false;
     }
+    // Medida só agora: `contentWidth` aqui é o da PAISAGEM, e medir em retrato
+    // daria uma nota mais alta do que ela é.
+    if (alturaNotas === 0) alturaNotas = alturaParagrafo(ctx, textoNotas, 6.5);
     ctx.ensureSpace(20);
     ctx.st(C.navy);
     doc.setFont('helvetica', 'bold');
@@ -1733,9 +2433,11 @@ function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
 
     if (alturaLinha === null) {
       const ALTURA_CABECALHO = 9;
-      const ALTURA_NOTAS = 14;
+      // A altura MEDIDA da nota, e não uma constante: o texto varia com o
+      // projeto — custos sem lançamento e células manuais acrescentam frases — e
+      // um chute de 14 mm subdimensionava justamente o caso em que ela não cabia.
       const disponivel =
-        ctx.pageHeight - ctx.bottomReserve - ctx.y - ALTURA_CABECALHO - ALTURA_NOTAS;
+        ctx.pageHeight - ctx.bottomReserve - ctx.y - ALTURA_CABECALHO - alturaNotas;
       alturaLinha = Math.max(3.6, Math.min(6.5, disponivel / Math.max(1, linhas.length)));
     }
     const fonteLinha = Math.max(5.2, Math.min(6.5, alturaLinha - 0.3));
@@ -1748,59 +2450,64 @@ function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
           width: 17,
           align: 'right' as const,
         })),
-        { label: 'Total', width: 19, align: 'right' as const },
+        // 'Total' sozinho fazia o leitor procurar a soma dos doze meses ao lado
+        // — e a linha Obra mostrava 0 em todos eles e 4,5 milhões aqui. O nome
+        // diz o escopo, e o cinza tira a coluna da leitura horizontal.
+        { label: 'Total do projeto', width: 21, align: 'right' as const },
       ],
       ctx.contentWidth,
     );
 
-    drawTabela(
-      ctx,
-      colunas,
-      linhas.map((def) => {
-        // O total é o do PERÍODO INTEIRO, como na tela — não o do bloco.
-        const total = def.saldo ? null : meses.reduce((a, m) => a + def.valor(m), 0);
-        return {
-          celulas: [
-            {
-              texto: def.recuo ? `${' '.repeat(def.recuo)}${def.rotulo}` : def.rotulo,
-              italico: def.italico,
-              negrito: def.negrito || def.destaque,
-            },
-            ...bloco.map((m) => {
-              const v = def.valor(m);
-              const manual = !!def.linha && overrides.has(`${m.mes}:${def.linha}`);
-              return {
-                texto: dinheiroCurto(v),
-                // -1e-12 não é um número negativo para quem lê: `dinheiroCurto`
-                // já o escreve como 0, e pintá-lo de vermelho seria mentira.
-                cor: v < -0.005 ? C.rose : undefined,
-                fundo: manual ? C.goldSoft : undefined,
-                negrito: def.destaque,
-              };
-            }),
-            { texto: total === null ? '—' : dinheiroCurto(total), negrito: true },
-          ],
-          fundo: def.destaque ? C.navySoft : def.fundo,
-          negrito: def.destaque || def.negrito,
-          cor: def.destaque ? C.navy : undefined,
-          reguaSuperior: def.separador,
-          altura: alturaLinha as number,
-        };
-      }),
-      { tamanhoFonte: fonteLinha, tamanhoCabecalho: fonteLinha - 0.2, alturaCabecalho: 9 },
+    // A nota fecha o bloco: enquanto a tabela é desenhada, o pé da página guarda
+    // a altura dela MAIS o respiro de 2 mm que vem entre as duas. Sem isso a
+    // última linha da tabela ocupava o espaço da nota e a nota abria uma página
+    // só para si — e sem os 2 mm ela errava por exatamente esses 2 mm.
+    comReservaDeFecho(ctx, alturaNotas + RESPIRO_NOTA, () =>
+      drawTabela(
+        ctx,
+        colunas,
+        linhas.map((def) => {
+          // O total é o do PERÍODO INTEIRO, como na tela — não o do bloco.
+          const total = def.saldo ? null : meses.reduce((a, m) => a + def.valor(m), 0);
+          return {
+            celulas: [
+              {
+                texto: def.recuo ? `${' '.repeat(def.recuo)}${def.rotulo}` : def.rotulo,
+                italico: def.italico,
+                negrito: def.negrito || def.destaque,
+              },
+              ...bloco.map((m) => {
+                const v = def.valor(m);
+                const manual = !!def.linha && overrides.has(`${m.mes}:${def.linha}`);
+                // Ausência é TRAVESSÃO, como o P&L anual já fazia. Um zero na
+                // célula afirma que houve lançamento e ele deu zero; um mês sem
+                // lançamento nenhum não afirma isso. A linha Saldo devedor
+                // mostrava 0 nos meses e — no Total, na mesma linha.
+                const vazio = Math.abs(v) < 0.005 && !manual;
+                return {
+                  texto: vazio ? '—' : dinheiroCurto(v),
+                  // -1e-12 não é um número negativo para quem lê: `dinheiroCurto`
+                  // já o escreve como 0, e pintá-lo de vermelho seria mentira.
+                  cor: vazio ? C.border : v < -0.005 ? C.rose : undefined,
+                  fundo: manual ? C.goldSoft : undefined,
+                  negrito: def.destaque,
+                };
+              }),
+              { texto: total === null ? '—' : dinheiroCurto(total), negrito: true, cor: C.slate },
+            ],
+            fundo: def.destaque ? C.navySoft : def.fundo,
+            negrito: def.destaque || def.negrito,
+            cor: def.destaque ? C.navy : undefined,
+            reguaSuperior: def.separador,
+            altura: alturaLinha as number,
+          };
+        }),
+        { tamanhoFonte: fonteLinha, tamanhoCabecalho: fonteLinha - 0.2, alturaCabecalho: 9 },
+      ),
     );
 
-    ctx.y += 2;
-    const notas = [
-      'Saldo devedor, Equity acumulado e Caixa acumulado são saldos, não fluxos — não somam na coluna Total.',
-      semLancamento > 0
-        ? `${plural(semLancamento, 'custo', 'custos')} sem lançamento no período — sem linha na tabela.`
-        : '',
-      r.celulasManuais > 0
-        ? `${plural(r.celulasManuais, 'célula', 'células')} em modo manual — fundo âmbar.`
-        : '',
-    ].filter(Boolean);
-    paragrafo(ctx, notas.join(' '), 6.5, C.slate);
+    ctx.y += RESPIRO_NOTA;
+    paragrafo(ctx, textoNotas, 6.5, C.slate);
   }
 }
 
@@ -1809,7 +2516,12 @@ function desenharAnexoFluxo(d: Documento, input: ModelInput, r: ModelOutput) {
 function desenharAnexoSocios(
   d: Documento,
   r: ModelOutput,
-  o: { dc: (v: number | null | undefined) => string; din: (v: number | null | undefined) => string },
+  o: {
+    dc: (v: number | null | undefined) => string;
+    din: (v: number | null | undefined) => string;
+    /** Altura do disclaimer do documento, que vem logo depois deste anexo. */
+    alturaDisclaimer: number;
+  },
 ) {
   const { ctx } = d;
   const { doc } = ctx;
@@ -1831,7 +2543,18 @@ function desenharAnexoSocios(
     ctx.contentWidth,
   );
 
+  // O que vem DEPOIS da última tabela de sócio: o respiro de 6 mm do laço, a
+  // nota das TIRs e o disclaimer do documento. É essa altura — e só na tabela do
+  // ÚLTIMO sócio — que fica reservada no pé.
+  //
+  // Reservar no bloco inteiro, e não só na tabela, seria pior que o defeito: o
+  // `ensureSpace` de cada sócio é uma estimativa grosseira do tamanho do bloco, e
+  // encolher a página para ela empurrava um sócio que cabia para uma folha nova.
+  // Uma página a mais em todo relatório de venda, para consertar uma página a
+  // mais em alguns de locação.
+  const alturaFecho = 6 + alturaParagrafo(ctx, NOTA_TIRS, 7) + o.alturaDisclaimer;
   r.rateioSocios.forEach((s, indice) => {
+    const ehUltimo = indice === r.rateioSocios.length - 1;
     const linhas = linhasDoSocio(r, s, o.dc);
     // Dois sócios por página quando o número de linhas permite — cinco sócios
     // não podem virar cinco páginas com um terço de conteúdo cada.
@@ -1876,11 +2599,12 @@ function desenharAnexoSocios(
       { altura: 17, tamanhoValor: 9 },
     );
 
-    drawTabela(ctx, colunas, linhas, { tamanhoFonte: 6.8, alturaLinha: 6 });
+    comReservaDeFecho(ctx, ehUltimo ? alturaFecho : 0, () =>
+      drawTabela(ctx, colunas, linhas, { tamanhoFonte: 6.8, alturaLinha: 6 }),
+    );
     ctx.y += 6;
   });
 
-  ctx.ensureSpace(14);
   paragrafo(ctx, NOTA_TIRS, 7, C.slate);
   ctx.y += 2;
 }

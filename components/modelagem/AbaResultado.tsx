@@ -5,8 +5,8 @@ import { FinanceDetailSectionCard } from '@/components/finance/detail-ui';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import type { ApuracaoAnual, ModelInput, ModelOutput, RateioSocio } from '@/lib/modelagem';
-import { apuracaoAnual, LINHAS_ANUAL, totalAnual, facilidadePrincipal, ROTULO_NOI_REFERENCIA } from '@/lib/modelagem';
+import type { ApuracaoAnual, LinhaAnual, ModelInput, ModelOutput, RateioSocio } from '@/lib/modelagem';
+import { apuracaoAnual, linhasAnuaisVisiveis, totalAnual, facilidadePrincipal, ROTULO_NOI_REFERENCIA } from '@/lib/modelagem';
 import { dinheiro, mesAno, multiplo, numero, percentual } from './formato';
 
 interface Props {
@@ -123,9 +123,12 @@ export function AbaResultado({ rascunho, resultado }: Props) {
   // coluna Total vem de `totalAnual`, e as colunas de `apuracaoAnual`.
   const anos = apuracaoAnual(resultado);
   const totalAnos = totalAnual(anos);
+  // Aluguel e OPEX só aparecem no projeto que os tem — num de venda são zero em
+  // todo ano, e linha zerada não é informação.
+  const linhasAnuais = linhasAnuaisVisiveis(anos);
 
   /** Dedução sai entre parênteses, como numa demonstração de resultado. */
-  const celulaAnual = (linha: (typeof LINHAS_ANUAL)[number], col: ApuracaoAnual) => {
+  const celulaAnual = (linha: LinhaAnual, col: ApuracaoAnual) => {
     const v = col[linha.chave] as number;
     if (linha.deducao) return v === 0 ? '—' : `(${d(Math.abs(v))})`;
     return d(v);
@@ -353,7 +356,7 @@ export function AbaResultado({ rascunho, resultado }: Props) {
               </tr>
             </thead>
             <tbody>
-              {LINHAS_ANUAL.map((linha) => (
+              {linhasAnuais.map((linha) => (
                 <tr
                   key={linha.chave}
                   className={cn(
