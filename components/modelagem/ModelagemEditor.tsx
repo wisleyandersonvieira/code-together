@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLoadAction, useMutateAction } from '@uibakery/data';
+import { observarRequisicoes, useLoadAction, useMutateAction } from '@uibakery/data';
+import { criarCronometro, formatarRelatorio } from './cronometroSalvar';
 import { ChevronDown, Copy, Download, FileSpreadsheet, FileText, Loader2, Save, Table2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -469,7 +470,11 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       return;
     }
     setSalvando(true);
+    // Cronômetro por bloco, atrás da flag `provison:debug:salvar` no
+    // localStorage. Desligado, todo método é no-op e o shim nem cronometra.
+    const cron = criarCronometro(observarRequisicoes);
     try {
+      cron.bloco('premissas');
       await salvarPremissas({
         id: modelagemId,
         nome: rascunho.nome,
@@ -520,6 +525,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         return ids;
       };
 
+      cron.bloco('unidades');
       const idsUnidades = await sincronizar(
         rascunho.unidades,
         original.unidades,
@@ -528,6 +534,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         (id) => removerUnidade({ id }),
       );
 
+      cron.bloco('custos');
       const custosAtuais = rascunho.custosAdicionais ?? [];
       const idsCustos = await sincronizar(
         custosAtuais,
@@ -544,6 +551,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       //
       // Custo removido não precisa de nada: modelagem_custo_parcelas.custo_id tem
       // ON DELETE CASCADE.
+      cron.bloco('parcelas custo');
       const parcelasOriginais = new Map<number, typeof custosAtuais[number]['parcelas']>();
       for (const c of original.custosAdicionais ?? []) {
         if (c.id != null) parcelasOriginais.set(c.id, c.parcelas ?? []);
@@ -584,6 +592,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // diferente de zero, "não põe capital nenhum".
       const pctCapitalParam = (s: { pctCapital?: number | null }) =>
         s.pctCapital == null ? '' : String(s.pctCapital);
+      cron.bloco('socios');
       const sociosAtuais = rascunho.socios ?? [];
       const idsSocios = await sincronizar(
         sociosAtuais,
@@ -602,6 +611,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       //
       // Sócio removido não precisa de nada: modelagem_socio_aportes.socio_id tem
       // ON DELETE CASCADE.
+      cron.bloco('aportes socio');
       const aportesOriginais = new Map<number, typeof sociosAtuais[number]['aportes']>();
       for (const s of original.socios ?? []) {
         if (s.id != null) aportesOriginais.set(s.id, s.aportes ?? []);
@@ -655,6 +665,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
 
       // Cabeçalho do plano de aportes. Vai antes das parcelas: se o INSERT do
       // cabeçalho falhar, não faz sentido gravar parcela nenhuma.
+      cron.bloco('plano aportes');
       const plano = rascunho.aportes;
       if (plano) {
         await salvarAportes({
@@ -675,6 +686,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         );
       }
 
+      cron.bloco('fases');
       const idsFases = await sincronizar(
         rascunho.fases ?? [],
         original.fases ?? [],
@@ -686,6 +698,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // Alocação por fase. Vai depois de tipologias e fases porque depende dos ids
       // dos dois, e é gravada pelo PAR (unidade, fase), que é a chave natural — a
       // linha de junção não tem identidade própria na tela.
+      cron.bloco('alocacoes');
       const par = (a: { unidadeIndex: number; faseIndex: number }) =>
         `${idsUnidades[a.unidadeIndex] ?? 'x'}:${idsFases[a.faseIndex] ?? 'x'}`;
       const atuaisAlocacao = new Map(
@@ -715,6 +728,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // Por isso: passada 1 cria/atualiza tudo SEM o vínculo e colhe os ids;
       // passada 2 volta e grava só o `refinanciaFacilidadeId`, já com o mapa de
       // índice → id completo. É a mesma dança do `grupo_pai` na duplicação.
+      cron.bloco('facilidades');
       const facilidadesAtuais = rascunho.financiamentos ?? [];
       const idsFacilidades = await sincronizar(
         facilidadesAtuais,
@@ -754,6 +768,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       //
       // Apagar um ponto é diferente de gravá-lo com zero: sem linha, o motor usa
       // `benchmarkPadrao`. Por isso o que sumiu da tela é DELETE, não UPDATE 0.
+      cron.bloco('benchmark');
       for (let i = 0; i < facilidadesAtuais.length; i++) {
         const financiamentoId = idsFacilidades[i];
         if (financiamentoId == null) continue;
@@ -771,6 +786,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
           await salvarBenchmark({ modelagemId, financiamentoId, mes: ponto.mes, valor: ponto.valor });
         }
       }
+      cron.bloco('receita');
       await salvarReceita({ modelagemId, ...rascunho.receita });
 
       // ─── Modo locação (migration 1764100000) ─────────────────────────────
@@ -780,8 +796,10 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // inofensiva, mas mentirosa: a tabela passaria a dizer que existe uma
       // operação onde não existe.
       if (ehLocacao && rascunho.locacao) {
+        cron.bloco('locacao');
         await salvarLocacao({ modelagemId, ...rascunho.locacao });
 
+        cron.bloco('opex');
         await sincronizar(
           rascunho.opex ?? [],
           original.opex ?? [],
@@ -795,6 +813,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         // então apagar e gravar zero dão o mesmo número no fluxo. O DELETE
         // continua sendo o certo mesmo assim: um mês sem linha diz "ainda não
         // preenchi", e um zero declarado diz "aqui é vazio de propósito".
+        cron.bloco('ocupacao');
         const ocupacaoAtual = rascunho.ocupacao ?? [];
         const mesesOcupacao = new Set(ocupacaoAtual.map((ponto) => Math.trunc(ponto.mes)));
         for (const antigo of original.ocupacao ?? []) {
@@ -807,6 +826,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
         }
       }
 
+      cron.bloco('vendas unidade');
       for (const venda of rascunho.receita.vendasPorUnidade ?? []) {
         const unidade = rascunho.unidades[venda.unidadeIndex];
         if (unidade?.id) {
@@ -822,6 +842,7 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // `faseId` fica nulo quando o lote não declara fase, ou quando declara uma
       // fase ainda sem id gravado: o vínculo é opcional e a venda não pode deixar
       // de ser salva por causa dele.
+      cron.bloco('takedowns');
       await sincronizar(
         rascunho.receita.takedowns ?? [],
         original.receita.takedowns ?? [],
@@ -851,10 +872,18 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       );
 
       toast({ title: 'Modelagem salva' });
-      recarregar();
+      // `recarregar()` é um `loadModelagemCompleta` inteiro e entra na conta como
+      // qualquer outra requisição: sem medi-lo, o cronômetro esconderia uma das
+      // idas ao banco mais caras do ciclo.
+      cron.bloco('recarregar');
+      await recarregar();
     } catch (e: any) {
       toast({ title: 'Erro ao salvar', description: e?.message ?? String(e), variant: 'destructive' });
     } finally {
+      // No `finally`: um salvamento que estoura no meio também precisa desligar o
+      // observador do shim, ou ele seguiria medindo requisições de outras telas.
+      const relatorio = cron.encerrar();
+      if (cron.ativo) console.log(formatarRelatorio(relatorio));
       setSalvando(false);
     }
   };

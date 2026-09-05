@@ -64,37 +64,75 @@ export function directAction(
   return { _type: 'uibakery_action', name, actionType: 'SUPABASE_DIRECT', directFn: fn };
 }
 
+// ─── Observador de requisições (instrumentação) ──────────────────────────────
+/**
+ * Callback opcional notificado a CADA requisição concluída, com o nome da ação e
+ * a duração em milissegundos.
+ *
+ * Existe para o cronômetro de salvamento da Modelagem Financeira medir sem que
+ * cada chamada precise ser embrulhada à mão: o `salvar()` faz dezenas de
+ * chamadas por dezenas de ações diferentes, e envolver uma a uma daria uma
+ * contagem que sai do lugar assim que alguém acrescentar uma action nova.
+ * Medindo aqui, no ponto por onde TODA requisição passa, a conta não tem como
+ * divergir do que de fato foi para a rede.
+ *
+ * Fora de uma medição o observador é `null` e o custo é uma comparação por
+ * requisição — nada é cronometrado e nada é alocado.
+ */
+type ObservadorRequisicao = (nome: string, ms: number, erro: boolean) => void;
+
+let observador: ObservadorRequisicao | null = null;
+
+/** Liga o observador; passe `null` para desligar. Devolve o anterior. */
+export function observarRequisicoes(fn: ObservadorRequisicao | null): ObservadorRequisicao | null {
+  const anterior = observador;
+  observador = fn;
+  return anterior;
+}
+
 /**
  * Executes an action (SQL via edge function or direct Supabase call)
  */
 async function executeAction(actionResult: ActionResult, params?: Record<string, any>): Promise<any[]> {
-  // SUPABASE_DIRECT: bypass edge function, use parameterised Supabase queries
-  if (actionResult.actionType === 'SUPABASE_DIRECT' && actionResult.directFn) {
-    return actionResult.directFn(params);
+  // Medição em UMA função só, em vez de embrulhar a original noutra: sem
+  // observador, o custo é uma verificação de verdade e uma atribuição de zero.
+  const obs = observador;
+  const inicio = obs ? performance.now() : 0;
+  let falhou = false;
+  try {
+    // SUPABASE_DIRECT: bypass edge function, use parameterised Supabase queries
+    if (actionResult.actionType === 'SUPABASE_DIRECT' && actionResult.directFn) {
+      return actionResult.directFn(params);
+    }
+
+    if (!actionResult.config) {
+      throw new Error(`[Action ${actionResult.name}] Missing config for SQL action`);
+    }
+
+    const safeParams = params ? sanitiseParams(params) : {};
+
+    const { data, error } = await supabase.functions.invoke('execute-sql', {
+      body: {
+        query: actionResult.config.query,
+        params: safeParams,
+      },
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Edge function error');
+    }
+
+    if (data?.error) {
+      throw new Error(data.error);
+    }
+
+    return data?.data || [];
+  } catch (e) {
+    falhou = true;
+    throw e;
+  } finally {
+    if (obs) obs(actionResult.name, performance.now() - inicio, falhou);
   }
-
-  if (!actionResult.config) {
-    throw new Error(`[Action ${actionResult.name}] Missing config for SQL action`);
-  }
-
-  const safeParams = params ? sanitiseParams(params) : {};
-
-  const { data, error } = await supabase.functions.invoke('execute-sql', {
-    body: {
-      query: actionResult.config.query,
-      params: safeParams,
-    },
-  });
-
-  if (error) {
-    throw new Error(error.message || 'Edge function error');
-  }
-
-  if (data?.error) {
-    throw new Error(data.error);
-  }
-
-  return data?.data || [];
 }
 
 /**
