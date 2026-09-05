@@ -277,6 +277,37 @@ export function AbaFluxoCaixa({
   const ehLocacao = (rascunho.tipoModelagem ?? 'venda') === 'locacao';
   const linhas = linhasDoFluxo(ehLocacao, facilidadesAtivas);
 
+  /**
+   * As BORDAS DA JANELA DE OPERAÇÃO (migration 1764500000).
+   *
+   * Uma borda lateral sutil na primeira e na última coluna em que o ativo opera,
+   * no mesmo espírito dos separadores de linha: ver onde a operação começa é o
+   * que faz o usuário entender o formato do caixa — por que o OPEX aparece do
+   * nada num mês, por que o aluguel some depois de outro.
+   *
+   * Só no modo locação. No modo venda a janela existe no cronograma e não
+   * significa nada, e uma borda ali seria ruído sem causa.
+   */
+  const { mesInicioOperacao, mesFimOperacao } = resultado.cronograma;
+  const janelaVisivel = ehLocacao && mesInicioOperacao <= mesFimOperacao;
+  const bordaDaJanela = (mes: number) =>
+    !janelaVisivel
+      ? undefined
+      : cn(
+          mes === mesInicioOperacao && 'border-l-2 border-l-slate-300',
+          mes === mesFimOperacao && 'border-r-2 border-r-slate-300',
+        );
+  const dicaDaJanela = (mes: number) =>
+    !janelaVisivel
+      ? undefined
+      : mes === mesInicioOperacao && mes === mesFimOperacao
+        ? 'Único mês da janela de operação: o ativo opera só aqui.'
+        : mes === mesInicioOperacao
+          ? `Início da janela de operação: é daqui que correm o OPEX e o aluguel. Antes deste mês não há prédio para pagar property tax, seguro nem administração predial.`
+          : mes === mesFimOperacao
+            ? `Fim da janela de operação: o ativo é vendido neste mês e a partir do seguinte o dono é o comprador — não há mais aluguel nem OPEX.`
+            : undefined;
+
   const [editando, setEditando] = useState<{ mes: number; linha: ChaveOverride } | null>(null);
   const [rascunhoTexto, setRascunhoTexto] = useState('');
 
@@ -417,7 +448,13 @@ export function AbaFluxoCaixa({
         <td
           key={m.mes}
           title={DICA_FILHA}
-          className={cn('border-b border-slate-100 px-2 py-1 text-right tabular-nums', opts.classeValor)}
+          className={cn(
+            'border-b border-slate-100 px-2 py-1 text-right tabular-nums',
+            // A borda da janela atravessa também as linhas de detalhe: uma marca
+            // que se interrompe no meio da grade deixa de ser uma marca.
+            bordaDaJanela(m.mes),
+            opts.classeValor,
+          )}
         >
           {dinheiroCurto(opts.valores[i] ?? 0)}
         </td>
@@ -518,7 +555,11 @@ export function AbaFluxoCaixa({
               {meses.map((m) => (
                 <th
                   key={m.mes}
-                  className="sticky top-0 z-10 min-w-[92px] border-b border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-semibold text-slate-600"
+                  title={dicaDaJanela(m.mes)}
+                  className={cn(
+                    'sticky top-0 z-10 min-w-[92px] border-b border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-semibold text-slate-600',
+                    bordaDaJanela(m.mes),
+                  )}
                 >
                   <div>{m.mes}</div>
                   <div className="font-normal text-slate-400">{mesAno(m.data)}</div>
@@ -605,7 +646,7 @@ export function AbaFluxoCaixa({
 
                     if (emEdicao) {
                       return (
-                        <td key={m.mes} className="border-b border-slate-100 p-0">
+                        <td key={m.mes} className={cn('border-b border-slate-100 p-0', bordaDaJanela(m.mes))}>
                           <input
                             autoFocus
                             className="h-8 w-full bg-amber-50 px-2 text-right text-sm tabular-nums outline-none ring-2 ring-amber-400"
@@ -651,6 +692,7 @@ export function AbaFluxoCaixa({
                         }
                         className={cn(
                           'relative border-b border-slate-100 px-2 py-1.5 text-right tabular-nums',
+                          bordaDaJanela(m.mes),
                           editavel && 'cursor-cell',
                           porSocio && 'cursor-not-allowed',
                           marcado && 'bg-amber-50 font-medium text-amber-900',

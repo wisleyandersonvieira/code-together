@@ -960,9 +960,12 @@ export const EXPLICACAO_NOI_REFERENCIA: Record<NoiReferencia, string> = {
  * Uma linha do plano de contas da OPERAÇÃO (`modelagem_opex`).
  *
  * Está para o modo locação como `CustoAdicional` está para o desenvolvimento —
- * com uma diferença que é a chave do modelo inteiro: o OPEX não tem cronograma.
- * Ele é uma taxa anual por pé quadrado que corre todo mês, do primeiro ao
- * último, e NÃO varia com a ocupação.
+ * com uma diferença que é a chave do modelo inteiro: o OPEX não tem cronograma
+ * PRÓPRIO. Ele é uma taxa anual por pé quadrado que corre igual em todo mês da
+ * JANELA DE OPERAÇÃO (`Cronograma.mesInicioOperacao`..`mesFimOperacao`) e NÃO
+ * varia com a ocupação. Fora da janela é zero: antes da entrega não há prédio
+ * para pagar property tax, seguro e administração; depois da venda o ativo não é
+ * mais do projeto.
  */
 export interface LinhaOpex {
   id?: number;
@@ -1042,6 +1045,21 @@ export interface ConfigLocacao {
    * quando `noiReferencia = 'estabilizado'` e o gerador da curva de ocupação.
    */
   ocupacaoEstabilizadaPct: number;
+  /**
+   * Primeiro mês em que o ativo OPERA: quando começam o OPEX e o aluguel
+   * (migration 1764500000).
+   *
+   * `null` — o estado normal — significa DERIVADO do cronograma: `mesFimObra + 1`.
+   * Não é o mesmo que `0`, e é por isso que o mapeador usa `inteiroOuNulo`: um
+   * zero seria um mês pedido explicitamente, e o clamp o levaria ao mês 1, que é
+   * justamente o bug que esta coluna existe para corrigir.
+   *
+   * É configurável porque a data do certificado de ocupação varia — há quem
+   * conte a partir do ÚLTIMO mês de obra. O FIM da janela não é: é o mês de
+   * saída, porque depois da venda o ativo não é mais do projeto. Continuar
+   * recebendo aluguel de um imóvel vendido não é um cenário, é um erro.
+   */
+  mesInicioOpex?: number | null;
 }
 
 /**
@@ -1169,7 +1187,9 @@ export interface MesFluxo {
   otherCosts: number;
   /**
    * Ocupação física do mês, como fração 0..1. Sempre ZERO no modo venda.
-   * Mês sem ponto na curva é zero, não o valor do mês anterior.
+   * Mês sem ponto na curva é zero, não o valor do mês anterior — e mês FORA da
+   * janela de operação também é zero, mesmo que a curva tenha ponto ali: o ponto
+   * fica guardado no banco e volta a valer se a janela mudar.
    */
   ocupacao: number;
   /**
@@ -1183,6 +1203,10 @@ export interface MesFluxo {
   /**
    * OPEX bruto do mês: `Σ (linha.valorSfAno × ablSf) / 12`. NÃO varia com a
    * ocupação — prédio vazio custa property tax, seguro e manutenção igual.
+   *
+   * ZERO fora da janela de operação, junto com `opexReembolso`: zerar só o
+   * líquido deixaria estas duas colunas de leitura mostrando valor num mês em
+   * que o prédio não existe.
    */
   opexBruto: number;
   /**
@@ -1198,8 +1222,9 @@ export interface MesFluxo {
   opex: number;
   /**
    * `rentalRevenue − opex`. NEGATIVO em ocupação baixa, e isso é o modelo
-   * funcionando: o OPEX bruto corre inteiro desde o primeiro mês e só o
-   * reembolso acompanha a ocupação.
+   * funcionando: dentro da janela de operação o OPEX bruto corre inteiro e só o
+   * reembolso acompanha a ocupação. Fora da janela é zero, porque as duas
+   * parcelas são.
    */
   noiMes: number;
   pagamentosOperacionais: number;
@@ -1580,11 +1605,32 @@ export interface Cronograma {
   mesInicioObra: number;
   mesFimObra: number;
   mesSaida: number;
+  /**
+   * Primeiro mês da JANELA DE OPERAÇÃO (migration 1764500000): já resolvido a
+   * partir de `ConfigLocacao.mesInicioOpex`, ou de `mesFimObra + 1` quando ele é
+   * nulo, e limitado a 1..prazoTotal. Fora da janela não há aluguel nem OPEX.
+   *
+   * Existe também no modo VENDA — o cronograma é um só —, e ali não é lido por
+   * conta nenhuma: a receita de aluguel e o OPEX são zerados na origem.
+   */
+  mesInicioOperacao: number;
+  /**
+   * Último mês da janela: `min(mesSaida, prazoTotal)`. NÃO é configurável, ao
+   * contrário do início — depois da venda o ativo não é mais do projeto.
+   *
+   * Menor que `mesInicioOperacao` quando a saída é anterior à entrega da obra: o
+   * ativo nunca opera, e `janela_operacao_vazia` acende vermelho.
+   */
+  mesFimOperacao: number;
   horizonteMaximo: number;
   dataInicio: string;
   dataInicioObra: string;
   dataFimObra: string;
   dataSaida: string;
+  /** Data do `mesInicioOperacao`, no mesmo padrão de `dataInicioObra`. */
+  dataInicioOperacao: string;
+  /** Data do `mesFimOperacao`, no mesmo padrão de `dataFimObra`. */
+  dataFimOperacao: string;
   /** Vazio quando `usaFases` é false. */
   fases: FaseCronograma[];
 }

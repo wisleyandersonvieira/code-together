@@ -537,6 +537,12 @@ export function mapearLocacao(linha: unknown): ConfigLocacao {
       ? (l.noi_referencia as NoiReferencia)
       : 'estabilizado',
     ocupacaoEstabilizadaPct: num(l.ocupacao_estabilizada_pct, 1),
+    // `inteiroOuNulo`, e não `num()`: aqui o NULL é significado, não ausência de
+    // dado. Nulo é "derivado do cronograma" (mesFimObra + 1) e é o estado normal
+    // de toda modelagem gravada antes da migration 1764500000; um 0 seria um mês
+    // pedido explicitamente, e o motor o levaria ao mês 1 — justamente o bug que
+    // a janela de operação existe para corrigir.
+    mesInicioOpex: inteiroOuNulo(l.mes_inicio_opex),
   };
 }
 

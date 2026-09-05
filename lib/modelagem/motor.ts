@@ -532,6 +532,8 @@ export function calcular(input: ModelInput): ModelOutput {
     custoVendaPct: 0,
     noiReferencia: 'estabilizado',
     ocupacaoEstabilizadaPct: 1,
+    // Nulo, não zero: "derivado do cronograma". Ver `mesInicioOperacao` abaixo.
+    mesInicioOpex: null,
   };
 
   // ─── Cronograma ────────────────────────────────────────────────────────────
@@ -545,6 +547,29 @@ export function calcular(input: ModelInput): ModelOutput {
   const mesFimObra = Math.trunc(input.mesesAprovacao) + Math.trunc(input.mesesConstrucao);
   const mesSaida = rec.mesSaida ?? prazoTotal;
   const horizonteMaximo = input.horizonteMaximo ?? 60;
+
+  // ─── A janela de operação (migration 1764500000) ───────────────────────────
+  //
+  // A janela em que o ativo opera. Fora dela não há aluguel nem OPEX: antes da
+  // entrega não existe prédio para pagar property tax, seguro e administração;
+  // depois da venda o ativo não é mais do projeto.
+  //
+  // O início é configurável porque a data do certificado de ocupação varia — há
+  // quem conte a partir do último mês de obra. O fim não é: continuar recebendo
+  // aluguel de um imóvel vendido não é um cenário, é um erro.
+  //
+  // `mesInicioOpex` NULO é o estado normal e significa DERIVADO — e é por isso
+  // que a checagem é contra `null`, e não contra falsy: um zero gravado é um mês
+  // pedido pelo usuário, que o clamp leva ao mês 1.
+  //
+  // Os dois são calculados também no modo VENDA, e ali não multiplicam nada: o
+  // bloco que os lê está inteiro atrás de `ehLocacao`.
+  const mesInicioOpexPedido =
+    loc.mesInicioOpex != null && Number.isFinite(loc.mesInicioOpex)
+      ? Math.trunc(loc.mesInicioOpex)
+      : mesFimObra + 1;
+  const mesInicioOperacao = clamp(mesInicioOpexPedido, 1, prazoTotal);
+  const mesFimOperacao = clamp(Math.min(mesSaida, prazoTotal), 1, prazoTotal);
 
   // ─── Fases ─────────────────────────────────────────────────────────────────
   // Índices DERIVADOS das datas, sem limite nenhum: é o que a interface mostra e
@@ -566,11 +591,17 @@ export function calcular(input: ModelInput): ModelOutput {
     mesInicioObra,
     mesFimObra,
     mesSaida,
+    mesInicioOperacao,
+    mesFimOperacao,
     horizonteMaximo,
     dataInicio: input.dataInicio,
     dataInicioObra: somarMeses(input.dataInicio, mesInicioObra - 1),
     dataFimObra: somarMeses(input.dataInicio, Math.max(mesFimObra, 1) - 1),
     dataSaida: somarMeses(input.dataInicio, Math.max(mesSaida, 1) - 1),
+    // Mesmo padrão de `dataInicioObra` e `dataFimObra`: a tela e o PDF precisam
+    // mostrar a janela em data, não só em índice de mês.
+    dataInicioOperacao: somarMeses(input.dataInicio, Math.max(mesInicioOperacao, 1) - 1),
+    dataFimOperacao: somarMeses(input.dataInicio, Math.max(mesFimOperacao, 1) - 1),
     fases: fasesCronograma,
   };
 
@@ -1123,7 +1154,17 @@ export function calcular(input: ModelInput): ModelOutput {
     const perdaCredito = loc.perdaCreditoPct || 0;
     const taxaReembolso = loc.taxaReembolsoPct || 0;
     for (let m = 1; m <= prazoTotal; m++) {
-      const ocupacao = curvaOcupacao.get(m) ?? 0;
+      // A GUARDA DA JANELA (migration 1764500000). Antes dela o laço percorria o
+      // prazo inteiro e o OPEX era lançado desde o mês 1 — quando ainda não há
+      // prédio —, e o aluguel continuava depois do mês de saída, quando o ativo
+      // já foi vendido. Ver `mesInicioOperacao` lá em cima.
+      const dentroDaJanela = m >= mesInicioOperacao && m <= mesFimOperacao;
+
+      // A OCUPAÇÃO É ZERADA FORA DA JANELA, MAS A CURVA NO BANCO NÃO É TOCADA.
+      // Se o usuário antecipar a entrega ou esticar o prazo, os pontos voltam a
+      // valer sozinhos. Nunca apague ponto de curva — `ocupacao_fora_da_janela`
+      // acende âmbar dizendo quantos estão guardados e inativos.
+      const ocupacao = dentroDaJanela ? (curvaOcupacao.get(m) ?? 0) : 0;
       ocupacaoMes[m] = ocupacao;
 
       // A PERDA DE CRÉDITO INCIDE SOBRE A RECEITA FATURADA, não sobre a receita
@@ -1134,18 +1175,26 @@ export function calcular(input: ModelInput): ModelOutput {
       // na curva de ocupação. Somar as duas contaria o mesmo buraco duas vezes,
       // e é o erro clássico de quem escreve esta linha de memória.
       const receitaBrutaMes = (receitaBrutaAnual100 / 12) * ocupacao;
-      rentalRevenue[m] = receitaBrutaMes * (1 - perdaCredito);
+      rentalRevenue[m] = dentroDaJanela ? receitaBrutaMes * (1 - perdaCredito) : 0;
 
-      // O OPEX BRUTO NÃO VARIA COM A OCUPAÇÃO. Prédio vazio custa property tax,
-      // seguro e manutenção igual — a conta do síndico não cai porque não há
-      // inquilino. O que varia é o REEMBOLSO, porque só quem está lá paga.
+      // O OPEX BRUTO NÃO VARIA COM A OCUPAÇÃO, DENTRO DA JANELA. Prédio vazio
+      // custa property tax, seguro e manutenção igual — a conta do síndico não
+      // cai porque não há inquilino. O que varia é o REEMBOLSO, porque só quem
+      // está lá paga.
       //
       // É exatamente daí que sai o comportamento mais importante do modelo: o
       // NOI é NEGATIVO em ocupação baixa, e só vira positivo quando o reembolso
       // mais o aluguel passam do OPEX bruto. Na pro forma de referência isso
       // acontece acima de 27,8% de ocupação — ver `ocupacaoBreakevenNoi`.
-      opexBruto[m] = opexBrutoAnual / 12;
-      opexReembolso[m] = (opexBrutoReembolsavelAnual / 12) * taxaReembolso * ocupacao;
+      //
+      // `opexBruto` E `opexReembolso` ZERAM JUNTO fora da janela. Zerar só o
+      // líquido deixaria as duas colunas de LEITURA da grade mostrando valor num
+      // mês em que o prédio não existe — e a diferença entre elas deixaria de
+      // ser o ajuste manual que a tela exibe.
+      opexBruto[m] = dentroDaJanela ? opexBrutoAnual / 12 : 0;
+      opexReembolso[m] = dentroDaJanela
+        ? (opexBrutoReembolsavelAnual / 12) * taxaReembolso * ocupacao
+        : 0;
       opex[m] = opexBruto[m] - opexReembolso[m];
       noiMes[m] = rentalRevenue[m] - opex[m];
     }
@@ -1163,6 +1212,15 @@ export function calcular(input: ModelInput): ModelOutput {
         // mês de saída. O `max(1, …)` corta a janela quando a saída acontece
         // antes do 12º mês — somar meses que não existem daria um NOI menor sem
         // nada explicando por quê, e cortar deixa a soma coerente com o prazo.
+        //
+        // COM A JANELA DE OPERAÇÃO isto passa a ter uma consequência que não é
+        // óbvia: se a operação começar tarde, parte destes 12 meses cai ANTES de
+        // `mesInicioOperacao` e entra como ZERO, puxando o NOI de referência
+        // para baixo e, com ele, o valor de saída. Está correto — não houve NOI
+        // naqueles meses —, mas é surpreendente, e por isso a conferência
+        // `noi_referencia_janela_curta` acende âmbar dizendo quantos meses de
+        // fato entraram na conta. O modo 'estabilizado' não é afetado: ele é o
+        // ativo maduro, e não lê `noiMes`.
         soma(
           Array.from(
             { length: Math.min(12, Math.max(0, Math.min(mesSaida, prazoTotal))) },
@@ -1203,6 +1261,12 @@ export function calcular(input: ModelInput): ModelOutput {
     // Forçar `opex` não muda `opexBruto` nem `opexReembolso`: aqueles continuam
     // mostrando a conta que o motor fez, e a diferença para `opex` é justamente
     // o ajuste manual que a grade exibe.
+    //
+    // E O OVERRIDE VENCE INCLUSIVE FORA DA JANELA DE OPERAÇÃO. Este laço roda
+    // DEPOIS da guarda e não a consulta: quem lança OPEX à mão no mês 3 está
+    // tomando uma decisão consciente, e apagá-la seria o motor decidindo por
+    // ele. A conferência `opex_manual_fora_da_janela` acende âmbar — é o tipo de
+    // coisa que se faz num teste e se esquece de reverter.
     if (temOverride(m, 'rental_revenue')) rentalRevenue[m] = valorOverride(m, 'rental_revenue');
     if (temOverride(m, 'opex')) opex[m] = valorOverride(m, 'opex');
     // O NOI acompanha o que ficou de pé depois dos overrides: é uma leitura

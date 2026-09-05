@@ -1260,22 +1260,100 @@ export function montarConferencias(ctx: Contexto): Conferencia[] {
       semCurva ? 'vermelho' : 'verde',
       `${curva.length}`,
       semCurva
-        ? 'Nenhum mês tem ocupação declarada, e mês sem linha é ocupação ZERO — não ocupação padrão. A receita de aluguel é zero o projeto inteiro, enquanto o OPEX bruto corre normalmente: o NOI fica negativo em todo mês.'
+        ? 'Nenhum mês tem ocupação declarada, e mês sem linha é ocupação ZERO — não ocupação padrão. A receita de aluguel é zero o projeto inteiro, enquanto o OPEX bruto corre normalmente dentro da janela de operação: o NOI fica negativo em todo mês em que o ativo opera.'
         : `${curva.length} de ${cronograma.prazoTotal} meses têm ocupação declarada.`,
       'Use o gerador da aba Operação: mês de início do lease-up, meses até estabilizar e ocupação estabilizada geram a rampa inteira.',
     );
 
-    // Ocupação declarada além do mês de saída: o ativo já foi vendido.
-    const alemDaSaida = curva.filter((p) => p.mes > cronograma.mesSaida);
-    if (alemDaSaida.length > 0) {
+    // ─── A JANELA DE OPERAÇÃO (migration 1764500000) ─────────────────────────
+    const inicioOp = cronograma.mesInicioOperacao;
+    const fimOp = cronograma.mesFimOperacao;
+    const janelaVazia = inicioOp > fimOp;
+    const duracaoJanela = janelaVazia ? 0 : fimOp - inicioOp + 1;
+
+    // Janela vazia: o ativo NUNCA opera. Vermelho, e não âmbar, porque some a
+    // receita principal do modo locação inteiro.
+    if (janelaVazia) {
       add(
-        'ocupacao_apos_saida',
-        'Ocupação depois da saída',
-        'ambar',
-        `${alemDaSaida.length}`,
-        `${alemDaSaida.length} mês(es) da curva caem depois do mês ${cronograma.mesSaida}, em que o ativo é vendido. Esses meses NÃO geram receita de aluguel nem OPEX para este projeto — o dono a partir dali é o comprador. As linhas ficam guardadas e voltam a valer se a saída for adiada.`,
-        'Ajuste o mês de saída na aba Locação e saída, ou remova os meses excedentes da curva de ocupação.',
+        'janela_operacao_vazia',
+        'Janela de operação',
+        'vermelho',
+        `${inicioOp} → ${fimOp}`,
+        `A operação começaria no mês ${inicioOp} e a saída acontece no mês ${fimOp}: o ativo NUNCA opera. Não há aluguel, não há OPEX e não há NOI em mês nenhum${
+          loc?.noiReferencia === 'ultimos_12m'
+            ? ' — e, como o NOI de referência é o dos últimos 12 meses, também não há valor de saída'
+            : ''
+        }. Acontece quando a saída é anterior à entrega da obra.`,
+        'Adie o mês de saída na aba Locação e saída, ou antecipe o mês de início da operação na aba Operação — a entrega da obra é o default dele.',
       );
+    }
+
+    // Ocupação declarada FORA da janela — antes da entrega ou depois da venda.
+    //
+    // Esta conferência SUBSTITUIU `ocupacao_apos_saida`: a ocupação depois da
+    // saída virou o caso particular "depois de `mesFimOperacao`", e manter as
+    // duas mostraria o mesmo mês em dois avisos com textos diferentes.
+    const foraDaJanela = curva.filter((p) => p.mes < inicioOp || p.mes > fimOp);
+    if (foraDaJanela.length > 0) {
+      const meses = foraDaJanela.map((p) => p.mes).sort((a, b) => a - b);
+      const listados = meses.slice(0, 12).join(', ');
+      const antes = meses.filter((m) => m < inicioOp).length;
+      const depois = meses.length - antes;
+      add(
+        'ocupacao_fora_da_janela',
+        'Ocupação fora da janela de operação',
+        'ambar',
+        `${foraDaJanela.length}`,
+        `${foraDaJanela.length} mês(es) da curva caem fora da janela de operação (mês ${inicioOp} a ${fimOp}): ${listados}${meses.length > 12 ? ', …' : ''}. ${
+          antes > 0
+            ? `${antes} antes do mês ${inicioOp}, em que o ativo passa a operar — antes da entrega não existe prédio para alugar. `
+            : ''
+        }${
+          depois > 0
+            ? `${depois} depois do mês ${fimOp}, em que o ativo é vendido — o dono a partir dali é o comprador. `
+            : ''
+        }Esses meses NÃO geram receita de aluguel nem OPEX. Os pontos ficam GUARDADOS e inativos, nunca apagados.`,
+        'Ajuste o mês de início da operação na aba Operação, a data de saída na aba Locação e saída, ou a própria curva — os pontos ficam guardados e voltam a valer sozinhos.',
+      );
+    }
+
+    // Override de OPEX ou aluguel em mês fora da janela. O override VENCE — é
+    // decisão consciente do usuário e o motor não a apaga —, mas é o tipo de
+    // coisa que se faz num teste e se esquece de reverter.
+    const overridesForaDaJanela = (input.overrides ?? []).filter(
+      (o) =>
+        (o.linha === 'opex' || o.linha === 'rental_revenue') &&
+        !o.limpar &&
+        (o.mes < inicioOp || o.mes > fimOp),
+    );
+    if (overridesForaDaJanela.length > 0) {
+      const meses = [...new Set(overridesForaDaJanela.map((o) => o.mes))].sort((a, b) => a - b);
+      add(
+        'opex_manual_fora_da_janela',
+        'Valor manual fora da janela de operação',
+        'ambar',
+        `${overridesForaDaJanela.length}`,
+        `${overridesForaDaJanela.length} valor(es) manual(is) de OPEX ou aluguel em mês fora da janela de operação (mês ${inicioOp} a ${fimOp}): mês ${meses.join(', ')}. O override VENCE e o valor entra no fluxo — o motor não apaga decisão do usuário —, mas o cálculo automático ali é zero, porque nesses meses o ativo não opera.`,
+        'Se foi de propósito, ignore. Se não, dê duplo clique na célula da aba Fluxo de Caixa para reverter ao valor automático.',
+      );
+    }
+
+    // NOI de referência pelo trailing com janela curta demais. O número está
+    // CERTO — não houve NOI naqueles meses —, mas é surpreendente: os meses
+    // anteriores ao início da operação entram como zero e puxam o valor de saída
+    // para baixo sem nada na tela explicando por quê.
+    if (loc?.noiReferencia === 'ultimos_12m') {
+      const mesesNaConta = Math.max(0, Math.min(12, duracaoJanela));
+      if (mesesNaConta < 12) {
+        add(
+          'noi_referencia_janela_curta',
+          'NOI dos últimos 12 meses com janela curta',
+          'ambar',
+          `${mesesNaConta}/12`,
+          `O NOI de referência soma os 12 meses que terminam no mês ${fimOp}, mas a janela de operação tem só ${duracaoJanela} mês(es) (do ${inicioOp} ao ${fimOp}): ${mesesNaConta} entram com NOI de fato e ${12 - mesesNaConta} entram como ZERO, porque o ativo ainda não operava. O NOI de referência sai menor e o valor de saída, ${dinheiro(ctx.valorSaida)}, cai junto — está correto, mas não é óbvio na tela.`,
+          'Adie a saída até haver 12 meses inteiros de operação, antecipe o início da operação, ou troque o NOI de referência para "estabilizado" na aba Locação e saída — aquele não depende do fluxo.',
+        );
+      }
     }
 
     // NOI de referência não positivo: não há valor de saída a calcular.

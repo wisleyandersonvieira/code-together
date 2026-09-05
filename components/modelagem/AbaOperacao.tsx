@@ -23,6 +23,9 @@ const NEUTRO: ConfigLocacao = {
   custoVendaPct: 0,
   noiReferencia: 'estabilizado',
   ocupacaoEstabilizadaPct: 1,
+  // Nulo é o estado NORMAL, não um campo por preencher: significa "derivado do
+  // cronograma" (mês de fim da obra + 1).
+  mesInicioOpex: null,
 };
 
 /** Faixas da tabela de NOI: de 10 em 10%, mais o zero. */
@@ -46,6 +49,19 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
   const linhas = rascunho.opex ?? [];
   const curva = rascunho.ocupacao ?? [];
   const prazo = resultado.cronograma.prazoTotal;
+
+  // ─── A janela de operação (migration 1764500000) ───────────────────────────
+  // Os três números vêm PRONTOS do motor: a tela não recalcula a janela, pelo
+  // mesmo motivo de as conferências não recalcularem — cobrar um número que o
+  // fluxo não usou é justamente como um painel passa a mentir.
+  const cron = resultado.cronograma;
+  const inicioOperacao = cron.mesInicioOperacao;
+  const fimOperacao = cron.mesFimOperacao;
+  const janelaVazia = inicioOperacao > fimOperacao;
+  const duracaoJanela = janelaVazia ? 0 : fimOperacao - inicioOperacao + 1;
+  /** O que o campo vazio significa: fim da obra + 1. É o placeholder. */
+  const inicioDerivado = cron.mesFimObra + 1;
+  const foraDaJanela = (m: number) => m < inicioOperacao || m > fimOperacao;
 
   const pctCampo = (v: number) => (v * 100).toFixed(4).replace(/\.?0+$/, '');
   const lerPct = (t: string) => (Number(t.replace(',', '.')) || 0) / 100;
@@ -85,7 +101,11 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
     });
   };
 
-  const [inicioLeaseUp, setInicioLeaseUp] = useState(resultado.cronograma.mesFimObra + 1);
+  // NULO = "segue o mês de início da operação". Antes o gerador nascia em
+  // `mesFimObra + 1` e ficava congelado ali: quem mudasse a janela tinha de
+  // acertar os dois na mão, e desencontrar os dois é fácil demais.
+  const [inicioLeaseUp, setInicioLeaseUp] = useState<number | null>(null);
+  const inicioLeaseUpEfetivo = inicioLeaseUp ?? inicioOperacao;
   const [mesesAteEstabilizar, setMesesAteEstabilizar] = useState(12);
 
   /**
@@ -97,7 +117,7 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
    * aba que apaga input do usuário.
    */
   const gerarRampa = () => {
-    const inicio = Math.max(1, Math.trunc(inicioLeaseUp) || 1);
+    const inicio = Math.max(1, Math.trunc(inicioLeaseUpEfetivo) || 1);
     const meses = Math.max(1, Math.trunc(mesesAteEstabilizar) || 1);
     const alvo = loc.ocupacaoEstabilizadaPct || 0;
     if (
@@ -109,9 +129,9 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
       return;
     }
     const nova: PontoOcupacao[] = [];
-    // A curva vai até o mês de SAÍDA, não até o prazo total: depois da venda o
-    // dono é o comprador, e `ocupacao_apos_saida` acenderia âmbar à toa.
-    const fim = Math.min(resultado.cronograma.mesSaida, prazo);
+    // A curva vai até o FIM DA JANELA, não até o prazo total: depois da venda o
+    // dono é o comprador, e `ocupacao_fora_da_janela` acenderia âmbar à toa.
+    const fim = fimOperacao;
     for (let m = inicio; m <= fim; m++) {
       const passo = m - inicio + 1;
       const fracao = Math.min(1, passo / meses);
@@ -139,8 +159,82 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
   return (
     <div className="space-y-6">
       <FinanceDetailSectionCard
+        title="Janela de operação"
+        description="O período em que o ativo opera. Antes da entrega não há OPEX nem aluguel; depois da venda, o ativo não é mais do projeto."
+      >
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="space-y-2">
+            <Label>Mês de início da operação</Label>
+            <Input
+              className={financeDetailFieldClassName}
+              type="number"
+              min={1}
+              // VAZIO É O ESTADO NORMAL, não um campo por preencher: vazio
+              // significa "derivado do cronograma". Por isso o placeholder mostra
+              // o valor derivado em vez de um traço, e o texto de apoio diz isso
+              // com todas as letras.
+              value={loc.mesInicioOpex ?? ''}
+              placeholder={`mês ${inicioDerivado} · derivado do cronograma`}
+              onChange={(e) =>
+                mudarLoc({
+                  mesInicioOpex: e.target.value === '' ? null : Math.trunc(Number(e.target.value)),
+                })
+              }
+            />
+            <p className="text-xs leading-5 text-slate-500">
+              Deixe VAZIO para derivar do cronograma — mês de fim da obra mais um, hoje o mês{' '}
+              <strong className="tabular-nums text-slate-700">{inicioDerivado}</strong>. Vazio é o
+              estado normal, não um campo por preencher. Preencha só quando a data do certificado
+              de ocupação não bater com a entrega da obra — há quem conte a partir do último mês de
+              obra.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-slate-500">Fim da operação</Label>
+            <div
+              className={`${financeDetailFieldClassName} flex items-center bg-slate-50 tabular-nums text-slate-700`}
+            >
+              mês {fimOperacao} · {mesAno(cron.dataFimOperacao)} · mês de saída
+            </div>
+            <p className="text-xs leading-5 text-slate-500">
+              Não é configurável: é o mês de saída, da aba Locação e saída. Continuar recebendo
+              aluguel de um imóvel vendido não é um cenário, é um erro.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-slate-500">Duração da janela</Label>
+            <div
+              className={`${financeDetailFieldClassName} flex items-center bg-slate-50 tabular-nums ${
+                janelaVazia ? 'text-red-700' : 'text-slate-700'
+              }`}
+            >
+              {janelaVazia
+                ? 'o ativo nunca opera'
+                : `${duracaoJanela} ${duracaoJanela === 1 ? 'mês' : 'meses'}`}
+            </div>
+            <p className="text-xs leading-5 text-slate-500">
+              {janelaVazia ? (
+                <>
+                  A saída (mês {fimOperacao}) é anterior à entrega (mês {inicioOperacao}): não há
+                  aluguel, não há NOI e, no modo &quot;últimos 12 meses&quot;, não há valor de
+                  saída.
+                </>
+              ) : (
+                <>
+                  Do mês {inicioOperacao} ({mesAno(cron.dataInicioOperacao)}) ao {fimOperacao} (
+                  {mesAno(cron.dataFimOperacao)}).
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+      </FinanceDetailSectionCard>
+
+      <FinanceDetailSectionCard
         title="Despesas operacionais (OPEX)"
-        description="Taxa anual por pé quadrado de ABL. O OPEX BRUTO corre igual em todo mês do projeto — prédio vazio custa property tax, seguro e manutenção igual. O que varia com a ocupação é o reembolso."
+        description="Taxa anual por pé quadrado de ABL. O OPEX BRUTO corre igual em todo mês da JANELA DE OPERAÇÃO — prédio vazio custa property tax, seguro e manutenção igual. O que varia com a ocupação é o reembolso. Fora da janela é zero: antes da entrega não há prédio para pagar imposto e seguro."
         action={
           <Button type="button" variant="outline" onClick={acrescentarLinha}>
             <Plus className="mr-2 h-4 w-4" />
@@ -277,12 +371,14 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
       >
         <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-4">
           <div className="space-y-2">
-            <Label className="text-xs">Início do lease-up (mês)</Label>
+            <Label className="text-xs" title="Nasce no mês de início da operação e acompanha a janela até você digitar outro valor.">
+              Início do lease-up (mês)
+            </Label>
             <Input
               type="number"
               min={1}
               className="h-9"
-              value={inicioLeaseUp}
+              value={inicioLeaseUpEfetivo}
               onChange={(e) => setInicioLeaseUp(Number(e.target.value) || 1)}
             />
           </div>
@@ -322,7 +418,12 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
               <tr className="border-b text-left text-xs uppercase tracking-wide text-slate-500">
                 <th className="sticky left-0 bg-white px-3 py-2">Mês</th>
                 {Array.from({ length: prazo }, (_, k) => k + 1).map((m) => (
-                  <th key={m} className="px-1 py-2 text-center font-normal">
+                  <th
+                    key={m}
+                    className={`px-1 py-2 text-center font-normal ${
+                      foraDaJanela(m) ? 'bg-slate-100/70 text-slate-400' : ''
+                    }`}
+                  >
                     {m}
                     <div className="text-[10px] text-slate-400">
                       {mesAno(resultado.meses[m - 1]?.data ?? '')}
@@ -338,9 +439,12 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
                 </td>
                 {Array.from({ length: prazo }, (_, k) => k + 1).map((m) => {
                   const v = ocupacaoDoMes(m);
-                  const aposSaida = m > resultado.cronograma.mesSaida;
+                  // Fora da janela o ponto continua na tela e no banco, apenas
+                  // INATIVO — em cinza, com o title dizendo por quê. Sumir da
+                  // tela seria apagar input do usuário aos olhos dele.
+                  const inativo = foraDaJanela(m);
                   return (
-                    <td key={m} className="px-0.5 py-1">
+                    <td key={m} className={`px-0.5 py-1 ${inativo ? 'bg-slate-100/70' : ''}`}>
                       <Input
                         type="number"
                         step="1"
@@ -351,12 +455,14 @@ export function AbaOperacao({ rascunho, alterar, resultado }: Props) {
                         value={v === null ? '' : Number((v * 100).toFixed(4))}
                         placeholder="—"
                         title={
-                          aposSaida
-                            ? 'Depois do mês de saída: o ativo já foi vendido e este mês não gera receita nem OPEX.'
-                            : undefined
+                          !inativo
+                            ? undefined
+                            : m < inicioOperacao
+                              ? `Fora da janela de operação: o ativo só passa a operar no mês ${inicioOperacao}, e antes da entrega não existe prédio para alugar. O ponto fica GUARDADO e inativo — se você antecipar a entrega ou o mês de início da operação, ele volta a valer sozinho.`
+                              : `Fora da janela de operação: o ativo é vendido no mês ${fimOperacao} e a partir dali o dono é o comprador. O ponto fica GUARDADO e inativo — se a saída for adiada, ele volta a valer sozinho.`
                         }
                         className={`h-8 w-14 px-1 text-center tabular-nums ${
-                          aposSaida ? 'border-amber-300 bg-amber-50' : ''
+                          inativo ? 'border-slate-200 bg-slate-100 text-slate-400' : ''
                         }`}
                         onChange={(e) =>
                           definirMes(m, e.target.value === '' ? null : Number(e.target.value) / 100)

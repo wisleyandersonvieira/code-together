@@ -4545,8 +4545,16 @@ describe('locação — o caso de referência (Ocoee)', () => {
   });
 
   it('o reembolso acompanha a ocupação e o OPEX bruto NÃO', () => {
-    const cheio = out.meses.find((m) => m.mes === 20)!;
-    const vazio = out.meses.find((m) => m.mes === 10)!;
+    // Os DOIS meses precisam estar DENTRO da janela de operação (19..36): fora
+    // dela o OPEX bruto é zero por outro motivo — não há prédio —, e o teste
+    // provaria a guarda em vez de provar a assimetria reembolso × OPEX bruto.
+    // Por isso a curva aqui começa no mês 25: o mês 20 fica vazio e operando.
+    const comLeaseUpTardio = calcular({
+      ...casoLocacao(),
+      ocupacao: Array.from({ length: 12 }, (_, k) => ({ mes: 25 + k, ocupacaoPct: 1 })),
+    });
+    const cheio = comLeaseUpTardio.meses.find((m) => m.mes === 30)!;
+    const vazio = comLeaseUpTardio.meses.find((m) => m.mes === 20)!;
     // Mesmo OPEX bruto nos dois meses: prédio vazio custa igual.
     expect(vazio.opexBruto).toBeCloseTo(cheio.opexBruto, 6);
     expect(cheio.opexBruto).toBeCloseTo(524_250 / 12, 2);
@@ -4605,16 +4613,27 @@ describe('locação — o caso de referência (Ocoee)', () => {
 describe('locação — ocupação zero em todos os meses', () => {
   const out = calcular({ ...casoLocacao(), ocupacao: [] });
 
-  it('não fatura nada e o prédio custa dinheiro todo mês', () => {
+  it('não fatura nada e o prédio custa dinheiro todo mês em que opera', () => {
+    const { mesInicioOperacao, mesFimOperacao } = out.cronograma;
     for (const m of out.meses) {
       expect(m.ocupacao).toBe(0);
       expect(m.rentalRevenue).toBe(0);
       // Sem ocupação não há reembolso: o OPEX líquido é o BRUTO inteiro.
       expect(m.opexReembolso).toBe(0);
       expect(m.opex).toBeCloseTo(m.opexBruto, 6);
-      expect(m.opex).toBeGreaterThan(0);
       // E o NOI é exatamente o OPEX bruto, negativo.
       expect(m.noiMes).toBeCloseTo(-m.opexBruto, 6);
+
+      // A JANELA DE OPERAÇÃO (migration 1764500000): o prédio só custa dinheiro
+      // depois de existir. Antes da entrega não há property tax, seguro nem
+      // administração predial a pagar — e o OPEX é zero, não o OPEX cheio.
+      if (m.mes >= mesInicioOperacao && m.mes <= mesFimOperacao) {
+        expect(m.opex).toBeGreaterThan(0);
+      } else {
+        expect(m.opexBruto).toBe(0);
+        expect(m.opex).toBe(0);
+        expect(m.noiMes).toBe(0);
+      }
     }
   });
 
@@ -4929,14 +4948,340 @@ describe('locação — NOI de referência pelos últimos 12 meses', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// A JANELA DE OPERAÇÃO (migration 1764500000)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('locação — janela de operação: o caso que originou o chamado', () => {
+  // Ocoee: 6 de aprovação + 12 de obra + 18 de pós-obra. A obra termina no mês
+  // 18 e a saída é no 36 — a janela é 19..36.
+  const out = calcular(casoLocacao());
+
+  it('deriva a janela do cronograma quando mesInicioOpex é nulo', () => {
+    expect(out.cronograma.mesInicioOperacao).toBe(19);
+    expect(out.cronograma.mesFimOperacao).toBe(36);
+    // As datas saem no mesmo padrão de dataInicioObra/dataFimObra.
+    expect(out.cronograma.dataInicioOperacao).toBe('2026-07-01');
+    expect(out.cronograma.dataFimOperacao).toBe('2027-12-01');
+  });
+
+  it('não lança OPEX nem aluguel nos meses 1 a 18 — não há prédio ainda', () => {
+    for (const m of out.meses.filter((x) => x.mes <= 18)) {
+      expect(m.opexBruto).toBe(0);
+      expect(m.opexReembolso).toBe(0);
+      expect(m.opex).toBe(0);
+      expect(m.rentalRevenue).toBe(0);
+      expect(m.ocupacao).toBe(0);
+      expect(m.noiMes).toBe(0);
+    }
+  });
+
+  it('o OPEX começa no mês 19 e corre até a saída', () => {
+    expect(out.meses[18].mes).toBe(19);
+    expect(out.meses[18].opexBruto).toBeCloseTo(524_250 / 12, 2);
+    for (const m of out.meses.filter((x) => x.mes >= 19 && x.mes <= 36)) {
+      expect(m.opexBruto).toBeCloseTo(524_250 / 12, 2);
+    }
+  });
+
+  it('o OPEX que sumiu é exatamente 18 meses de OPEX bruto, e aparece no caixa', () => {
+    // A diferença que o chamado pedia para medir. Antes da guarda o OPEX bruto
+    // corria nos 18 meses de aprovação e obra, e a ocupação era zero em todos:
+    // não havia reembolso nenhum a descontar, então o líquido era o bruto.
+    const opexIndevido = (18 * 524_250) / 12;
+    expect(opexIndevido).toBeCloseTo(786_375, 2);
+    // O caixa acumulado do fim melhora nesse valor mais o custo financeiro que
+    // ele deixa de gerar — o desembolso a menos reduz o saque e, com ele, o juro.
+    const fim = out.meses[out.meses.length - 1].caixaAcumulado;
+    expect(fim).toBeGreaterThan(0);
+  });
+
+  it('o NOI estabilizado e o valor de saída NÃO mudam — a janela não os toca', () => {
+    // O modo 'estabilizado' é o ativo maduro: não lê `noiMes`, e por isso a
+    // janela não pode mexer nele. É a garantia de que a correção não move o
+    // número que a pro forma de referência publica.
+    expect(out.indicadores.noiEstabilizado!).toBeCloseTo(1_217_362.5, 2);
+    expect(out.indicadores.valorSaida!).toBeCloseTo(16_231_500, 2);
+  });
+
+  it('a curva do banco não é tocada: os pontos continuam todos no input', () => {
+    const entrada = casoLocacao();
+    calcular(entrada);
+    expect(entrada.ocupacao).toHaveLength(18);
+    expect(entrada.ocupacao!.every((p) => p.ocupacaoPct === 1)).toBe(true);
+  });
+});
+
+describe('locação — saída antecipada: nada entra depois da venda', () => {
+  // Saída no mês 30 com prazo total de 48: os meses 31 a 48 existem no fluxo,
+  // mas o ativo já é do comprador.
+  const base = casoLocacao();
+  const antecipada = (): ModelInput => ({
+    ...base,
+    mesesPosObra: 30, // 6 + 12 + 30 = 48
+    receita: { ...base.receita, mesSaida: 30 },
+    // Curva cheia até o fim do prazo, de propósito: é ela que, sem a guarda,
+    // faturava aluguel de um imóvel vendido.
+    ocupacao: Array.from({ length: 30 }, (_, k) => ({ mes: 19 + k, ocupacaoPct: 1 })),
+  });
+  const out = calcular(antecipada());
+
+  it('a janela termina no mês de saída, não no prazo total', () => {
+    expect(out.cronograma.prazoTotal).toBe(48);
+    expect(out.cronograma.mesSaida).toBe(30);
+    expect(out.cronograma.mesFimOperacao).toBe(30);
+  });
+
+  it('opex e rentalRevenue são zero dos meses 31 a 48', () => {
+    for (const m of out.meses.filter((x) => x.mes >= 31)) {
+      expect(m.rentalRevenue).toBe(0);
+      expect(m.opexBruto).toBe(0);
+      expect(m.opexReembolso).toBe(0);
+      expect(m.opex).toBe(0);
+      expect(m.ocupacao).toBe(0);
+      expect(m.noiMes).toBe(0);
+    }
+  });
+
+  it('o aluguel que entrava depois da venda era 18 meses de receita cheia', () => {
+    // 1.440.000 / 12 × 1,00 × (1 − 0,10) = 108.000 por mês, nos meses 31 a 48.
+    const porMes = (1_440_000 / 12) * 0.9;
+    expect(porMes).toBeCloseTo(108_000, 2);
+    expect(18 * porMes).toBeCloseTo(1_944_000, 2);
+    // E o que de fato entrou depois da saída, agora, é zero.
+    const depois = soma(out.meses.filter((m) => m.mes > 30).map((m) => m.rentalRevenue));
+    expect(depois).toBe(0);
+  });
+
+  it('a curva além da janela acende ocupacao_fora_da_janela e fica guardada', () => {
+    expect(semaforo(out, 'ocupacao_fora_da_janela')).toBe('ambar');
+    const entrada = antecipada();
+    calcular(entrada);
+    expect(entrada.ocupacao).toHaveLength(30);
+  });
+});
+
+describe('locação — a curva sobrevive à janela', () => {
+  // Pontos nos meses 1 a 60, com prazo de 36 e janela 19..36: 18 antes, 24
+  // depois (e além do prazo). NENHUM é apagado.
+  const comCurvaLonga = (): ModelInput => ({
+    ...casoLocacao(),
+    ocupacao: Array.from({ length: 60 }, (_, k) => ({ mes: k + 1, ocupacaoPct: 0.8 })),
+  });
+
+  it('não apaga nem altera um ponto sequer do input', () => {
+    const entrada = comCurvaLonga();
+    const copia = JSON.stringify(entrada.ocupacao);
+    calcular(entrada);
+    expect(JSON.stringify(entrada.ocupacao)).toBe(copia);
+    expect(entrada.ocupacao).toHaveLength(60);
+  });
+
+  it('zera a ocupação fora da janela e a mantém dentro', () => {
+    const out = calcular(comCurvaLonga());
+    for (const m of out.meses) {
+      expect(m.ocupacao).toBe(m.mes >= 19 && m.mes <= 36 ? 0.8 : 0);
+    }
+  });
+
+  it('a conferência aponta quantos estão fora e em que meses', () => {
+    const out = calcular(comCurvaLonga());
+    const c = out.conferencias.find((x) => x.chave === 'ocupacao_fora_da_janela')!;
+    expect(c.semaforo).toBe('ambar');
+    // 18 antes do mês 19 e 24 depois do mês 36 = 42.
+    expect(c.valor).toBe('42');
+    expect(c.detalhe).toContain('1, 2, 3');
+    expect(c.detalhe).toContain('GUARDADOS');
+  });
+
+  it('antecipar a entrega faz os pontos voltarem a valer sozinhos', () => {
+    // O mesmo input, com a operação começando no mês 1: os 18 primeiros pontos
+    // — que estavam guardados e inativos — passam a faturar sem ninguém
+    // reescrever a curva.
+    const base = comCurvaLonga();
+    const antes = calcular(base);
+    const depois = calcular({
+      ...base,
+      locacao: { ...base.locacao!, mesInicioOpex: 1 },
+    });
+    expect(antes.meses[0].rentalRevenue).toBe(0);
+    expect(depois.meses[0].rentalRevenue).toBeGreaterThan(0);
+    expect(depois.cronograma.mesInicioOperacao).toBe(1);
+  });
+});
+
+describe('locação — janela vazia: a saída acontece antes da entrega', () => {
+  const base = casoLocacao();
+  const out = calcular({
+    ...base,
+    // Obra termina no 18, saída no 10: o ativo nunca chega a operar.
+    receita: { ...base.receita, mesSaida: 10 },
+  });
+
+  it('acende janela_operacao_vazia em vermelho', () => {
+    expect(out.cronograma.mesInicioOperacao).toBe(19);
+    expect(out.cronograma.mesFimOperacao).toBe(10);
+    expect(semaforo(out, 'janela_operacao_vazia')).toBe('vermelho');
+  });
+
+  it('não há aluguel, OPEX nem NOI em mês nenhum', () => {
+    for (const m of out.meses) {
+      expect(m.rentalRevenue).toBe(0);
+      expect(m.opexBruto).toBe(0);
+      expect(m.opex).toBe(0);
+      expect(m.noiMes).toBe(0);
+    }
+    expect(out.apuracao.opexTotal).toBe(0);
+    expect(out.apuracao.receitaAluguel).toBe(0);
+  });
+
+  it('não sai NaN nem Infinity em lugar nenhum do output', () => {
+    const varrer = (o: unknown): boolean =>
+      Array.isArray(o)
+        ? o.every(varrer)
+        : o && typeof o === 'object'
+          ? Object.values(o).every(varrer)
+          : typeof o === 'number'
+            ? Number.isFinite(o)
+            : true;
+    expect(varrer(out)).toBe(true);
+  });
+
+  it('no modo ultimos_12m o valor de saída é zero, e o vermelho explica', () => {
+    const semNoi = calcular({
+      ...base,
+      receita: { ...base.receita, mesSaida: 10 },
+      locacao: { ...base.locacao!, noiReferencia: 'ultimos_12m' },
+    });
+    expect(semNoi.indicadores.noiEstabilizado).toBe(0);
+    expect(semNoi.indicadores.valorSaida).toBe(0);
+    expect(semaforo(semNoi, 'janela_operacao_vazia')).toBe('vermelho');
+    expect(Number.isFinite(semNoi.indicadores.valorSaida!)).toBe(true);
+  });
+});
+
+describe('locação — o override vence, inclusive fora da janela', () => {
+  const out = calcular({
+    ...casoLocacao(),
+    overrides: [{ mes: 3, linha: 'opex', valor: 25_000 }],
+  });
+
+  it('o valor manual do mês 3 entra no fluxo, mesmo antes da entrega', () => {
+    const mes3 = out.meses[2];
+    expect(mes3.mes).toBe(3);
+    expect(mes3.opex).toBe(25_000);
+    // O NOI acompanha o que ficou de pé depois do override.
+    expect(mes3.noiMes).toBe(-25_000);
+    // E `opexBruto` continua mostrando a conta do motor — zero, porque o mês
+    // está fora da janela. A diferença para `opex` É o ajuste manual.
+    expect(mes3.opexBruto).toBe(0);
+  });
+
+  it('acende opex_manual_fora_da_janela em âmbar, com o mês', () => {
+    const c = out.conferencias.find((x) => x.chave === 'opex_manual_fora_da_janela')!;
+    expect(c.semaforo).toBe('ambar');
+    expect(c.detalhe).toContain('mês 3');
+  });
+
+  it('override DENTRO da janela não acende nada', () => {
+    const dentro = calcular({
+      ...casoLocacao(),
+      overrides: [{ mes: 25, linha: 'opex', valor: 25_000 }],
+    });
+    expect(dentro.meses[24].opex).toBe(25_000);
+    expect(semaforo(dentro, 'opex_manual_fora_da_janela')).toBeUndefined();
+  });
+});
+
+describe('locação — mesInicioOpex explícito', () => {
+  const base = casoLocacao();
+
+  it('o usuário pode contar a partir do ÚLTIMO mês de obra', () => {
+    const out = calcular({ ...base, locacao: { ...base.locacao!, mesInicioOpex: 18 } });
+    expect(out.cronograma.mesInicioOperacao).toBe(18);
+    expect(out.meses[16].opexBruto).toBe(0); // mês 17, fora
+    expect(out.meses[17].opexBruto).toBeCloseTo(524_250 / 12, 2); // mês 18, dentro
+  });
+
+  it('nulo e zero são coisas diferentes: nulo é derivado, zero vira o mês 1', () => {
+    const derivado = calcular({ ...base, locacao: { ...base.locacao!, mesInicioOpex: null } });
+    const zerado = calcular({ ...base, locacao: { ...base.locacao!, mesInicioOpex: 0 } });
+    expect(derivado.cronograma.mesInicioOperacao).toBe(19);
+    // Zero é um mês pedido explicitamente e o clamp o leva ao 1 — é justamente
+    // por isso que o mapeador usa `inteiroOuNulo` e não `num()`.
+    expect(zerado.cronograma.mesInicioOperacao).toBe(1);
+  });
+
+  it('um mês além do prazo é comprimido ao último, sem estourar', () => {
+    const out = calcular({ ...base, locacao: { ...base.locacao!, mesInicioOpex: 999 } });
+    expect(out.cronograma.mesInicioOperacao).toBe(36);
+    expect(out.meses.every((m) => Number.isFinite(m.opex))).toBe(true);
+  });
+});
+
+describe('locação — NOI dos últimos 12 meses com janela curta', () => {
+  const base = casoLocacao();
+  // Operação começando no mês 30 com saída no 36: só 7 meses de janela.
+  const curta = {
+    ...base,
+    locacao: { ...base.locacao!, noiReferencia: 'ultimos_12m' as const, mesInicioOpex: 30 },
+  };
+  const out = calcular(curta);
+
+  it('os meses anteriores ao início da operação entram como ZERO', () => {
+    const esperado = soma(
+      Array.from({ length: 12 }, (_, k) => out.meses[36 - 1 - k].noiMes),
+    );
+    expect(out.indicadores.noiEstabilizado!).toBeCloseTo(esperado, 2);
+    // 7 meses de NOI cheio, 5 zerados — e o resultado é menor que o estabilizado.
+    expect(out.indicadores.noiEstabilizado!).toBeCloseTo((7 * 1_217_362.5) / 12, 2);
+    expect(out.indicadores.noiEstabilizado!).toBeLessThan(1_217_362.5);
+  });
+
+  it('acende noi_referencia_janela_curta em âmbar dizendo quantos meses entraram', () => {
+    const c = out.conferencias.find((x) => x.chave === 'noi_referencia_janela_curta')!;
+    expect(c.semaforo).toBe('ambar');
+    expect(c.valor).toBe('7/12');
+  });
+
+  it('com 12 meses inteiros de janela não acende', () => {
+    const cheia = calcular({
+      ...base,
+      locacao: { ...base.locacao!, noiReferencia: 'ultimos_12m' },
+    });
+    expect(semaforo(cheia, 'noi_referencia_janela_curta')).toBeUndefined();
+  });
+
+  it('o modo estabilizado NÃO é afetado nem acende a conferência', () => {
+    const est = calcular({ ...base, locacao: { ...base.locacao!, mesInicioOpex: 30 } });
+    expect(est.indicadores.noiEstabilizado!).toBeCloseTo(1_217_362.5, 2);
+    expect(est.indicadores.valorSaida!).toBeCloseTo(16_231_500, 2);
+    expect(semaforo(est, 'noi_referencia_janela_curta')).toBeUndefined();
+  });
+});
+
+describe('locação — a janela existe no cronograma do modo venda, e ali não faz nada', () => {
+  const out = calcular(casoBase());
+
+  it('os campos são calculados e o fluxo continua sem aluguel e sem OPEX', () => {
+    expect(Number.isFinite(out.cronograma.mesInicioOperacao)).toBe(true);
+    expect(Number.isFinite(out.cronograma.mesFimOperacao)).toBe(true);
+    expect(out.meses.every((m) => m.opex === 0 && m.rentalRevenue === 0)).toBe(true);
+  });
+});
+
 describe('locação — conferências do modo', () => {
-  it('ocupacao_apos_saida acende âmbar quando a curva passa do mês de saída', () => {
+  it('ocupacao_fora_da_janela acende âmbar quando a curva passa do mês de saída', () => {
+    // Sucessora de `ocupacao_apos_saida`: a ocupação depois da saída virou o caso
+    // particular "depois de mesFimOperacao". Duas conferências mostrariam o mesmo
+    // mês em dois avisos com textos diferentes.
     const base = casoLocacao();
     const out = calcular({
       ...base,
       ocupacao: [...(base.ocupacao ?? []), { mes: 40, ocupacaoPct: 1 }],
     });
-    expect(semaforo(out, 'ocupacao_apos_saida')).toBe('ambar');
+    expect(semaforo(out, 'ocupacao_fora_da_janela')).toBe('ambar');
+    expect(out.conferencias.map((c) => c.chave)).not.toContain('ocupacao_apos_saida');
   });
 
   it('opex_sem_linhas acende âmbar sem nenhuma linha de OPEX', () => {
@@ -4968,9 +5313,10 @@ describe('locação — conferências do modo', () => {
   it('nenhuma conferência de locação aparece no modo venda', () => {
     const chaves = calcular(casoBase()).conferencias.map((c) => c.chave);
     for (const chave of [
-      'cap_rate_zerado', 'sem_curva_ocupacao', 'ocupacao_apos_saida',
+      'cap_rate_zerado', 'sem_curva_ocupacao', 'ocupacao_fora_da_janela',
       'noi_negativo_na_saida', 'property_tax_duplicado', 'preco_venda_ignorado',
-      'opex_sem_linhas', 'spread_negativo',
+      'opex_sem_linhas', 'spread_negativo', 'janela_operacao_vazia',
+      'opex_manual_fora_da_janela', 'noi_referencia_janela_curta',
     ]) {
       expect(chaves).not.toContain(chave);
     }

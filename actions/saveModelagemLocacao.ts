@@ -17,7 +17,8 @@ function saveModelagemLocacao() {
     query: `
       INSERT INTO modelagem_locacao (
         modelagem_id, taxa_reembolso_pct, perda_credito_pct, cap_rate_saida,
-        custo_venda_pct, noi_referencia, ocupacao_estabilizada_pct
+        custo_venda_pct, noi_referencia, ocupacao_estabilizada_pct,
+        mes_inicio_opex
       ) VALUES (
         {{params.modelagemId}}::int,
         COALESCE({{params.taxaReembolsoPct}}::decimal, 0),
@@ -25,7 +26,12 @@ function saveModelagemLocacao() {
         COALESCE({{params.capRateSaida}}::decimal, 0),
         COALESCE({{params.custoVendaPct}}::decimal, 0),
         COALESCE(NULLIF('{{params.noiReferencia}}', ''), 'estabilizado'),
-        COALESCE({{params.ocupacaoEstabilizadaPct}}::decimal, 1)
+        COALESCE({{params.ocupacaoEstabilizadaPct}}::decimal, 1),
+        -- SEM COALESCE, ao contrário de todas as de cima: aqui o NULL é o valor,
+        -- e significa "derivado do cronograma" (mesFimObra + 1). Um COALESCE
+        -- para 0 gravaria "operação começa no mês 1", que é exatamente o bug que
+        -- a migration 1764500000 corrige.
+        {{params.mesInicioOpex}}::int
       )
       ON CONFLICT (modelagem_id) DO UPDATE SET
         taxa_reembolso_pct = EXCLUDED.taxa_reembolso_pct,
@@ -34,6 +40,7 @@ function saveModelagemLocacao() {
         custo_venda_pct = EXCLUDED.custo_venda_pct,
         noi_referencia = EXCLUDED.noi_referencia,
         ocupacao_estabilizada_pct = EXCLUDED.ocupacao_estabilizada_pct,
+        mes_inicio_opex = EXCLUDED.mes_inicio_opex,
         updated_at = CURRENT_TIMESTAMP
     `,
   });

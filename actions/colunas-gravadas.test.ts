@@ -85,6 +85,11 @@ describe('ações de modelagem gravam toda coluna de input', () => {
     ['modelagem_financiamento', 'actions/saveModelagemFinanciamento.ts'],
     ['modelagem_receita', 'actions/saveModelagemReceita.ts'],
     ['modelagem_aportes', 'actions/saveModelagemAportes.ts'],
+    // UPSERT em vez de UPDATE puro, mas a coluna gravada aparece à esquerda do
+    // `=` no `DO UPDATE SET` do mesmo jeito — e o bug que a guarda pega é o
+    // mesmo: `mes_inicio_opex` (migration 1764500000) fora do save faria a tela
+    // gravar, o SELECT reler NULL e a janela de operação voltar à derivada.
+    ['modelagem_locacao', 'actions/saveModelagemLocacao.ts'],
   ];
 
   for (const [tabela, acao] of casos) {
