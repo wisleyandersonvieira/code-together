@@ -17,7 +17,7 @@ function createContaPagar() {
           '{{params.data_emissao}}', 
           '{{params.data_vencimento}}', 
           '{{params.data_competencia}}',
-          {{ params.observacoes ? "'" + params.observacoes.replace(/'/g, "''") + "'" : "NULL" }}, 
+          {{ params.observacoes ? "'" + params.observacoes + "'" : "NULL" }}, 
           {{params.valor_total}}, 
           'PENDENTE'
         ) RETURNING id

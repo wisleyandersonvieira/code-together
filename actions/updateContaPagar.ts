@@ -14,7 +14,7 @@ function updateContaPagar() {
           data_emissao = '{{params.data_emissao}}',
           data_vencimento = '{{params.data_vencimento}}',
           data_competencia = '{{params.data_competencia}}',
-          observacoes = {{params.observacoes && params.observacoes.trim() !== '' ? "'" + params.observacoes.replace(/'/g, "''") + "'" : "NULL"}},
+          observacoes = {{params.observacoes && params.observacoes.trim() !== '' ? "'" + params.observacoes + "'" : "NULL"}},
           valor_total = {{params.valor_total || 0}},
           updated_at = CURRENT_TIMESTAMP
         WHERE id = {{params.id}}

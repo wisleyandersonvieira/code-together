@@ -6,8 +6,8 @@ function updateEmpresa() {
     query: `
       UPDATE empresas 
       SET 
-        name = {{params.name ? "'" + params.name.replace(/'/g, "''") + "'" : "NULL"}}, 
-        number = {{params.number ? "'" + params.number.replace(/'/g, "''") + "'" : "NULL"}}, 
+        name = {{params.name ? "'" + params.name + "'" : "NULL"}}, 
+        number = {{params.number ? "'" + params.number + "'" : "NULL"}}, 
         updated_at = CURRENT_TIMESTAMP
       WHERE id = {{params.id}}
       RETURNING id, name, number, file_urls, created_at, updated_at;

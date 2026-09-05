@@ -45,8 +45,18 @@ export function toIdArray(value: unknown): number[] {
 /**
  * Expressão JS (avaliada na edge function) que serializa params[param] numa
  * lista de literais de texto SQL. Cada elemento é envolvido em aspas simples e
- * tem suas aspas internas duplicadas — o `sanitiseParams` do shim só escapa
- * strings de topo, então elementos de array precisam ser escapados aqui.
+ * tem suas aspas internas duplicadas.
+ *
+ * ESTE `.replace` FICA, e é a única exceção do repositório — todos os outros
+ * foram removidos junto com o escape duplo. O escape do edge function percorre
+ * só as strings de TOPO de `params`: um array chega lá por referência e seus
+ * elementos passam intactos. Então quem escapa elemento de array é quem o
+ * serializa, que é esta função.
+ *
+ * Se um dia o escape do edge function passar a descer em arrays, os dois mudam
+ * JUNTOS — tirar um sem o outro corrompe (dois escapes) ou abre injeção
+ * (nenhum). Ver supabase/functions/execute-sql/sql-template.ts.
+ *
  * Lista vazia gera `ARRAY[]::text[]`, válido e que não casa com nada.
  */
 function textArrayExpr(param: string): string {
@@ -121,7 +131,7 @@ export function andProjetoStatus(
   param = 'statusProjeto',
 ): string {
   const statusSql =
-    `(params.${param} === 'todos' ? "" : " AND ps.status = '" + String(params.${param}).replace(/'/g, "''") + "'")`;
+    `(params.${param} === 'todos' ? "" : " AND ps.status = '" + String(params.${param}) + "'")`;
   const sql =
     `"AND EXISTS (SELECT 1 FROM ${tabelaRateio} rs JOIN projetos ps ON ps.id = rs.projeto_id ` +
     `WHERE rs.${fkCol} = ${contaCol}" + ${statusSql} + ")"`;
@@ -200,7 +210,7 @@ export function andProjetoIdInReceber(contaCol: string, param = 'projetoIds'): s
 /** Filtro por status de projeto exigindo vínculo (rateio ou faturamento). */
 export function andProjetoStatusReceber(contaCol: string, param = 'statusProjeto'): string {
   const statusSql = (alias: string) =>
-    `(params.${param} === 'todos' ? "" : " AND ${alias}.status = '" + String(params.${param}).replace(/'/g, "''") + "'")`;
+    `(params.${param} === 'todos' ? "" : " AND ${alias}.status = '" + String(params.${param}) + "'")`;
   const sql =
     `"AND (EXISTS (SELECT 1 FROM ${CRP} sp1 JOIN projetos s1 ON s1.id = sp1.projeto_id ` +
     `WHERE sp1.conta_receber_id = ${contaCol}" + ${statusSql('s1')} + ") OR EXISTS (SELECT 1 FROM ${CRF} sp2 ` +

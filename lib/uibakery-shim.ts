@@ -2,11 +2,24 @@
  * Compatibility shim for @uibakery/data
  * Routes SQL actions through Supabase Edge Function.
  *
- * Security layer: all string params are sanitised before being sent to the
- * edge function (escape single-quotes, strip null bytes).  Complex or
- * auth-critical actions can opt-in to "SUPABASE_DIRECT" to bypass the edge
- * function entirely and use the Supabase JS client with proper parameterised
- * queries.
+ * ONDE MORA O ESCAPE — leia antes de mexer em `sanitiseParams`.
+ *
+ * O escape de aspas NÃO acontece aqui. Ele acontece no edge function
+ * (`supabase/functions/execute-sql/sql-template.ts`), que é quem sabe em qual
+ * dos três caminhos de interpolação o valor vai cair e, portanto, quem monta o
+ * literal SQL — e a regra é que quem monta o literal é quem escapa.
+ *
+ * Este comentário já disse o contrário, e a frase era o próprio bug: enquanto o
+ * shim escapava, o edge function escapava DE NOVO no caminho `{{params.chave}}`,
+ * e todo texto com apóstrofo era gravado com a aspa dobrada — `Owner's Rep`
+ * virava `Owner''s Rep`. Como o valor corrompido era relido e reescapado no
+ * salvamento seguinte, as aspas dobravam a cada vez: 1 → 2 → 4 → 8.
+ *
+ * O que sobra aqui é a remoção do byte nulo, que não é escape de SQL: é higiene
+ * de transporte, idempotente, e não conflita com nada.
+ *
+ * Ações auth-críticas podem optar por "SUPABASE_DIRECT" e passar ao largo do
+ * edge function, usando o cliente Supabase com query parametrizada de verdade.
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../src/integrations/supabase/client';
@@ -25,18 +38,23 @@ interface ActionResult {
   directFn?: (params?: Record<string, any>) => Promise<any[]>;
 }
 
-// ─── SQL injection mitigation ────────────────────────────────────────────────
+// ─── Higiene de transporte ───────────────────────────────────────────────────
 /**
- * Escape every string value in a params map so single-quotes and null bytes
- * cannot escape the surrounding SQL literal that the edge function builds.
- * This is a defence-in-depth measure; the edge function execute-sql applies a
- * statement guard on top of it (single statement, allow-list of commands).
+ * Remove o byte nulo de todo valor string.
+ *
+ * NÃO escapa aspas — ver o cabeçalho do arquivo. O escape é do edge function,
+ * porque só ele sabe se o valor vai entrar num literal que ele mesmo monta (e
+ * então ele escapa) ou num fragmento SQL montado pela própria expressão do
+ * template (e então ele escapa antes de entregar o valor à expressão).
+ *
+ * Escapar aqui, como se fazia, dobrava a aspa no primeiro caso e corrompia o
+ * dado em silêncio. Não devolva o `.replace(/'/g, "''")` para cá.
  */
 function sanitiseParams(params: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(params)) {
     if (typeof v === 'string') {
-      out[k] = v.replace(/\x00/g, '').replace(/'/g, "''");
+      out[k] = v.replace(/\x00/g, '');
     } else {
       out[k] = v;
     }

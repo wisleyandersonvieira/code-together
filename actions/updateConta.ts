@@ -5,10 +5,10 @@ function updateConta() {
     databaseName: 'provision',
     query: `
       UPDATE contas 
-      SET nome = '{{ params.nome ? params.nome.replace(/'/g, "''") : "" }}',
-          numero = '{{ params.numero ? params.numero.replace(/'/g, "''") : "" }}',
-          banco = '{{ params.banco ? params.banco.replace(/'/g, "''") : "" }}',
-          descricao = {{ params.descricao ? "'" + params.descricao.replace(/'/g, "''") + "'" : "NULL" }},
+      SET nome = '{{ params.nome ? params.nome : "" }}',
+          numero = '{{ params.numero ? params.numero : "" }}',
+          banco = '{{ params.banco ? params.banco : "" }}',
+          descricao = {{ params.descricao ? "'" + params.descricao + "'" : "NULL" }},
           saldo_inicial = {{params.saldoInicial}},
           data_saldo_inicial = '{{params.dataSaldoInicial}}',
           destaque = {{params.destaque}},
