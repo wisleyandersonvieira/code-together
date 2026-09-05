@@ -1,5 +1,10 @@
 import { corsHeadersFor } from "../_shared/cors.ts";
 import { authenticate, isAuthError } from "../_shared/jwt.ts";
+// A interpolação de template e a guarda de statements moram em módulo próprio
+// desde a correção do escape duplo: são o código de SEGURANÇA da função, e
+// enquanto estavam aqui — num arquivo que faz `Deno.serve` no topo — não havia
+// como executá-los num teste. Ver sql-template.test.ts.
+import { guardStatement, processTemplate } from "./sql-template.ts";
 
 /**
  * Conexão de banco usada para rodar as queries do app.
@@ -54,173 +59,7 @@ async function getSql() {
 // Verificação local do JWT via JWKS — ver ../_shared/jwt.ts
 
 // ─── Camada 2: guarda de statements ──────────────────────────────────────────
-
-const ALLOWED_FIRST_TOKENS = ["SELECT", "WITH", "INSERT", "UPDATE", "DELETE"];
-
-const FORBIDDEN = [
-  "DROP",
-  "ALTER",
-  "TRUNCATE",
-  "GRANT",
-  "REVOKE",
-  "CREATE",
-  "COPY",
-  "VACUUM",
-  "pg_sleep",
-  "pg_read_file",
-  "pg_catalog",
-  "information_schema",
-  "dblink",
-];
-
-/**
- * Remove comentários SQL e substitui o conteúdo de literais de string por vazio.
- * Todas as validações rodam sobre este texto, então nem um `--` nem um valor de
- * texto contendo "DROP" conseguem burlar ou disparar a guarda por engano.
- */
-function scrub(query: string): string {
-  let out = "";
-  let i = 0;
-
-  while (i < query.length) {
-    const c = query[i];
-    const next = query[i + 1];
-
-    // Literal de string: '...' (com '' como escape interno)
-    if (c === "'") {
-      out += "''";
-      i++;
-      while (i < query.length) {
-        if (query[i] === "'" && query[i + 1] === "'") {
-          i += 2;
-          continue;
-        }
-        if (query[i] === "'") {
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-
-    // Identificador entre aspas duplas: preservado como espaço
-    if (c === '"') {
-      i++;
-      while (i < query.length && query[i] !== '"') i++;
-      i++;
-      out += " ";
-      continue;
-    }
-
-    // Comentário de linha
-    if (c === "-" && next === "-") {
-      while (i < query.length && query[i] !== "\n") i++;
-      out += " ";
-      continue;
-    }
-
-    // Comentário de bloco
-    if (c === "/" && next === "*") {
-      i += 2;
-      while (i < query.length && !(query[i] === "*" && query[i + 1] === "/")) i++;
-      i += 2;
-      out += " ";
-      continue;
-    }
-
-    out += c;
-    i++;
-  }
-
-  return out;
-}
-
-type GuardResult = { ok: true } | { ok: false; reason: string };
-
-function guardStatement(query: string): GuardResult {
-  const scrubbed = scrub(query).trim().replace(/;\s*$/, "").trim();
-
-  if (!scrubbed) {
-    return { ok: false, reason: "Query vazia após remoção de comentários" };
-  }
-
-  // Statement único: qualquer ';' remanescente (fora de literais) indica
-  // encadeamento de comandos.
-  if (scrubbed.includes(";")) {
-    return { ok: false, reason: "Múltiplos statements não são permitidos" };
-  }
-
-  const firstToken = (scrubbed.match(/^[a-zA-Z_]+/) ?? [""])[0].toUpperCase();
-  if (!ALLOWED_FIRST_TOKENS.includes(firstToken)) {
-    return { ok: false, reason: `Comando '${firstToken || "?"}' não permitido` };
-  }
-
-  for (const word of FORBIDDEN) {
-    const re = new RegExp(`\\b${word}\\b`, "i");
-    if (re.test(scrubbed)) {
-      return { ok: false, reason: `Termo proibido na query: '${word}'` };
-    }
-  }
-
-  return { ok: true };
-}
-
-// ─── Template UIBakery ───────────────────────────────────────────────────────
-
-/**
- * Evaluates UIBakery-style template expressions in SQL queries.
- * Handles both:
- *   - Simple: {{params.key}}
- *   - Conditional: {{ params && params.key ? "SQL fragment" : "" }}
- */
-function processTemplate(query: string, params: Record<string, any>): string {
-  const processed = query.replace(/'?\{\{([\s\S]*?)\}\}'?/g, (_match, expr: string) => {
-    const trimmed = expr.trim();
-    const wrappedInQuotes = _match.startsWith("'") && _match.endsWith("'");
-
-    // Simple param reference: params.key or params.key::type
-    const simpleMatch = trimmed.match(/^params\.(\w+)(::.*)?$/);
-    if (simpleMatch) {
-      const key = simpleMatch[1];
-      const cast = simpleMatch[2] || "";
-      const value = params[key];
-      if (value === null || value === undefined) {
-        return "NULL" + cast;
-      } else if (typeof value === "number" || typeof value === "boolean") {
-        return String(value) + cast;
-      } else {
-        const escaped = String(value).replace(/'/g, "''");
-        return `'${escaped}'` + cast;
-      }
-    }
-
-    // Complex expression
-    try {
-      const fn = new Function("params", `
-        try {
-          return (${trimmed});
-        } catch(e) {
-          return "";
-        }
-      `);
-      const result = fn(params);
-      if (result === null || result === undefined || result === false) {
-        return wrappedInQuotes ? "''" : "";
-      }
-      if (wrappedInQuotes) {
-        const escaped = String(result).replace(/'/g, "''");
-        return `'${escaped}'`;
-      }
-      return String(result);
-    } catch (_e) {
-      console.warn(`[execute-sql] Failed to evaluate expression: ${trimmed}`);
-      return wrappedInQuotes ? "''" : "";
-    }
-  });
-
-  return processed;
-}
+// `scrub`, `guardStatement` e `processTemplate` vivem em ./sql-template.ts.
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 

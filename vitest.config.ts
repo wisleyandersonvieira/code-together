@@ -15,6 +15,15 @@ export default defineConfig({
     // varrer o fonte deles — continua sendo TypeScript puro, sem React nem DOM.
     // As ações moram em actions/, e a guarda de colunas gravadas varre o SQL
     // delas contra as migrations: também é TypeScript puro lendo arquivo.
-    include: ['lib/**/*.test.ts', 'components/**/*.test.ts', 'actions/**/*.test.ts'],
+    // O edge function `execute-sql` também: `sql-template.ts` é TypeScript puro,
+    // sem API do Deno e sem import remoto, justamente para o escape e a guarda de
+    // statements poderem ser cobrados por teste. O `index.ts`, que faz
+    // `Deno.serve`, continua fora — e é por isso que a lógica saiu de lá.
+    include: [
+      'lib/**/*.test.ts',
+      'components/**/*.test.ts',
+      'actions/**/*.test.ts',
+      'supabase/functions/**/*.test.ts',
+    ],
   },
 });
