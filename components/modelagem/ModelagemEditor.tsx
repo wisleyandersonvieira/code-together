@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { observarRequisicoes, useLoadAction, useMutateAction } from '@uibakery/data';
-import { criarCronometro, formatarRelatorio, type MedicaoRenders } from './cronometroSalvar';
+import {
+  criarCronometro,
+  debugSalvarLigado,
+  formatarRelatorio,
+  type MedicaoRenders,
+} from './cronometroSalvar';
 import { ChevronDown, Copy, Download, FileSpreadsheet, FileText, Loader2, Save, Table2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -181,20 +186,26 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   //   ms       — do início do corpo até o layout effect: render da árvore
   //              inteira mais o commit. NÃO inclui a pintura do navegador.
   //
-  // Custo quando ninguém está medindo: dois `performance.now()` e um effect sem
-  // dependências por render. Fica sempre ligado porque a flag do cronômetro é
-  // virada no meio da sessão, e um contador que só começa a contar depois do
-  // reload não serviria para nada.
+  // Atrás da MESMA flag `provison:debug:salvar` do cronômetro, e lida UMA VEZ na
+  // montagem: um `localStorage.getItem` por render seria pior que o efeito que a
+  // flag existe para evitar. O preço disso é que virar a flag no meio da sessão
+  // exige recarregar a página — o cronômetro do `salvar()` relê a flag a cada
+  // salvamento, este não. Desligada, o que sobra é uma comparação por render e
+  // um effect que retorna na primeira linha.
+  const medindoRenders = useRef(debugSalvarLigado()).current;
   const passadasRef = useRef(0);
   const commitsRef = useRef(0);
   const msRenderRef = useRef(0);
   const inicioRenderRef = useRef(0);
-  passadasRef.current++;
-  inicioRenderRef.current = performance.now();
+  if (medindoRenders) {
+    passadasRef.current++;
+    inicioRenderRef.current = performance.now();
+  }
   // Sem array de dependências: roda a CADA commit, que é justamente o que se
   // quer contar. `useLayoutEffect` e não `useEffect` porque este roda antes da
   // pintura — medindo o trabalho do React, sem o do navegador misturado.
   useLayoutEffect(() => {
+    if (!medindoRenders) return;
     commitsRef.current++;
     msRenderRef.current += performance.now() - inicioRenderRef.current;
   });
@@ -926,11 +937,13 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // aconteceu: a contagem sai um ou dois commits abaixo do real. Numa ordem
       // de grandeza de centenas isso não muda leitura nenhuma, e esperar o
       // agendador só para fechar a conta atrasaria o salvamento de verdade.
-      const renders: MedicaoRenders = {
-        passadas: passadasRef.current - rendersAntes.passadas,
-        commits: commitsRef.current - rendersAntes.commits,
-        ms: msRenderRef.current - rendersAntes.ms,
-      };
+      const renders: MedicaoRenders | undefined = medindoRenders
+        ? {
+            passadas: passadasRef.current - rendersAntes.passadas,
+            commits: commitsRef.current - rendersAntes.commits,
+            ms: msRenderRef.current - rendersAntes.ms,
+          }
+        : undefined;
       if (cron.ativo) console.log(formatarRelatorio({ ...relatorio, renders }));
       setSalvando(false);
     }

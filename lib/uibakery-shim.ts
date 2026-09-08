@@ -119,8 +119,16 @@ async function executeAction(actionResult: ActionResult, params?: Record<string,
   let falhou = false;
   try {
     // SUPABASE_DIRECT: bypass edge function, use parameterised Supabase queries
+    //
+    // `return await`, e não `return`: sem o await a promessa escapa do try e o
+    // `finally` roda ANTES de a consulta responder — o observador receberia
+    // zero milissegundo para toda ação direta, e `falhou` ficaria falso mesmo
+    // numa que estourasse. Nenhuma action da modelagem é direta, então o
+    // relatório de salvamento nunca viu esse zero; as seis que são (auditoria e
+    // fornecedor subcontratado) viam, e mediriam errado no dia em que alguém
+    // cronometrasse aquelas telas.
     if (actionResult.actionType === 'SUPABASE_DIRECT' && actionResult.directFn) {
-      return actionResult.directFn(params);
+      return await actionResult.directFn(params);
     }
 
     if (!actionResult.config) {

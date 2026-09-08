@@ -63,7 +63,17 @@ export interface RelatorioSalvamento {
   blocos: BlocoMedido[];
   totalRequisicoes: number;
   totalMs: number;
-  /** Ausente quando ninguém mediu render — o relatório sai como antes. */
+  /**
+   * Tempo somado DENTRO das requisições — a soma dos blocos, que é a soma do
+   * que o shim cronometrou em cada chamada.
+   *
+   * Somar só vale porque o salvamento é estritamente sequencial: um `await` por
+   * chamada, nenhuma sobreposição. No dia em que ele disparar chamadas em
+   * paralelo esta soma passa a contar o mesmo relógio duas vezes e vira maior
+   * que `totalMs` — mesma premissa que o comentário do observador já registra.
+   */
+  totalRedeMs: number;
+  /** Ausente quando ninguém mediu render — o relatório sai sem a linha. */
   renders?: MedicaoRenders;
 }
 
@@ -87,12 +97,28 @@ export function formatarMs(ms: number): string {
  * A tabela em texto, alinhada em colunas. Devolvida como string — e não impressa
  * — para o teste poder cobrar o formato sem espiar o console.
  *
- *   [salvar] premissas        1 req    142 ms
- *   [salvar] custos          38 req  5.204 ms
- *   [salvar] TOTAL          312 req    41.7 s  416 renders
- *   [salvar] render       6.2 s em 416 commits (832 passadas)
+ *   [salvar] premissas    1 req   142 ms
+ *   [salvar] custos      38 req   5.2 s
+ *   [salvar] TOTAL      208 req  41.7 s
+ *   [salvar] rede    38.9 s em 208 requisições
+ *   [salvar] render   6.2 s em 209 commits (418 passadas)
+ *   [salvar] fora     2.8 s  ← 41.7 s − 38.9 s
  *
- * As duas últimas linhas só aparecem quando houve medição de render.
+ * `fora` É A LINHA QUE DECIDE, e por isso vem por último.
+ *
+ * Os contadores de render dizem quanto o render CUSTA; `fora` diz quanto ele
+ * ACRESCENTA, que é outra coisa. O `setIsLoading(true)` do shim roda antes de a
+ * requisição ser disparada, então o commit que ele provoca ocupa a thread
+ * enquanto a chamada seguinte já está no ar: um render de 15 ms dentro de uma
+ * latência de 100 ms não custa milissegundo nenhum de relógio de parede.
+ *
+ * `fora` é o tempo de parede que NÃO está dentro de requisição alguma — o que
+ * sobra de render e de trabalho síncrono depois de descontar tudo que se
+ * sobrepôs à rede. Perto de `render`, o render é aditivo e vale eliminá-lo;
+ * muito menor que `render`, ele está escondido atrás da rede e eliminá-lo não
+ * devolve quase nada.
+ *
+ * A linha `render` só aparece quando houve medição de render.
  */
 export function formatarRelatorio(r: RelatorioSalvamento): string {
   const linhas = [...r.blocos, { nome: 'TOTAL', requisicoes: r.totalRequisicoes, ms: r.totalMs }];
@@ -103,15 +129,26 @@ export function formatarRelatorio(r: RelatorioSalvamento): string {
     (l) =>
       `[salvar] ${l.nome.padEnd(larguraNome)}  ${String(l.requisicoes).padStart(larguraReq)} req  ${formatarMs(l.ms).padStart(larguraMs)}`,
   );
+
+  // As três linhas do resumo têm alinhamento PRÓPRIO, e não o da tabela acima:
+  // são somas em outra unidade — segundos contra requisições —, e forçá-las na
+  // grade de colunas da tabela só faria as duas leituras se atrapalharem.
   const rd = r.renders;
+  const resumo: [string, string][] = [
+    ['rede', `${formatarMs(r.totalRedeMs)} em ${r.totalRequisicoes} requisições`],
+  ];
   if (rd) {
-    // O número de renders vai na MESMA linha do TOTAL de propósito: é ao lado do
-    // tempo total que ele responde à pergunta que motivou a medição.
-    tabela[tabela.length - 1] += `  ${rd.commits} renders`;
-    tabela.push(
-      `[salvar] render  ${formatarMs(rd.ms)} em ${rd.commits} commits (${rd.passadas} passadas)`,
-    );
+    resumo.push(['render', `${formatarMs(rd.ms)} em ${rd.commits} commits (${rd.passadas} passadas)`]);
   }
+  resumo.push([
+    'fora',
+    `${formatarMs(r.totalMs - r.totalRedeMs)}  ← ${formatarMs(r.totalMs)} − ${formatarMs(r.totalRedeMs)}`,
+  ]);
+  const larguraRotulo = Math.max(...resumo.map(([rotulo]) => rotulo.length));
+  for (const [rotulo, texto] of resumo) {
+    tabela.push(`[salvar] ${rotulo.padEnd(larguraRotulo)}  ${texto}`);
+  }
+
   return tabela.join('\n');
 }
 
@@ -119,7 +156,7 @@ export function formatarRelatorio(r: RelatorioSalvamento): string {
 const INERTE: Cronometro = {
   ativo: false,
   bloco: () => {},
-  encerrar: () => ({ blocos: [], totalRequisicoes: 0, totalMs: 0 }),
+  encerrar: () => ({ blocos: [], totalRequisicoes: 0, totalMs: 0, totalRedeMs: 0 }),
   total: 0,
 };
 
@@ -177,6 +214,7 @@ export function criarCronometro(
       return {
         blocos,
         totalRequisicoes,
+        totalRedeMs: blocos.reduce((soma, b) => soma + b.ms, 0),
         // O total é o RELÓGIO DE PAREDE do salvamento inteiro, não a soma dos
         // blocos: entre uma requisição e outra há o trabalho do próprio cliente
         // — montar payload, remapear ids —, e essa diferença é justamente o que

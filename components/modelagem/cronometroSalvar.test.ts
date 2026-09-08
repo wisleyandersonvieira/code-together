@@ -87,7 +87,7 @@ describe('cronômetro do salvamento', () => {
     expect(formatarMs(41_700)).toBe('41.7 s');
   });
 
-  it('alinha a tabela em colunas e fecha com TOTAL', () => {
+  it('alinha a tabela em colunas e fecha com TOTAL, rede e fora', () => {
     const r: RelatorioSalvamento = {
       blocos: [
         { nome: 'premissas', requisicoes: 1, ms: 142 },
@@ -95,39 +95,69 @@ describe('cronômetro do salvamento', () => {
       ],
       totalRequisicoes: 312,
       totalMs: 41_700,
+      totalRedeMs: 5346,
     };
     expect(formatarRelatorio(r)).toBe(
       [
         '[salvar] premissas    1 req  142 ms',
         '[salvar] custos      38 req   5.2 s',
         '[salvar] TOTAL      312 req  41.7 s',
+        '[salvar] rede  5.3 s em 312 requisições',
+        '[salvar] fora  36.4 s  ← 41.7 s − 5.3 s',
       ].join('\n'),
     );
   });
 });
 
-describe('renders no relatório', () => {
+describe('rede, render e fora — as linhas que decidem', () => {
   const base: RelatorioSalvamento = {
-    blocos: [{ nome: 'premissas', requisicoes: 1, ms: 142 }],
+    blocos: [{ nome: 'premissas', requisicoes: 208, ms: 38_900 }],
     totalRequisicoes: 208,
     totalMs: 41_700,
+    totalRedeMs: 38_900,
   };
 
-  it('sem medição de render, a tabela sai exatamente como antes', () => {
-    expect(formatarRelatorio(base)).toBe(
-      ['[salvar] premissas    1 req  142 ms', '[salvar] TOTAL      208 req  41.7 s'].join('\n'),
-    );
+  it('sem medição de render, saem rede e fora — nunca a linha de render', () => {
+    const linhas = formatarRelatorio(base).split('\n');
+    expect(linhas).toEqual([
+      '[salvar] premissas  208 req  38.9 s',
+      '[salvar] TOTAL      208 req  41.7 s',
+      '[salvar] rede  38.9 s em 208 requisições',
+      '[salvar] fora  2.8 s  ← 41.7 s − 38.9 s',
+    ]);
   });
 
-  it('com medição, o número de renders fecha a linha do TOTAL', () => {
-    const texto = formatarRelatorio({
+  it('com medição, a linha de render entra entre rede e fora', () => {
+    const linhas = formatarRelatorio({
       ...base,
-      renders: { commits: 416, passadas: 832, ms: 6200 },
-    });
-    expect(texto.split('\n')).toEqual([
-      '[salvar] premissas    1 req  142 ms',
-      '[salvar] TOTAL      208 req  41.7 s  416 renders',
-      '[salvar] render  6.2 s em 416 commits (832 passadas)',
+      renders: { commits: 209, passadas: 418, ms: 6200 },
+    }).split('\n');
+    expect(linhas.slice(2)).toEqual([
+      '[salvar] rede    38.9 s em 208 requisições',
+      '[salvar] render  6.2 s em 209 commits (418 passadas)',
+      '[salvar] fora    2.8 s  ← 41.7 s − 38.9 s',
     ]);
+  });
+
+  it('`fora` é o que sobra do relógio de parede depois de descontar a rede', () => {
+    // O caso que a linha existe para expor: render caro (6.2 s) escondido atrás
+    // da rede (fora = 0.3 s). Aqui a Etapa B economizaria quase nada.
+    const linhas = formatarRelatorio({
+      ...base,
+      totalMs: 39_200,
+      renders: { commits: 209, passadas: 418, ms: 6200 },
+    }).split('\n');
+    expect(linhas[linhas.length - 1]).toBe('[salvar] fora    300 ms  ← 39.2 s − 38.9 s');
+  });
+
+  it('`totalRedeMs` sai da soma dos blocos, não de uma contagem à parte', () => {
+    const obs = observadorFalso();
+    const cron = criarCronometro(obs.observar, true);
+    cron.bloco('premissas');
+    obs.requisicao('a', 142);
+    cron.bloco('custos');
+    obs.requisicao('b', 100);
+    obs.requisicao('c', 30);
+    expect(cron.encerrar().totalRedeMs).toBe(272);
   });
 });
