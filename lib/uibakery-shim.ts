@@ -97,7 +97,71 @@ export function directAction(
  * Fora de uma medição o observador é `null` e o custo é uma comparação por
  * requisição — nada é cronometrado e nada é alocado.
  */
-type ObservadorRequisicao = (nome: string, ms: number, erro: boolean) => void;
+/**
+ * O que o execute-sql relatou sobre a PRÓPRIA execução, lido dos headers
+ * `Server-Timing` e `X-Exec-Boot` da resposta.
+ *
+ * Existe porque o cliente sozinho não consegue separar rede de servidor: ele vê
+ * um segundo por chamada e não sabe se foi latência, boot do isolate,
+ * verificação de JWT ou a query. Com isto a subtração fecha —
+ * `ms - servidor.totalMs` é a ida e a volta pela rede.
+ *
+ * `boot` identifica o isolate. Requisições de um salvamento inteiro caindo em
+ * boots DIFERENTES é a prova de que o isolate é reciclado a cada chamada, e de
+ * que nenhum cache de módulo (pool do postgres.js, JWKS do jose) sobrevive.
+ * Uma amostra de cinco requisições no DevTools não responderia isso: se a
+ * distribuição for bimodal — frio caro, quente barato —, cinco pontos podem cair
+ * todos do mesmo lado. Contar os 118 não tem esse problema.
+ *
+ * `undefined` quando a resposta não trouxe os headers: função antiga no ar,
+ * erro de CORS, ou resposta que não veio do execute-sql.
+ */
+export interface TemposServidor {
+  /** Id do isolate que atendeu. */
+  boot: string;
+  /** Sequência dentro daquele isolate: `1` significa isolate recém-nascido. */
+  seq: number;
+  /** Tempo dentro da função, até montar a resposta. Não inclui a volta. */
+  totalMs: number;
+  authMs: number;
+  conexaoMs: number;
+  queryMs: number;
+}
+
+type ObservadorRequisicao = (
+  nome: string,
+  ms: number,
+  erro: boolean,
+  servidor?: TemposServidor,
+) => void;
+
+/**
+ * Lê os headers de instrumentação da resposta. Tolerante por desenho: qualquer
+ * header ausente ou malformado devolve `undefined`, e a medição segue sem o
+ * lado do servidor em vez de derrubar a requisição.
+ */
+function lerTemposServidor(response: Response | undefined): TemposServidor | undefined {
+  try {
+    const timing = response?.headers?.get('Server-Timing');
+    const boot = response?.headers?.get('X-Exec-Boot');
+    if (!timing || !boot) return undefined;
+    const dur = (chave: string) => {
+      const m = timing.match(new RegExp(`\\b${chave};dur=([0-9.]+)`));
+      return m ? Number(m[1]) : 0;
+    };
+    const [id, seq] = boot.split(':');
+    return {
+      boot: id,
+      seq: Number(seq) || 0,
+      totalMs: dur('total'),
+      authMs: dur('auth'),
+      conexaoMs: dur('conn'),
+      queryMs: dur('query'),
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 let observador: ObservadorRequisicao | null = null;
 
@@ -117,6 +181,7 @@ async function executeAction(actionResult: ActionResult, params?: Record<string,
   const obs = observador;
   const inicio = obs ? performance.now() : 0;
   let falhou = false;
+  let servidor: TemposServidor | undefined;
   try {
     // SUPABASE_DIRECT: bypass edge function, use parameterised Supabase queries
     //
@@ -137,12 +202,15 @@ async function executeAction(actionResult: ActionResult, params?: Record<string,
 
     const safeParams = params ? sanitiseParams(params) : {};
 
-    const { data, error } = await supabase.functions.invoke('execute-sql', {
+    const resposta = await supabase.functions.invoke('execute-sql', {
       body: {
         query: actionResult.config.query,
         params: safeParams,
       },
     });
+    const { data, error } = resposta;
+    // Só quando alguém está medindo: sem observador nada é lido nem alocado.
+    if (obs) servidor = lerTemposServidor((resposta as { response?: Response }).response);
 
     if (error) {
       throw new Error(error.message || 'Edge function error');
@@ -157,7 +225,7 @@ async function executeAction(actionResult: ActionResult, params?: Record<string,
     falhou = true;
     throw e;
   } finally {
-    if (obs) obs(actionResult.name, performance.now() - inicio, falhou);
+    if (obs) obs(actionResult.name, performance.now() - inicio, falhou, servidor);
   }
 }
 

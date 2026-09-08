@@ -57,7 +57,7 @@ function colunasDaTabela(sql: string, tabela: string): Set<string> {
     for (const linha of m[1].split('\n')) {
       const c = linha
         .trim()
-        .match(/^([a-z_]+)\s+(?:BOOLEAN|INT|INTEGER|BIGINT|SERIAL|DECIMAL|NUMERIC|TEXT|VARCHAR|TIMESTAMP)/i);
+        .match(/^([a-z_]+)\s+(?:BOOLEAN|BOOL|SMALLINT|BIGINT|INTEGER|INT|SERIAL|DECIMAL|NUMERIC|REAL|DOUBLE|FLOAT|TEXT|VARCHAR|CHAR|TIMESTAMPTZ|TIMESTAMP|DATE|TIME|UUID|JSONB|JSON)/i);
       if (c) cols.add(c[1].toLowerCase());
     }
   }

@@ -23,6 +23,9 @@ export default defineConfig({
       'lib/**/*.test.ts',
       'components/**/*.test.ts',
       'actions/**/*.test.ts',
+      // A guarda de colunas das FUNÇÕES de banco mora junto das migrations que
+      // ela varre: também é TypeScript puro lendo arquivo .sql.
+      'migrations/**/*.test.ts',
       'supabase/functions/**/*.test.ts',
     ],
   },

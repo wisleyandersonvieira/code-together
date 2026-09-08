@@ -59,6 +59,51 @@ export interface MedicaoRenders {
   ms: number;
 }
 
+/**
+ * O que UMA resposta do execute-sql relatou sobre a própria execução.
+ *
+ * Declarado aqui, e não importado do shim, pelo mesmo motivo que a assinatura do
+ * observador já é declarada duas vezes neste projeto: este módulo é TypeScript
+ * puro e o teste o roda sem o shim, sem React e sem navegador. O shim tem a sua
+ * cópia (`TemposServidor`), e as duas casam estruturalmente — se divergirem, o
+ * `tsc` reclama na chamada do `criarCronometro` no editor.
+ */
+export interface TemposServidor {
+  boot: string;
+  seq: number;
+  totalMs: number;
+  authMs: number;
+  conexaoMs: number;
+  queryMs: number;
+}
+
+/**
+ * O que o execute-sql relatou sobre si mesmo, somado sobre o salvamento.
+ *
+ * `boots` é o número de ISOLATES DISTINTOS que atenderam as requisições. Perto
+ * de 1, o isolate é reaproveitado e o cache de módulo funciona. Perto do número
+ * de requisições, ele é reciclado a cada chamada — e aí o `import()` remoto do
+ * postgres.js e o do jose são pagos toda vez, e o pool de conexões do
+ * `getSql()` nunca é reaproveitado apesar de o código dizer que é.
+ *
+ * `frias` conta as requisições que chegaram num isolate recém-nascido (`seq`
+ * = 1). Com `boots`, separa "reciclagem" de "concorrência": vários isolates
+ * atendendo em paralelo dariam muitos boots com poucas frias.
+ */
+export interface MedicaoServidor {
+  /** Respostas que trouxeram os headers. Menor que o total = função antiga no ar. */
+  respostas: number;
+  /** Isolates distintos. */
+  boots: number;
+  /** Requisições que caíram num isolate na sua PRIMEIRA requisição. */
+  frias: number;
+  /** Somas, em ms, do que a função relatou de si mesma. */
+  totalMs: number;
+  authMs: number;
+  conexaoMs: number;
+  queryMs: number;
+}
+
 export interface RelatorioSalvamento {
   blocos: BlocoMedido[];
   totalRequisicoes: number;
@@ -75,6 +120,8 @@ export interface RelatorioSalvamento {
   totalRedeMs: number;
   /** Ausente quando ninguém mediu render — o relatório sai sem a linha. */
   renders?: MedicaoRenders;
+  /** Ausente quando nenhuma resposta trouxe os headers de instrumentação. */
+  servidor?: MedicaoServidor;
 }
 
 /** Lê a flag sem estourar em SSR nem com localStorage bloqueado. */
@@ -100,9 +147,14 @@ export function formatarMs(ms: number): string {
  *   [salvar] premissas    1 req   142 ms
  *   [salvar] custos      38 req   5.2 s
  *   [salvar] TOTAL      208 req  41.7 s
- *   [salvar] rede    38.9 s em 208 requisições
- *   [salvar] render   6.2 s em 209 commits (418 passadas)
- *   [salvar] fora     2.8 s  ← 41.7 s − 38.9 s
+ *   [salvar] rede      38.9 s em 208 requisições
+ *   [salvar] servidor  31.0 s em 208 respostas  (auth 19.1 s · conexão 8.4 s · query 1.2 s)
+ *   [salvar] isolates  191 boots distintos, 191 requisições frias em 208
+ *   [salvar] render    6.2 s em 209 commits (418 passadas)
+ *   [salvar] fora      2.8 s  ← 41.7 s − 38.9 s
+ *
+ * `rede − servidor` é a ida e a volta pelo fio; `servidor` é o que a função
+ * gastou dentro de si, repartido entre autenticar, conectar e consultar.
  *
  * `fora` É A LINHA QUE DECIDE, e por isso vem por último.
  *
@@ -137,6 +189,18 @@ export function formatarRelatorio(r: RelatorioSalvamento): string {
   const resumo: [string, string][] = [
     ['rede', `${formatarMs(r.totalRedeMs)} em ${r.totalRequisicoes} requisições`],
   ];
+  const sv = r.servidor;
+  if (sv) {
+    resumo.push([
+      'servidor',
+      `${formatarMs(sv.totalMs)} em ${sv.respostas} respostas` +
+        `  (auth ${formatarMs(sv.authMs)} · conexão ${formatarMs(sv.conexaoMs)} · query ${formatarMs(sv.queryMs)})`,
+    ]);
+    resumo.push([
+      'isolates',
+      `${sv.boots} boots distintos, ${sv.frias} requisições frias em ${sv.respostas}`,
+    ]);
+  }
   if (rd) {
     resumo.push(['render', `${formatarMs(rd.ms)} em ${rd.commits} commits (${rd.passadas} passadas)`]);
   }
@@ -170,7 +234,9 @@ const INERTE: Cronometro = {
  * `observar` é injetado para o teste poder rodar sem o shim e sem navegador.
  */
 export function criarCronometro(
-  observar: (fn: ((nome: string, ms: number, erro: boolean) => void) | null) => unknown,
+  observar: (
+    fn: ((nome: string, ms: number, erro: boolean, servidor?: TemposServidor) => void) | null,
+  ) => unknown,
   ligado = debugSalvarLigado(),
 ): Cronometro {
   if (!ligado) return INERTE;
@@ -196,11 +262,26 @@ export function criarCronometro(
   // bloco que termina é sempre o mesmo que começou. Se algum dia o salvamento
   // passar a disparar chamadas em paralelo, esta atribuição deixa de valer e o
   // cronômetro precisa passar a carregar o bloco junto da promessa.
-  observar((_nome, ms) => {
+  // Acumuladores do lado do servidor. `boots` é um Set porque a pergunta é
+  // quantos isolates DISTINTOS atenderam — contar respostas com seq=1 sozinho
+  // não distinguiria reciclagem de concorrência.
+  const boots = new Set<string>();
+  const srv = { respostas: 0, frias: 0, totalMs: 0, authMs: 0, conexaoMs: 0, queryMs: 0 };
+
+  observar((_nome, ms, _erro, servidor) => {
     const destino = atual ?? abrir('(sem bloco)');
     destino.requisicoes++;
     destino.ms += ms;
     totalRequisicoes++;
+    if (servidor) {
+      srv.respostas++;
+      boots.add(servidor.boot);
+      if (servidor.seq === 1) srv.frias++;
+      srv.totalMs += servidor.totalMs;
+      srv.authMs += servidor.authMs;
+      srv.conexaoMs += servidor.conexaoMs;
+      srv.queryMs += servidor.queryMs;
+    }
   });
 
   return {
@@ -215,6 +296,10 @@ export function criarCronometro(
         blocos,
         totalRequisicoes,
         totalRedeMs: blocos.reduce((soma, b) => soma + b.ms, 0),
+        // Sem nenhuma resposta instrumentada o campo some, e o relatório volta a
+        // ser o de antes — em vez de mostrar uma linha de zeros que passaria por
+        // "o servidor não custa nada".
+        servidor: srv.respostas > 0 ? { ...srv, boots: boots.size } : undefined,
         // O total é o RELÓGIO DE PAREDE do salvamento inteiro, não a soma dos
         // blocos: entre uma requisição e outra há o trabalho do próprio cliente
         // — montar payload, remapear ids —, e essa diferença é justamente o que

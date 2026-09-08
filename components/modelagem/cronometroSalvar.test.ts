@@ -4,21 +4,30 @@ import {
   formatarMs,
   formatarRelatorio,
   type RelatorioSalvamento,
+  type TemposServidor,
 } from './cronometroSalvar';
 
 /** Observador de mentira: guarda o callback para o teste disparar requisições. */
 function observadorFalso() {
-  let fn: ((nome: string, ms: number, erro: boolean) => void) | null = null;
+  let fn:
+    | ((nome: string, ms: number, erro: boolean, servidor?: TemposServidor) => void)
+    | null = null;
   return {
     observar: (novo: typeof fn) => {
       fn = novo;
       return null;
     },
-    requisicao: (nome: string, ms: number) => fn?.(nome, ms, false),
+    requisicao: (nome: string, ms: number, servidor?: TemposServidor) =>
+      fn?.(nome, ms, false, servidor),
     get ligado() {
       return fn !== null;
     },
   };
+}
+
+/** Resposta do execute-sql com tempos plausíveis, para o teste não repetir seis campos. */
+function resposta(boot: string, seq: number, extra: Partial<TemposServidor> = {}): TemposServidor {
+  return { boot, seq, totalMs: 800, authMs: 500, conexaoMs: 200, queryMs: 20, ...extra };
 }
 
 describe('cronômetro do salvamento', () => {
@@ -159,5 +168,75 @@ describe('rede, render e fora — as linhas que decidem', () => {
     obs.requisicao('b', 100);
     obs.requisicao('c', 30);
     expect(cron.encerrar().totalRedeMs).toBe(272);
+  });
+});
+
+describe('tempos do servidor — a evidência da Parte 1', () => {
+  it('soma o que a função relatou e conta os isolates DISTINTOS', () => {
+    const obs = observadorFalso();
+    const cron = criarCronometro(obs.observar, true);
+    cron.bloco('premissas');
+    // Três requisições, três isolates diferentes, todas na primeira requisição
+    // do seu isolate: a assinatura da reciclagem.
+    obs.requisicao('a', 1000, resposta('aaaa1111', 1));
+    obs.requisicao('b', 1000, resposta('bbbb2222', 1));
+    obs.requisicao('c', 1000, resposta('cccc3333', 1));
+    const sv = cron.encerrar().servidor!;
+    expect(sv).toEqual({
+      respostas: 3,
+      boots: 3,
+      frias: 3,
+      totalMs: 2400,
+      authMs: 1500,
+      conexaoMs: 600,
+      queryMs: 60,
+    });
+  });
+
+  it('isolate reaproveitado dá UM boot e uma só requisição fria', () => {
+    const obs = observadorFalso();
+    const cron = criarCronometro(obs.observar, true);
+    cron.bloco('premissas');
+    obs.requisicao('a', 900, resposta('aaaa1111', 1));
+    obs.requisicao('b', 120, resposta('aaaa1111', 2, { totalMs: 60, authMs: 1, conexaoMs: 0 }));
+    obs.requisicao('c', 118, resposta('aaaa1111', 3, { totalMs: 58, authMs: 1, conexaoMs: 0 }));
+    const sv = cron.encerrar().servidor!;
+    expect(sv.boots).toBe(1);
+    expect(sv.frias).toBe(1);
+    expect(sv.respostas).toBe(3);
+  });
+
+  it('sem header nenhum, o campo some — nunca vira uma linha de zeros', () => {
+    const obs = observadorFalso();
+    const cron = criarCronometro(obs.observar, true);
+    cron.bloco('premissas');
+    obs.requisicao('a', 1000);
+    const r = cron.encerrar();
+    expect(r.servidor).toBeUndefined();
+    expect(formatarRelatorio(r)).not.toContain('servidor');
+  });
+
+  it('as linhas de servidor e isolates entram entre rede e fora', () => {
+    const linhas = formatarRelatorio({
+      blocos: [{ nome: 'premissas', requisicoes: 118, ms: 122_500 }],
+      totalRequisicoes: 118,
+      totalMs: 122_500,
+      totalRedeMs: 122_500,
+      servidor: {
+        respostas: 118,
+        boots: 118,
+        frias: 118,
+        totalMs: 94_400,
+        authMs: 59_000,
+        conexaoMs: 33_000,
+        queryMs: 2400,
+      },
+    }).split('\n');
+    expect(linhas.slice(2)).toEqual([
+      '[salvar] rede      122.5 s em 118 requisições',
+      '[salvar] servidor  94.4 s em 118 respostas  (auth 59.0 s · conexão 33.0 s · query 2.4 s)',
+      '[salvar] isolates  118 boots distintos, 118 requisições frias em 118',
+      '[salvar] fora      0 ms  ← 122.5 s − 122.5 s',
+    ]);
   });
 });
