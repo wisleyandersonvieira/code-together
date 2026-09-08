@@ -31,9 +31,20 @@
 -- COALESCE a menos aqui vira um zero onde havia NULL — e NULL, neste módulo,
 -- quase sempre significa outra coisa (ver `pct_capital` e `mes_inicio_opex`).
 --
--- UMA diferença deliberada, e ela é correção: todo UPDATE e todo DELETE leva
--- `AND modelagem_id = v_id`. Hoje as actions filtram só por `id`, e um id
--- forjado no payload grava numa modelagem alheia.
+-- DUAS diferenças deliberadas, e as duas são correção de bug. Contá-las é o que
+-- diz ao próximo leitor onde parar de procurar — um comentário que subconta é
+-- pior que nenhum:
+--
+--   1. Todo UPDATE e todo DELETE leva `AND modelagem_id = v_id`. Hoje as
+--      actions filtram só por `id`, e um id forjado no payload grava numa
+--      modelagem alheia.
+--
+--   2. Facilidade NOVA grava as 30 colunas de contrato. Hoje o `sincronizar()`
+--      manda quem não tem id para o `criarFacilidade`, que grava seis colunas e
+--      mais nada — e `AbaFinanciamento.tsx:715` faz a facilidade nova HERDAR os
+--      campos de contrato da primeira. O usuário não digita nada, vê uma
+--      facilidade configurada, salva, e ela volta nos DEFAULT. Pode nem
+--      perceber que os números mudaram, porque não foi ele que os pôs lá.
 --
 -- ─── O que NÃO mudou de propósito ───────────────────────────────────────────
 --
@@ -76,7 +87,12 @@ DECLARE
   v_prem      jsonb;
   v_loc       jsonb;
   v_novo      int;
+  -- `v_pai` é SÓ o vínculo de paternidade (grupo_pai do custo, fase do
+  -- takedown). O id devolvido por um RETURNING de linha filha vai em
+  -- `v_filho` — as duas coisas já dividiram uma variável, e a próxima edição
+  -- que trocasse a ordem dos blocos teria trocado um pelo outro em silêncio.
   v_pai       int;
+  v_filho     int;
   r           RECORD;
   s           RECORD;
   -- Mapas índice → id. Substituem idsUnidades, idsCustos, idsSocios, idsFases e
@@ -117,6 +133,12 @@ BEGIN
   -- concorrentes da MESMA modelagem serializam aqui em vez de intercalar
   -- INSERTs e DELETEs de tabelas filhas — que é como um salvamento perderia
   -- linhas do outro sem erro nenhum.
+  --
+  -- Com teto de espera: sem ele, uma sessão travada do outro lado faz esta
+  -- esperar para sempre, e o usuário vê o botão girando sem fim — que é pior
+  -- que um erro, porque não tem fim nem diagnóstico. LOCAL: vale só até o fim
+  -- desta transação e não vaza para a conexão seguinte do pool.
+  SET LOCAL lock_timeout = '5s';
   PERFORM 1 FROM modelagens WHERE id = v_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'salvar_modelagem: modelagem % não existe', v_id;
@@ -216,7 +238,11 @@ BEGIN
         label            = COALESCE(r.e ->> 'label', ''),
         valor            = COALESCE((r.e ->> 'valor')::decimal, 0),
         distribuicao     = COALESCE(r.e ->> 'distribuicao', ''),
-        mes_ancora       = NULLIF(r.e ->> 'mes_ancora', '')::int,
+        -- Mesma guarda do pct_capital: NULL é "sem âncora, usa a distribuição",
+        -- e chave ausente é "não mexa". Ver o comentário no bloco 5.
+        mes_ancora       = CASE WHEN r.e ? 'mes_ancora'
+                                THEN NULLIF(r.e ->> 'mes_ancora', '')::int
+                                ELSE modelagem_custos.mes_ancora END,
         categoria        = COALESCE(NULLIF(r.e ->> 'categoria', ''), 'outros'),
         -- NULLIF em torno do próprio id: uma linha não pode ser pai de si mesma,
         -- e o ciclo de tamanho 1 é o único que a interface consegue produzir.
@@ -271,7 +297,7 @@ BEGIN
             mes   = GREATEST(1, COALESCE((s.e ->> 'mes')::int, mes)),
             valor = COALESCE((s.e ->> 'valor')::decimal, 0)
           WHERE id = (s.e ->> 'id')::int AND modelagem_id = v_id
-          RETURNING id INTO v_pai;
+          RETURNING id INTO v_filho;
         ELSE
           INSERT INTO modelagem_custo_parcelas (modelagem_id, custo_id, ordem, mes, valor)
           VALUES (
@@ -279,9 +305,9 @@ BEGIN
             COALESCE((s.e ->> 'ordem')::int, 0),
             GREATEST(1, COALESCE((s.e ->> 'mes')::int, 1)),
             COALESCE((s.e ->> 'valor')::decimal, 0)
-          ) RETURNING id INTO v_pai;
+          ) RETURNING id INTO v_filho;
         END IF;
-        v_filhos := v_filhos || v_pai;
+        v_filhos := v_filhos || v_filho;
       END LOOP;
       v_cu_par := v_cu_par || jsonb_build_object(v_novo::text, to_jsonb(v_filhos));
     END IF;
@@ -305,7 +331,16 @@ BEGIN
         -- NULL aqui significa "usa a participação", que é diferente de zero,
         -- "não põe capital nenhum". O duplo NULLIF é o de updateModelagemSocio:
         -- string vazia e a string literal 'null' também viram NULL.
-        pct_capital      = NULLIF(NULLIF(r.e ->> 'pct_capital', ''), 'null')::decimal,
+        --
+        -- E a guarda `?` antes de ler: `->>` devolve NULL tanto para chave
+        -- ausente quanto para null explícito, e aqui os dois querem dizer coisas
+        -- diferentes — "não mexa" e "volte a usar a participação". O
+        -- payloadSalvar.ts sempre emite a chave, mas isso é contrato entre dois
+        -- arquivos em duas linguagens sem teste que os amarre; o motivo de a
+        -- lógica ter vindo para o banco é o banco virar o contrato.
+        pct_capital      = CASE WHEN r.e ? 'pct_capital'
+                                THEN NULLIF(NULLIF(r.e ->> 'pct_capital', ''), 'null')::decimal
+                                ELSE modelagem_socios.pct_capital END,
         observacoes      = COALESCE(r.e ->> 'observacoes', '')
       WHERE id = (r.e ->> 'id')::int AND modelagem_id = v_id
       RETURNING id INTO v_novo;
@@ -342,7 +377,7 @@ BEGIN
             valor      = COALESCE((s.e ->> 'valor')::decimal, 0),
             observacao = NULLIF(COALESCE(s.e ->> 'observacao', ''), '')
           WHERE id = (s.e ->> 'id')::int AND modelagem_id = v_id
-          RETURNING id INTO v_pai;
+          RETURNING id INTO v_filho;
         ELSE
           INSERT INTO modelagem_socio_aportes (modelagem_id, socio_id, ordem, mes, valor, observacao)
           VALUES (
@@ -351,9 +386,9 @@ BEGIN
             GREATEST(1, COALESCE((s.e ->> 'mes')::int, 1)),
             COALESCE((s.e ->> 'valor')::decimal, 0),
             NULLIF(COALESCE(s.e ->> 'observacao', ''), '')
-          ) RETURNING id INTO v_pai;
+          ) RETURNING id INTO v_filho;
         END IF;
-        v_filhos := v_filhos || v_pai;
+        v_filhos := v_filhos || v_filho;
       END LOOP;
       v_so_ap := v_so_ap || jsonb_build_object(v_novo::text, to_jsonb(v_filhos));
     END IF;
@@ -461,10 +496,25 @@ BEGIN
 
   FOR r IN SELECT e FROM jsonb_array_elements(COALESCE(p_payload -> 'alocacoes', '[]'::jsonb)) e
   LOOP
+    -- Quantidade zero É ausência, e continua sendo filtro legítimo: o
+    -- `salvar()` faz o mesmo antes de montar o mapa. Não confundir com o
+    -- índice que não resolve, logo abaixo.
     CONTINUE WHEN COALESCE((r.e ->> 'quantidade')::int, 0) <= 0;
     v_novo := v_un[(r.e ->> 'unidade_index')::int + 1];
     v_pai  := v_fa[(r.e ->> 'fase_index')::int + 1];
-    CONTINUE WHEN v_novo IS NULL OR v_pai IS NULL;
+  -- ─── Índice que não resolve é ERRO, não linha a descartar ────────────────
+  -- `v_un[i]` só vem NULL com `unidade_index` fora do array ou com um UPDATE
+  -- que não casou — id forjado, ou de outra modelagem. Em payload correto é
+  -- impossível: é erro de integridade, da mesma família do "payload sem id".
+  --
+  -- E descartar em silêncio seria o modo de falha que este módulo evita acima
+  -- de todos: some uma linha que o usuário criou, o resto grava, e a tela diz
+  -- "Modelagem salva". A exceção aborta a transação inteira — nada fica
+  -- gravado pela metade, que é exatamente o que a atomicidade foi comprar.
+    IF v_novo IS NULL OR v_pai IS NULL THEN
+      RAISE EXCEPTION 'salvar_modelagem: alocacoes — unidade_index % / fase_index % não resolvem',
+        r.e ->> 'unidade_index', r.e ->> 'fase_index';
+    END IF;
     INSERT INTO modelagem_unidade_fases (modelagem_id, unidade_id, fase_id, quantidade)
     VALUES (v_id, v_novo, v_pai, GREATEST(0, COALESCE((r.e ->> 'quantidade')::int, 0)))
     ON CONFLICT (unidade_id, fase_id) DO UPDATE SET quantidade = EXCLUDED.quantidade;
@@ -569,12 +619,16 @@ BEGIN
   -- UPDATE puro, sem upsert — igual a saveModelagemReceita. Numa modelagem sem
   -- linha de receita isto não grava nada, exatamente como hoje.
   --
-  -- A guarda `? 'receita'` não é decorativa: sem ela, um payload sem a chave
-  -- faz `->> 'modo_venda'` devolver NULL, o COALESCE o transforma em string
-  -- vazia e o CHECK `modelagem_receita_modo_venda_ck` derruba o salvamento
-  -- inteiro. Foi assim que o teste diferencial pegou este bloco. Chave ausente
-  -- significa "não mexa nesta parte", nunca "grave o default".
-  IF p_payload ? 'receita' AND jsonb_typeof(p_payload -> 'receita') = 'object' THEN
+  -- `receita` ausente é EXCEÇÃO, não guarda silenciosa. O cliente sempre a
+  -- emite (payloadSalvar.ts), então a ausência é payload malformado — e a
+  -- alternativa é o pior desfecho possível: não gravar receita nenhuma, em
+  -- silêncio, e ainda reportar "Modelagem salva".
+  --
+  -- É diferente de `aportes` e `locacao`, logo abaixo, que são legitimamente
+  -- opcionais e por isso seguem com guarda silenciosa.
+  IF NOT (p_payload ? 'receita') OR jsonb_typeof(p_payload -> 'receita') <> 'object' THEN
+    RAISE EXCEPTION 'salvar_modelagem: payload sem o bloco receita';
+  END IF;
   UPDATE modelagem_receita SET
     comissao_pct           = COALESCE((p_payload -> 'receita' ->> 'comissao_pct')::decimal, 0),
     custo_cartorio_pct     = COALESCE((p_payload -> 'receita' ->> 'custo_cartorio_pct')::decimal, 0),
@@ -584,7 +638,6 @@ BEGIN
     lucro_sponsor_pct      = COALESCE((p_payload -> 'receita' ->> 'lucro_sponsor_pct')::decimal, 0),
     updated_at             = CURRENT_TIMESTAMP
   WHERE modelagem_id = v_id;
-  END IF;
 
   -- ── 14. Modo locação: cabeçalho, OPEX e ocupação ──────────────────────────
   -- Só quando o tipo é 'locacao'. Numa venda os três blocos não têm o que
@@ -675,7 +728,11 @@ BEGIN
   FOR r IN SELECT e FROM jsonb_array_elements(COALESCE(p_payload -> 'vendas_unidade', '[]'::jsonb)) e
   LOOP
     v_novo := v_un[(r.e ->> 'unidade_index')::int + 1];
-    CONTINUE WHEN v_novo IS NULL;
+    -- Mesma regra das alocações: ver a nota lá em cima.
+    IF v_novo IS NULL THEN
+      RAISE EXCEPTION 'salvar_modelagem: vendas_unidade — unidade_index % não resolve',
+        r.e ->> 'unidade_index';
+    END IF;
     INSERT INTO modelagem_vendas_unidade (modelagem_id, unidade_id, mes_venda)
     VALUES (v_id, v_novo, NULLIF(r.e ->> 'mes_venda', '')::int)
     ON CONFLICT (modelagem_id, unidade_id) DO UPDATE SET mes_venda = EXCLUDED.mes_venda;
@@ -694,11 +751,23 @@ BEGIN
                        WITH ORDINALITY t(e, i) ORDER BY i
   LOOP
     v_novo := v_un[(r.e ->> 'unidade_index')::int + 1];
-    -- `fase_id` fica nulo quando o lote não declara fase, ou quando declara uma
-    -- fase ainda sem id: o vínculo é opcional e a venda não pode deixar de ser
-    -- salva por causa dele.
+    -- Mesma regra das alocações. Aqui o descarte silencioso nem era possível:
+    -- `unidade_id` é NOT NULL, então a linha derrubaria a transação de qualquer
+    -- forma — só que com "violates not-null constraint" em vez de uma mensagem
+    -- que diz qual bloco e qual índice.
+    IF v_novo IS NULL THEN
+      RAISE EXCEPTION 'salvar_modelagem: takedowns — unidade_index % não resolve',
+        r.e ->> 'unidade_index';
+    END IF;
+    -- `fase_id` fica nulo quando o lote não declara fase: o vínculo é OPCIONAL,
+    -- e isso não é o mesmo que um índice que não resolve. Um `fase_index`
+    -- declarado que não resolve, esse sim, é erro.
     v_pai := CASE WHEN jsonb_typeof(r.e -> 'fase_index') = 'number'
                   THEN v_fa[(r.e ->> 'fase_index')::int + 1] END;
+    IF jsonb_typeof(r.e -> 'fase_index') = 'number' AND v_pai IS NULL THEN
+      RAISE EXCEPTION 'salvar_modelagem: takedowns — fase_index % não resolve',
+        r.e ->> 'fase_index';
+    END IF;
 
     IF NULLIF(r.e ->> 'id', '') IS NOT NULL THEN
       UPDATE modelagem_takedowns SET
