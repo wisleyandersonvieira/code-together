@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
   // `total` é medido até a montagem da resposta, então não inclui a volta pela
   // rede — que é justamente a parcela que a subtração no cliente revela.
   const t0 = performance.now();
-  const marca = { auth: 0, conexao: 0, query: 0 };
+  const marca = { auth: 0, conexao: 0, warmup: 0, query: 0 };
   const numeroReq = ++contadorRequisicoes;
 
   const json = (body: unknown, status = 200) =>
@@ -117,6 +117,7 @@ Deno.serve(async (req) => {
         "Server-Timing": [
           `auth;dur=${marca.auth.toFixed(1)}`,
           `conn;dur=${marca.conexao.toFixed(1)}`,
+          `warmup;dur=${marca.warmup.toFixed(1)}`,
           `query;dur=${marca.query.toFixed(1)}`,
           `total;dur=${(performance.now() - t0).toFixed(1)}`,
         ].join(", "),
@@ -183,6 +184,22 @@ Deno.serve(async (req) => {
       const sql = await getSql();
       marca.conexao = performance.now() - tConexao;
 
+      // ── SONDA DE HANDSHAKE (diagnóstico — remover quando decidir) ────
+      //
+      // O `getSql()` acima NÃO conecta: o cliente do postgres.js é preguiçoso e
+      // só abre TCP, TLS, sessão com o Supavisor e startup na PRIMEIRA query.
+      // Por isso `conn` mede quase nada (instanciar o objeto) e todo o
+      // handshake caía carimbado como `query` — o que fazia um UPDATE de uma
+      // linha parecer custar 736 ms de banco.
+      //
+      // Um `SELECT 1` antes da query real separa as duas coisas: ele paga o
+      // handshake, e a query real passa a medir só a query. Num isolate quente
+      // o `SELECT 1` é um round-trip de poucos ms; como 109 de 118 requisições
+      // chegam frias, o custo marginal é praticamente zero.
+      const tWarmup = performance.now();
+      await sql.unsafe("SELECT 1");
+      marca.warmup = performance.now() - tWarmup;
+
       const tQuery = performance.now();
       const result = await sql.unsafe(cleanQuery);
       marca.query = performance.now() - tQuery;
@@ -190,7 +207,8 @@ Deno.serve(async (req) => {
       console.log(
         `[execute-sql] boot=${BOOT_ID} req=${numeroReq} ` +
           `auth=${marca.auth.toFixed(0)}ms conn=${marca.conexao.toFixed(0)}ms ` +
-          `query=${marca.query.toFixed(0)}ms total=${(performance.now() - t0).toFixed(0)}ms`,
+          `warmup=${marca.warmup.toFixed(0)}ms query=${marca.query.toFixed(0)}ms ` +
+          `total=${(performance.now() - t0).toFixed(0)}ms`,
       );
 
       return json({ data: Array.from(result), error: null });

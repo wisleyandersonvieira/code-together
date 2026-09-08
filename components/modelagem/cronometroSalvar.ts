@@ -74,6 +74,7 @@ export interface TemposServidor {
   totalMs: number;
   authMs: number;
   conexaoMs: number;
+  warmupMs: number;
   queryMs: number;
 }
 
@@ -102,6 +103,22 @@ export interface MedicaoServidor {
   authMs: number;
   conexaoMs: number;
   queryMs: number;
+  /**
+   * O `SELECT 1` que a função roda antes da query real, repartido entre
+   * isolate FRIO (primeira requisição do boot) e QUENTE.
+   *
+   * É a linha que decide de onde vem o segundo por requisição. O cliente do
+   * postgres.js é preguiçoso: `getSql()` só instancia o objeto, e o TCP, o TLS,
+   * a sessão com o Supavisor e o startup só acontecem na primeira query. Sem a
+   * sonda, tudo isso cai carimbado como tempo de QUERY, e um UPDATE de uma
+   * linha parece custar centenas de milissegundos de banco.
+   *
+   * Frio na casa das centenas e quente na casa das unidades = handshake.
+   * Os dois na casa das centenas = é banco de verdade, e a investigação vira
+   * plano de execução e índice.
+   */
+  warmupFrioMs: number;
+  warmupQuenteMs: number;
 }
 
 export interface RelatorioSalvamento {
@@ -148,7 +165,8 @@ export function formatarMs(ms: number): string {
  *   [salvar] custos      38 req   5.2 s
  *   [salvar] TOTAL      208 req  41.7 s
  *   [salvar] rede      38.9 s em 208 requisições
- *   [salvar] servidor  31.0 s em 208 respostas  (auth 19.1 s · conexão 8.4 s · query 1.2 s)
+ *   [salvar] servidor  31.0 s em 208 respostas  (auth 19.1 s · … · query 1.2 s)
+ *   [salvar] warmup    frio 152 ms/req em 191  ·  quente 4 ms/req em 17  ·  query 6 ms/req
  *   [salvar] isolates  191 boots distintos, 191 requisições frias em 208
  *   [salvar] render    6.2 s em 209 commits (418 passadas)
  *   [salvar] fora      2.8 s  ← 41.7 s − 38.9 s
@@ -191,10 +209,22 @@ export function formatarRelatorio(r: RelatorioSalvamento): string {
   ];
   const sv = r.servidor;
   if (sv) {
+    const quentes = sv.respostas - sv.frias;
+    const media = (soma: number, n: number) => (n > 0 ? formatarMs(soma / n) : '—');
     resumo.push([
       'servidor',
-      `${formatarMs(sv.totalMs)} em ${sv.respostas} respostas` +
-        `  (auth ${formatarMs(sv.authMs)} · conexão ${formatarMs(sv.conexaoMs)} · query ${formatarMs(sv.queryMs)})`,
+      `${formatarMs(sv.totalMs)} em ${sv.respostas} respostas  (auth ${formatarMs(sv.authMs)}` +
+        ` · conexão ${formatarMs(sv.conexaoMs)} · warmup ${formatarMs(sv.warmupFrioMs + sv.warmupQuenteMs)}` +
+        ` · query ${formatarMs(sv.queryMs)})`,
+    ]);
+    // A média por requisição, e não a soma: é comparando frio com quente que se
+    // vê o handshake, e duas somas sobre populações de tamanhos diferentes não
+    // se comparam.
+    resumo.push([
+      'warmup',
+      `frio ${media(sv.warmupFrioMs, sv.frias)}/req em ${sv.frias}` +
+        `  ·  quente ${media(sv.warmupQuenteMs, quentes)}/req em ${quentes}` +
+        `  ·  query ${media(sv.queryMs, sv.respostas)}/req`,
     ]);
     resumo.push([
       'isolates',
@@ -266,7 +296,10 @@ export function criarCronometro(
   // quantos isolates DISTINTOS atenderam — contar respostas com seq=1 sozinho
   // não distinguiria reciclagem de concorrência.
   const boots = new Set<string>();
-  const srv = { respostas: 0, frias: 0, totalMs: 0, authMs: 0, conexaoMs: 0, queryMs: 0 };
+  const srv = {
+    respostas: 0, frias: 0, totalMs: 0, authMs: 0, conexaoMs: 0, queryMs: 0,
+    warmupFrioMs: 0, warmupQuenteMs: 0,
+  };
 
   observar((_nome, ms, _erro, servidor) => {
     const destino = atual ?? abrir('(sem bloco)');
@@ -276,7 +309,15 @@ export function criarCronometro(
     if (servidor) {
       srv.respostas++;
       boots.add(servidor.boot);
-      if (servidor.seq === 1) srv.frias++;
+      // `seq === 1` é a primeira requisição daquele isolate: é ela que paga o
+      // handshake. Somar frio e quente juntos apagaria justamente a diferença
+      // que a sonda existe para mostrar.
+      if (servidor.seq === 1) {
+        srv.frias++;
+        srv.warmupFrioMs += servidor.warmupMs;
+      } else {
+        srv.warmupQuenteMs += servidor.warmupMs;
+      }
       srv.totalMs += servidor.totalMs;
       srv.authMs += servidor.authMs;
       srv.conexaoMs += servidor.conexaoMs;

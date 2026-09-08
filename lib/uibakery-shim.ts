@@ -125,6 +125,8 @@ export interface TemposServidor {
   totalMs: number;
   authMs: number;
   conexaoMs: number;
+  /** `SELECT 1` antes da query real: é onde o handshake do postgres.js cai. */
+  warmupMs: number;
   queryMs: number;
 }
 
@@ -156,6 +158,7 @@ function lerTemposServidor(response: Response | undefined): TemposServidor | und
       totalMs: dur('total'),
       authMs: dur('auth'),
       conexaoMs: dur('conn'),
+      warmupMs: dur('warmup'),
       queryMs: dur('query'),
     };
   } catch {

@@ -27,7 +27,9 @@ function observadorFalso() {
 
 /** Resposta do execute-sql com tempos plausíveis, para o teste não repetir seis campos. */
 function resposta(boot: string, seq: number, extra: Partial<TemposServidor> = {}): TemposServidor {
-  return { boot, seq, totalMs: 800, authMs: 500, conexaoMs: 200, queryMs: 20, ...extra };
+  return {
+    boot, seq, totalMs: 800, authMs: 500, conexaoMs: 200, warmupMs: 60, queryMs: 20, ...extra,
+  };
 }
 
 describe('cronômetro do salvamento', () => {
@@ -190,6 +192,8 @@ describe('tempos do servidor — a evidência da Parte 1', () => {
       authMs: 1500,
       conexaoMs: 600,
       queryMs: 60,
+      warmupFrioMs: 180,
+      warmupQuenteMs: 0,
     });
   });
 
@@ -227,16 +231,54 @@ describe('tempos do servidor — a evidência da Parte 1', () => {
         boots: 118,
         frias: 118,
         totalMs: 94_400,
-        authMs: 59_000,
-        conexaoMs: 33_000,
+        authMs: 5200,
+        conexaoMs: 5500,
         queryMs: 2400,
+        warmupFrioMs: 81_300,
+        warmupQuenteMs: 0,
       },
     }).split('\n');
     expect(linhas.slice(2)).toEqual([
       '[salvar] rede      122.5 s em 118 requisições',
-      '[salvar] servidor  94.4 s em 118 respostas  (auth 59.0 s · conexão 33.0 s · query 2.4 s)',
+      '[salvar] servidor  94.4 s em 118 respostas  (auth 5.2 s · conexão 5.5 s · warmup 81.3 s · query 2.4 s)',
+      '[salvar] warmup    frio 689 ms/req em 118  ·  quente —/req em 0  ·  query 20 ms/req',
       '[salvar] isolates  118 boots distintos, 118 requisições frias em 118',
       '[salvar] fora      0 ms  ← 122.5 s − 122.5 s',
     ]);
+  });
+});
+
+describe('warmup frio × quente — a sonda de handshake', () => {
+  it('separa a primeira requisição do isolate das seguintes', () => {
+    const obs = observadorFalso();
+    const cron = criarCronometro(obs.observar, true);
+    cron.bloco('premissas');
+    // Assinatura do handshake: o SELECT 1 da requisição fria custa centenas de
+    // ms, o da quente custa unidades, e a query real é barata nas duas.
+    obs.requisicao('a', 900, resposta('aaaa', 1, { warmupMs: 712, queryMs: 9 }));
+    obs.requisicao('b', 130, resposta('aaaa', 2, { warmupMs: 3, queryMs: 8 }));
+    obs.requisicao('c', 940, resposta('bbbb', 1, { warmupMs: 745, queryMs: 11 }));
+    const sv = cron.encerrar().servidor!;
+    expect(sv.warmupFrioMs).toBe(1457);
+    expect(sv.warmupQuenteMs).toBe(3);
+    expect(sv.frias).toBe(2);
+    expect(sv.queryMs).toBe(28);
+  });
+
+  it('sem requisição quente, a média quente sai como travessão e não como zero', () => {
+    // Zero leria como "o warmup quente é grátis"; travessão diz "não houve
+    // amostra". Com 109 de 118 frias, essa distinção é a leitura inteira.
+    const texto = formatarRelatorio({
+      blocos: [{ nome: 'x', requisicoes: 1, ms: 900 }],
+      totalRequisicoes: 1,
+      totalMs: 900,
+      totalRedeMs: 900,
+      servidor: {
+        respostas: 1, boots: 1, frias: 1, totalMs: 800, authMs: 40,
+        conexaoMs: 45, queryMs: 9, warmupFrioMs: 700, warmupQuenteMs: 0,
+      },
+    });
+    expect(texto).toContain('quente —/req em 0');
+    expect(texto).toContain('frio 700 ms/req em 1');
   });
 });

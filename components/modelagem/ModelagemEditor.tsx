@@ -8,6 +8,7 @@ import {
   formatarRelatorio,
   type MedicaoRenders,
 } from './cronometroSalvar';
+import { carimbarIds, montarPayload, type RetornoSalvar } from './payloadSalvar';
 import { ChevronDown, Copy, Download, FileSpreadsheet, FileText, Loader2, Save, Table2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,51 +44,11 @@ import type {
 } from '@/lib/modelagem';
 
 import loadModelagemCompletaAction from '@/actions/loadModelagemCompleta';
-import updateModelagemPremissasAction from '@/actions/updateModelagemPremissas';
+import salvarModelagemAction from '@/actions/salvarModelagem';
 import duplicarModelagemAction from '@/actions/duplicarModelagem';
-import createModelagemUnidadeAction from '@/actions/createModelagemUnidade';
-import updateModelagemUnidadeAction from '@/actions/updateModelagemUnidade';
-import deleteModelagemUnidadeAction from '@/actions/deleteModelagemUnidade';
-import createModelagemCustoAction from '@/actions/createModelagemCusto';
-import updateModelagemCustoAction from '@/actions/updateModelagemCusto';
-import deleteModelagemCustoAction from '@/actions/deleteModelagemCusto';
-import createModelagemCustoParcelaAction from '@/actions/createModelagemCustoParcela';
-import updateModelagemCustoParcelaAction from '@/actions/updateModelagemCustoParcela';
-import deleteModelagemCustoParcelaAction from '@/actions/deleteModelagemCustoParcela';
-import deleteModelagemCustoParcelasDoCustoAction from '@/actions/deleteModelagemCustoParcelasDoCusto';
-import createModelagemSocioAction from '@/actions/createModelagemSocio';
-import updateModelagemSocioAction from '@/actions/updateModelagemSocio';
-import deleteModelagemSocioAction from '@/actions/deleteModelagemSocio';
-import createModelagemSocioAporteAction from '@/actions/createModelagemSocioAporte';
-import updateModelagemSocioAporteAction from '@/actions/updateModelagemSocioAporte';
-import deleteModelagemSocioAporteAction from '@/actions/deleteModelagemSocioAporte';
-import deleteModelagemSocioAportesDoSocioAction from '@/actions/deleteModelagemSocioAportesDoSocio';
-import saveModelagemAportesAction from '@/actions/saveModelagemAportes';
 import createModelagemAporteParcelaAction from '@/actions/createModelagemAporteParcela';
-import updateModelagemAporteParcelaAction from '@/actions/updateModelagemAporteParcela';
 import deleteModelagemAporteParcelaAction from '@/actions/deleteModelagemAporteParcela';
 import deleteModelagemAporteParcelasTodasAction from '@/actions/deleteModelagemAporteParcelasTodas';
-import createModelagemFaseAction from '@/actions/createModelagemFase';
-import updateModelagemFaseAction from '@/actions/updateModelagemFase';
-import deleteModelagemFaseAction from '@/actions/deleteModelagemFase';
-import saveModelagemUnidadeFaseAction from '@/actions/saveModelagemUnidadeFase';
-import deleteModelagemUnidadeFaseAction from '@/actions/deleteModelagemUnidadeFase';
-import saveModelagemFinanciamentoAction from '@/actions/saveModelagemFinanciamento';
-import createModelagemFacilidadeAction from '@/actions/createModelagemFacilidade';
-import deleteModelagemFacilidadeAction from '@/actions/deleteModelagemFacilidade';
-import saveModelagemLocacaoAction from '@/actions/saveModelagemLocacao';
-import createModelagemOpexAction from '@/actions/createModelagemOpex';
-import updateModelagemOpexAction from '@/actions/updateModelagemOpex';
-import deleteModelagemOpexAction from '@/actions/deleteModelagemOpex';
-import saveModelagemOcupacaoAction from '@/actions/saveModelagemOcupacao';
-import deleteModelagemOcupacaoAction from '@/actions/deleteModelagemOcupacao';
-import saveModelagemBenchmarkPontoAction from '@/actions/saveModelagemBenchmarkPonto';
-import deleteModelagemBenchmarkPontoAction from '@/actions/deleteModelagemBenchmarkPonto';
-import saveModelagemReceitaAction from '@/actions/saveModelagemReceita';
-import saveModelagemVendaUnidadeAction from '@/actions/saveModelagemVendaUnidade';
-import createModelagemTakedownAction from '@/actions/createModelagemTakedown';
-import updateModelagemTakedownAction from '@/actions/updateModelagemTakedown';
-import deleteModelagemTakedownAction from '@/actions/deleteModelagemTakedown';
 import upsertModelagemOverrideAction from '@/actions/upsertModelagemOverride';
 import deleteModelagemOverrideAction from '@/actions/deleteModelagemOverride';
 import deleteModelagemOverridesLinhaAction from '@/actions/deleteModelagemOverridesLinha';
@@ -210,51 +171,14 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     msRenderRef.current += performance.now() - inicioRenderRef.current;
   });
 
+  // As mutations que sobraram: as que gravam FORA do botão salvar — override
+  // por célula, parcela do plano de aportes, duplicação. Tudo o que era diff do
+  // salvamento saiu daqui e virou a salvar_modelagem(jsonb).
   const [duplicar] = useMutateAction(duplicarModelagemAction);
-  const [salvarPremissas] = useMutateAction(updateModelagemPremissasAction);
-  const [criarUnidade] = useMutateAction(createModelagemUnidadeAction);
-  const [atualizarUnidade] = useMutateAction(updateModelagemUnidadeAction);
-  const [removerUnidade] = useMutateAction(deleteModelagemUnidadeAction);
-  const [criarCusto] = useMutateAction(createModelagemCustoAction);
-  const [atualizarCusto] = useMutateAction(updateModelagemCustoAction);
-  const [removerCusto] = useMutateAction(deleteModelagemCustoAction);
-  const [criarParcelaCusto] = useMutateAction(createModelagemCustoParcelaAction);
-  const [atualizarParcelaCusto] = useMutateAction(updateModelagemCustoParcelaAction);
-  const [removerParcelaCusto] = useMutateAction(deleteModelagemCustoParcelaAction);
-  const [removerParcelasDoCusto] = useMutateAction(deleteModelagemCustoParcelasDoCustoAction);
-  const [criarSocio] = useMutateAction(createModelagemSocioAction);
-  const [atualizarSocio] = useMutateAction(updateModelagemSocioAction);
-  const [removerSocio] = useMutateAction(deleteModelagemSocioAction);
-  const [criarAporteSocio] = useMutateAction(createModelagemSocioAporteAction);
-  const [atualizarAporteSocio] = useMutateAction(updateModelagemSocioAporteAction);
-  const [removerAporteSocio] = useMutateAction(deleteModelagemSocioAporteAction);
-  const [removerAportesDoSocio] = useMutateAction(deleteModelagemSocioAportesDoSocioAction);
-  const [salvarAportes] = useMutateAction(saveModelagemAportesAction);
+  const [salvarTudo] = useMutateAction(salvarModelagemAction);
   const [criarParcela] = useMutateAction(createModelagemAporteParcelaAction);
-  const [atualizarParcela] = useMutateAction(updateModelagemAporteParcelaAction);
   const [removerParcela] = useMutateAction(deleteModelagemAporteParcelaAction);
   const [removerParcelasTodas] = useMutateAction(deleteModelagemAporteParcelasTodasAction);
-  const [criarFase] = useMutateAction(createModelagemFaseAction);
-  const [atualizarFase] = useMutateAction(updateModelagemFaseAction);
-  const [removerFase] = useMutateAction(deleteModelagemFaseAction);
-  const [salvarAlocacao] = useMutateAction(saveModelagemUnidadeFaseAction);
-  const [removerAlocacao] = useMutateAction(deleteModelagemUnidadeFaseAction);
-  const [salvarFinanciamento] = useMutateAction(saveModelagemFinanciamentoAction);
-  const [criarFacilidade] = useMutateAction(createModelagemFacilidadeAction);
-  const [removerFacilidade] = useMutateAction(deleteModelagemFacilidadeAction);
-  const [salvarLocacao] = useMutateAction(saveModelagemLocacaoAction);
-  const [criarOpex] = useMutateAction(createModelagemOpexAction);
-  const [atualizarOpex] = useMutateAction(updateModelagemOpexAction);
-  const [removerOpex] = useMutateAction(deleteModelagemOpexAction);
-  const [salvarOcupacao] = useMutateAction(saveModelagemOcupacaoAction);
-  const [apagarOcupacao] = useMutateAction(deleteModelagemOcupacaoAction);
-  const [salvarBenchmark] = useMutateAction(saveModelagemBenchmarkPontoAction);
-  const [apagarBenchmark] = useMutateAction(deleteModelagemBenchmarkPontoAction);
-  const [salvarReceita] = useMutateAction(saveModelagemReceitaAction);
-  const [salvarVenda] = useMutateAction(saveModelagemVendaUnidadeAction);
-  const [criarTakedown] = useMutateAction(createModelagemTakedownAction);
-  const [atualizarTakedown] = useMutateAction(updateModelagemTakedownAction);
-  const [removerTakedown] = useMutateAction(deleteModelagemTakedownAction);
   const [gravarOverride] = useMutateAction(upsertModelagemOverrideAction);
   const [apagarOverride] = useMutateAction(deleteModelagemOverrideAction);
   const [apagarOverridesLinha] = useMutateAction(deleteModelagemOverridesLinhaAction);
@@ -523,402 +447,23 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       ms: msRenderRef.current,
     };
     try {
-      cron.bloco('premissas');
-      await salvarPremissas({
-        id: modelagemId,
-        nome: rascunho.nome,
-        localizacao: rascunho.localizacao,
-        tipoUso: rascunho.tipoUso,
-        moeda: rascunho.moeda,
-        dataInicio: rascunho.dataInicio,
-        mesesAprovacao: rascunho.mesesAprovacao,
-        mesesConstrucao: rascunho.mesesConstrucao,
-        mesesPosObra: rascunho.mesesPosObra,
-        horizonteMaximo: rascunho.horizonteMaximo,
-        usaFases: !!rascunho.usaFases,
-        terrenoPorFase: !!rascunho.terrenoPorFase,
-        dataBase: null,
-        revisao: '',
-        status: null,
-      });
-
-      // Diff por id: o que tem id foi atualizado, o que não tem é novo, e o que
-      // sumiu da lista foi removido. Ids estáveis importam — apagar e reinserir
-      // quebraria os vínculos de venda por unidade.
+      // UMA chamada, no lugar das ~118 que este bloco fazia. O payload leva a
+      // modelagem inteira com os filhos aninhados no pai; a função resolve o
+      // diff, os mapas de id e as duas passadas da facilidade dentro de UMA
+      // transação — ou grava tudo, ou nada.
       //
-      // Devolve os ids alinhados com `atuais`, incluindo os recém-criados: a
-      // alocação por fase é gravada por (unidade_id, fase_id), e sem os ids das
-      // linhas novas ela não teria como ser escrita no mesmo salvamento.
-      const sincronizar = async (
-        atuais: any[],
-        anteriores: any[],
-        criar: (x: any, i: number) => Promise<any>,
-        atualizar: (x: any, i: number) => Promise<any>,
-        remover: (id: number) => Promise<any>,
-      ): Promise<(number | null)[]> => {
-        const idsAtuais = new Set(atuais.map((x) => x.id).filter(Boolean));
-        for (const antigo of anteriores) {
-          if (antigo.id && !idsAtuais.has(antigo.id)) await remover(antigo.id);
-        }
-        const ids: (number | null)[] = [];
-        for (let i = 0; i < atuais.length; i++) {
-          if (atuais[i].id) {
-            await atualizar(atuais[i], i);
-            ids.push(Number(atuais[i].id));
-          } else {
-            const criado = await criar(atuais[i], i);
-            const id = Array.isArray(criado) ? criado[0]?.id : undefined;
-            ids.push(id == null ? null : Number(id));
-          }
-        }
-        return ids;
-      };
+      // A rota é `rpc()` pelo PostgREST, e não o execute-sql: ver o comentário
+      // de actions/salvarModelagem.ts. O ganho medido não está em fazer menos
+      // trabalho de banco — está em pagar um handshake em vez de 118.
+      cron.bloco('salvar');
+      const resposta = await salvarTudo({ payload: montarPayload(modelagemId, rascunho) });
+      const retorno = (Array.isArray(resposta) ? resposta[0] : resposta) as RetornoSalvar;
 
-      cron.bloco('unidades');
-      const idsUnidades = await sincronizar(
-        rascunho.unidades,
-        original.unidades,
-        (u, i) => criarUnidade({ modelagemId, ordem: i, ...u, observacoes: '' }),
-        (u, i) => atualizarUnidade({ id: u.id, ordem: i, ...u, observacoes: '' }),
-        (id) => removerUnidade({ id }),
-      );
-
-      cron.bloco('custos');
-      const custosAtuais = rascunho.custosAdicionais ?? [];
-      const idsCustos = await sincronizar(
-        custosAtuais,
-        original.custosAdicionais ?? [],
-        (c, i) => criarCusto({ modelagemId, ordem: i, ...c }),
-        (c, i) => atualizarCusto({ id: c.id, ordem: i, ...c }),
-        (id) => removerCusto({ id }),
-      );
-
-      // Parcelas dos custos (migration 1763000000). DEPOIS do sincronizar acima,
-      // e usando os ids que ele devolve: um custo novo só tem id depois do INSERT,
-      // e sem essa ordem as parcelas de um custo recém-criado se perderiam no
-      // primeiro salvamento, em silêncio — que é o modo mais caro de falhar aqui.
-      //
-      // Custo removido não precisa de nada: modelagem_custo_parcelas.custo_id tem
-      // ON DELETE CASCADE.
-      cron.bloco('parcelas custo');
-      const parcelasOriginais = new Map<number, typeof custosAtuais[number]['parcelas']>();
-      for (const c of original.custosAdicionais ?? []) {
-        if (c.id != null) parcelasOriginais.set(c.id, c.parcelas ?? []);
-      }
-      for (let i = 0; i < custosAtuais.length; i++) {
-        const custoId = idsCustos[i];
-        // Sem id o INSERT do custo falhou: não há a que amarrar a parcela, e
-        // gravá-la em outro custo seria pior do que não gravar.
-        if (custoId == null) continue;
-        const atuais = custosAtuais[i].parcelas ?? [];
-        const anteriores = parcelasOriginais.get(custoId) ?? [];
-        if (anteriores.length > 0 && atuais.length > 0 && atuais.every((p) => p.id == null)) {
-          // Assinatura do "gerar de novo": a lista inteira é nova. Um DELETE só
-          // no lugar de N DELETEs do diff por id.
-          await removerParcelasDoCusto({ custoId });
-          for (let k = 0; k < atuais.length; k++) {
-            await criarParcelaCusto({
-              modelagemId,
-              custoId,
-              ordem: k,
-              mes: atuais[k].mes,
-              valor: atuais[k].valor,
-            });
-          }
-          continue;
-        }
-        await sincronizar(
-          atuais,
-          anteriores,
-          (p, k) => criarParcelaCusto({ modelagemId, custoId, ordem: k, mes: p.mes, valor: p.valor }),
-          (p, k) => atualizarParcelaCusto({ id: p.id, ordem: k, mes: p.mes, valor: p.valor }),
-          (id) => removerParcelaCusto({ id }),
-        );
-      }
-
-      // `pctCapital` viaja como string vazia quando é nulo: a action usa NULLIF
-      // para devolvê-lo a NULL no banco, e nulo é "usa a participação" — que é
-      // diferente de zero, "não põe capital nenhum".
-      const pctCapitalParam = (s: { pctCapital?: number | null }) =>
-        s.pctCapital == null ? '' : String(s.pctCapital);
-      cron.bloco('socios');
-      const sociosAtuais = rascunho.socios ?? [];
-      const idsSocios = await sincronizar(
-        sociosAtuais,
-        original.socios ?? [],
-        (s, i) =>
-          criarSocio({ modelagemId, ordem: i, ...s, pctCapital: pctCapitalParam(s), observacoes: '' }),
-        (s, i) =>
-          atualizarSocio({ id: s.id, ordem: i, ...s, pctCapital: pctCapitalParam(s), observacoes: '' }),
-        (id) => removerSocio({ id }),
-      );
-
-      // Aportes por sócio (migration 1763100000). DEPOIS do sincronizar acima, e
-      // usando os ids que ele devolve: um sócio novo só tem id depois do INSERT,
-      // e sem essa ordem os aportes de um sócio recém-criado se perderiam no
-      // primeiro salvamento, em silêncio. É o mesmo cuidado das parcelas de custo.
-      //
-      // Sócio removido não precisa de nada: modelagem_socio_aportes.socio_id tem
-      // ON DELETE CASCADE.
-      cron.bloco('aportes socio');
-      const aportesOriginais = new Map<number, typeof sociosAtuais[number]['aportes']>();
-      for (const s of original.socios ?? []) {
-        if (s.id != null) aportesOriginais.set(s.id, s.aportes ?? []);
-      }
-      for (let i = 0; i < sociosAtuais.length; i++) {
-        const socioId = idsSocios[i];
-        // Sem id o INSERT do sócio falhou: não há a quem amarrar o aporte, e
-        // gravá-lo em outro sócio seria pior do que não gravar.
-        if (socioId == null) continue;
-        const atuais = sociosAtuais[i].aportes ?? [];
-        const anteriores = aportesOriginais.get(socioId) ?? [];
-        if (anteriores.length > 0 && atuais.length > 0 && atuais.every((a) => a.id == null)) {
-          // Assinatura do "gerar de novo": a lista inteira é nova. Um DELETE só
-          // no lugar de N DELETEs do diff por id.
-          await removerAportesDoSocio({ socioId });
-          for (let k = 0; k < atuais.length; k++) {
-            await criarAporteSocio({
-              modelagemId,
-              socioId,
-              ordem: k,
-              mes: atuais[k].mes,
-              valor: atuais[k].valor,
-              observacao: atuais[k].observacao ?? '',
-            });
-          }
-          continue;
-        }
-        await sincronizar(
-          atuais,
-          anteriores,
-          (a, k) =>
-            criarAporteSocio({
-              modelagemId,
-              socioId,
-              ordem: k,
-              mes: a.mes,
-              valor: a.valor,
-              observacao: a.observacao ?? '',
-            }),
-          (a, k) =>
-            atualizarAporteSocio({
-              id: a.id,
-              ordem: k,
-              mes: a.mes,
-              valor: a.valor,
-              observacao: a.observacao ?? '',
-            }),
-          (id) => removerAporteSocio({ id }),
-        );
-      }
-
-      // Cabeçalho do plano de aportes. Vai antes das parcelas: se o INSERT do
-      // cabeçalho falhar, não faz sentido gravar parcela nenhuma.
-      cron.bloco('plano aportes');
-      const plano = rascunho.aportes;
-      if (plano) {
-        await salvarAportes({
-          modelagemId,
-          modoAporte: plano.modoAporte,
-          aporteBaseTotal: plano.aporteBaseTotal,
-          valorTotalAlvo: plano.valorTotalAlvo,
-          regraRateioCapital: plano.regraRateioCapital,
-        });
-        // As parcelas editadas pela linha do fluxo já foram gravadas na hora; as
-        // editadas na aba entram aqui, pelo mesmo diff por id das demais listas.
-        await sincronizar(
-          plano.parcelas ?? [],
-          original.aportes?.parcelas ?? [],
-          (p) => criarParcela({ modelagemId, mes: p.mes, valor: p.valor, observacao: p.observacao ?? '' }),
-          (p) => atualizarParcela({ id: p.id, mes: p.mes, valor: p.valor, observacao: p.observacao ?? '' }),
-          (id) => removerParcela({ id }),
-        );
-      }
-
-      cron.bloco('fases');
-      const idsFases = await sincronizar(
-        rascunho.fases ?? [],
-        original.fases ?? [],
-        (f, i) => criarFase({ modelagemId, ordem: i, ...f }),
-        (f, i) => atualizarFase({ id: f.id, ordem: i, ...f }),
-        (id) => removerFase({ id }),
-      );
-
-      // Alocação por fase. Vai depois de tipologias e fases porque depende dos ids
-      // dos dois, e é gravada pelo PAR (unidade, fase), que é a chave natural — a
-      // linha de junção não tem identidade própria na tela.
-      cron.bloco('alocacoes');
-      const par = (a: { unidadeIndex: number; faseIndex: number }) =>
-        `${idsUnidades[a.unidadeIndex] ?? 'x'}:${idsFases[a.faseIndex] ?? 'x'}`;
-      const atuaisAlocacao = new Map(
-        (rascunho.alocacoes ?? []).filter((a) => a.quantidade > 0).map((a) => [par(a), a]),
-      );
-      for (const antiga of original.alocacoes ?? []) {
-        const unidadeId = idsUnidades[antiga.unidadeIndex];
-        const faseId = idsFases[antiga.faseIndex];
-        if (unidadeId == null || faseId == null) continue;
-        if (!atuaisAlocacao.has(par(antiga))) await removerAlocacao({ unidadeId, faseId });
-      }
-      for (const a of atuaisAlocacao.values()) {
-        const unidadeId = idsUnidades[a.unidadeIndex];
-        const faseId = idsFases[a.faseIndex];
-        if (unidadeId == null || faseId == null) continue;
-        await salvarAlocacao({ modelagemId, unidadeId, faseId, quantidade: a.quantidade });
-      }
-
-      // ─── Facilidades de crédito (migration 1764200000) ───────────────────
-      //
-      // Diff por id como as demais listas. DUAS passadas, e a separação não é
-      // estilo: `refinanciaFacilidadeId` é uma FK para a PRÓPRIA tabela, e a
-      // facilidade apontada pode ser uma que ainda não existe quando a primeira é
-      // gravada. Mandar o vínculo na primeira passada faria a FK estourar — ou,
-      // pior, gravar `null` em silêncio.
-      //
-      // Por isso: passada 1 cria/atualiza tudo SEM o vínculo e colhe os ids;
-      // passada 2 volta e grava só o `refinanciaFacilidadeId`, já com o mapa de
-      // índice → id completo. É a mesma dança do `grupo_pai` na duplicação.
-      cron.bloco('facilidades');
-      const facilidadesAtuais = rascunho.financiamentos ?? [];
-      const idsFacilidades = await sincronizar(
-        facilidadesAtuais,
-        original.financiamentos ?? [],
-        (f, i) => criarFacilidade({ modelagemId, ordem: i, nome: f.nome ?? 'Financiamento' }),
-        (f, i) =>
-          salvarFinanciamento({
-            modelagemId,
-            ...f,
-            ordem: i,
-            // Passada 1: sem o vínculo. Ver acima.
-            refinanciaFacilidadeId: null,
-          }),
-        (id) => removerFacilidade({ id }),
-      );
-
-      // Passada 2: o vínculo de refinanciamento, agora que todos os ids existem.
-      // Só as facilidades que DECLARAM refinanciamento são revisitadas — um
-      // UPDATE a mais por facilidade sem vínculo seria round-trip puro.
-      for (let i = 0; i < facilidadesAtuais.length; i++) {
-        const f = facilidadesAtuais[i];
-        const alvo = f.refinanciaIndex;
-        const id = idsFacilidades[i];
-        if (id == null || alvo == null) continue;
-        await salvarFinanciamento({
-          modelagemId,
-          ...f,
-          id,
-          ordem: i,
-          refinanciaFacilidadeId: idsFacilidades[alvo] ?? null,
-        });
-      }
-
-      // Curva do benchmark, POR FACILIDADE. Gravada pelo MÊS, que é a chave
-      // natural — o ponto não tem identidade própria na tela, e o banco tem
-      // UNIQUE (financiamento, mês).
-      //
-      // Apagar um ponto é diferente de gravá-lo com zero: sem linha, o motor usa
-      // `benchmarkPadrao`. Por isso o que sumiu da tela é DELETE, não UPDATE 0.
-      cron.bloco('benchmark');
-      for (let i = 0; i < facilidadesAtuais.length; i++) {
-        const financiamentoId = idsFacilidades[i];
-        if (financiamentoId == null) continue;
-        const curvaAtual = facilidadesAtuais[i].benchmarkCurva ?? [];
-        const mesesAtuais = new Set(curvaAtual.map((ponto) => Math.trunc(ponto.mes)));
-        // A facilidade ANTIGA na mesma posição: é dela que veio a curva que está
-        // no banco. Uma facilidade recém-criada não tem curva anterior.
-        const curvaAnterior = (original.financiamentos ?? [])[i]?.benchmarkCurva ?? [];
-        for (const antigo of curvaAnterior) {
-          if (!mesesAtuais.has(Math.trunc(antigo.mes))) {
-            await apagarBenchmark({ modelagemId, financiamentoId, mes: antigo.mes });
-          }
-        }
-        for (const ponto of curvaAtual) {
-          await salvarBenchmark({ modelagemId, financiamentoId, mes: ponto.mes, valor: ponto.valor });
-        }
-      }
-      cron.bloco('receita');
-      await salvarReceita({ modelagemId, ...rascunho.receita });
-
-      // ─── Modo locação (migration 1764100000) ─────────────────────────────
-      //
-      // Gravado só quando o tipo é 'locacao'. Numa modelagem de venda os três
-      // blocos não têm o que gravar, e chamá-los criaria linha de cabeçalho —
-      // inofensiva, mas mentirosa: a tabela passaria a dizer que existe uma
-      // operação onde não existe.
-      if (ehLocacao && rascunho.locacao) {
-        cron.bloco('locacao');
-        await salvarLocacao({ modelagemId, ...rascunho.locacao });
-
-        cron.bloco('opex');
-        await sincronizar(
-          rascunho.opex ?? [],
-          original.opex ?? [],
-          (o, i) => criarOpex({ modelagemId, ordem: i, ...o }),
-          (o, i) => atualizarOpex({ id: o.id, ordem: i, ...o }),
-          (id) => removerOpex({ id }),
-        );
-
-        // Curva de ocupação: chave natural é o MÊS, como a do benchmark. A
-        // diferença é que aqui mês ausente é ocupação ZERO, não um padrão —
-        // então apagar e gravar zero dão o mesmo número no fluxo. O DELETE
-        // continua sendo o certo mesmo assim: um mês sem linha diz "ainda não
-        // preenchi", e um zero declarado diz "aqui é vazio de propósito".
-        cron.bloco('ocupacao');
-        const ocupacaoAtual = rascunho.ocupacao ?? [];
-        const mesesOcupacao = new Set(ocupacaoAtual.map((ponto) => Math.trunc(ponto.mes)));
-        for (const antigo of original.ocupacao ?? []) {
-          if (!mesesOcupacao.has(Math.trunc(antigo.mes))) {
-            await apagarOcupacao({ modelagemId, mes: antigo.mes });
-          }
-        }
-        for (const ponto of ocupacaoAtual) {
-          await salvarOcupacao({ modelagemId, mes: ponto.mes, ocupacaoPct: ponto.ocupacaoPct });
-        }
-      }
-
-      cron.bloco('vendas unidade');
-      for (const venda of rascunho.receita.vendasPorUnidade ?? []) {
-        const unidade = rascunho.unidades[venda.unidadeIndex];
-        if (unidade?.id) {
-          await salvarVenda({ modelagemId, unidadeId: unidade.id, mesVenda: venda.mesVenda });
-        }
-      }
-
-      // Takedowns. Depois de tipologias e fases, porque grava por id dos dois — e
-      // pelo mesmo diff por id das demais listas, já que o lote TEM identidade
-      // própria (dois lotes da mesma tipologia no mesmo mês são legítimos, então
-      // o par (unidade, mês) não serve de chave).
-      //
-      // `faseId` fica nulo quando o lote não declara fase, ou quando declara uma
-      // fase ainda sem id gravado: o vínculo é opcional e a venda não pode deixar
-      // de ser salva por causa dele.
-      cron.bloco('takedowns');
-      await sincronizar(
-        rascunho.receita.takedowns ?? [],
-        original.receita.takedowns ?? [],
-        (t, i) =>
-          criarTakedown({
-            modelagemId,
-            unidadeId: idsUnidades[t.unidadeIndex],
-            faseId: t.faseIndex == null ? null : (idsFases[t.faseIndex] ?? null),
-            ordem: i,
-            mes: t.mes,
-            quantidade: t.quantidade,
-            precoUnitario: t.precoUnitario,
-            observacao: t.observacao ?? '',
-          }),
-        (t, i) =>
-          atualizarTakedown({
-            id: t.id,
-            unidadeId: idsUnidades[t.unidadeIndex],
-            faseId: t.faseIndex == null ? null : (idsFases[t.faseIndex] ?? null),
-            ordem: i,
-            mes: t.mes,
-            quantidade: t.quantidade,
-            precoUnitario: t.precoUnitario,
-            observacao: t.observacao ?? '',
-          }),
-        (id) => removerTakedown({ id }),
-      );
+      // Carimba os ids das linhas recém-criadas. O `recarregar()` logo abaixo
+      // sobrescreve tudo de qualquer forma — este passo existe para o dia em que
+      // ele cair, e como rede de segurança se ele falhar: sem os ids, o
+      // salvamento seguinte inseriria as mesmas linhas de novo.
+      if (retorno) setRascunho((atual) => (atual ? carimbarIds(atual, retorno) : atual));
 
       toast({ title: 'Modelagem salva' });
       // `recarregar()` é um `loadModelagemCompleta` inteiro e entra na conta como

@@ -111,8 +111,17 @@ function colunasCitadas(fonteSql: string, tabela: string): Set<string> {
       if (/^[a-z_]+$/.test(t)) cols.add(t);
     }
   }
-  const update = new RegExp(`UPDATE\\s+(?:public\\.)?${tabela}\\s+\\w*\\s*SET\\s+([a-z_]+)\\s*=`, 'gi');
-  for (const m of fonte.matchAll(update)) cols.add(m[1].toLowerCase());
+  // O bloco INTEIRO do SET, e não só a primeira coluna: a salvar_modelagem
+  // atualiza `modelagens` e `modelagem_receita` SÓ por UPDATE — não há INSERT
+  // delas em lugar nenhum. Um parser que lesse uma coluna por UPDATE daria
+  // verde para 19 colunas ausentes das 20 de `modelagens`.
+  const update = new RegExp(
+    `UPDATE\\s+(?:public\\.)?${tabela}\\b[\\s\\S]*?\\bSET\\b([\\s\\S]*?)(?:\\bWHERE\\b|;)`,
+    'gi',
+  );
+  for (const m of fonte.matchAll(update)) {
+    for (const c of m[1].matchAll(/(?:^|,)\s*([a-z_]+)\s*=/gm)) cols.add(c[1].toLowerCase());
+  }
   return cols;
 }
 
@@ -123,7 +132,19 @@ function colunasCitadas(fonteSql: string, tabela: string): Set<string> {
  * tabelas — que são estas menos `modelagem_cenarios` e `modelagem_overrides`,
  * gravados fora do salvamento.
  */
-const FUNCOES: { arquivo: string; tabelas: string[] }[] = [
+const FUNCOES: {
+  arquivo: string;
+  tabelas: string[];
+  /**
+   * Exceções DESTA função, chaveadas por `tabela.coluna`, com o motivo escrito.
+   *
+   * Separadas das DISPENSADAS globais de propósito: aquelas valem para qualquer
+   * função (identidade e auditoria), estas são decisões de uma função só. Uma
+   * coluna que a duplicação copia mas o salvamento não grava é informação, não
+   * ruído — e some se as duas listas virarem uma.
+   */
+  excecoes?: Record<string, string>;
+}[] = [
   {
     arquivo: 'migrations/1764600000_fn_duplicar_colunas_faltantes.sql',
     tabelas: [
@@ -149,12 +170,51 @@ const FUNCOES: { arquivo: string; tabelas: string[] }[] = [
       'modelagem_ocupacao',
     ],
   },
+  {
+    // As 18 tabelas do salvamento: as 20 da duplicação menos `modelagem_cenarios`
+    // e `modelagem_overrides`, que o salvar() não toca — o override é gravado
+    // célula a célula, na hora, fora do botão salvar.
+    arquivo: 'migrations/1764700000_fn_salvar_modelagem.sql',
+    tabelas: [
+      'modelagens',
+      'modelagem_unidades',
+      'modelagem_custos',
+      'modelagem_custo_parcelas',
+      'modelagem_socios',
+      'modelagem_socio_aportes',
+      'modelagem_aportes',
+      'modelagem_aporte_parcelas',
+      'modelagem_fases',
+      'modelagem_unidade_fases',
+      'modelagem_financiamento',
+      'modelagem_benchmark_curva',
+      'modelagem_receita',
+      'modelagem_locacao',
+      'modelagem_opex',
+      'modelagem_ocupacao',
+      'modelagem_vendas_unidade',
+      'modelagem_takedowns',
+    ],
+    excecoes: {
+      'modelagens.empresa_id':
+        'vínculo definido na criação da modelagem; o salvamento nunca o move — nem a action de hoje',
+      'modelagens.projeto_id': 'idem empresa_id',
+      'modelagens.is_modelo':
+        'natureza da linha, não premissa de cálculo. Alternada por outro fluxo (1763500000)',
+      'modelagens.tipo_modelagem':
+        'imutável depois de criada — a função LÊ para decidir os blocos de locação, e nunca grava',
+      'modelagem_unidades.aporte_base':
+        'deprecada na 1761000000: virou premissa do projeto em modelagem_aportes. Nem o motor nem as actions a leem',
+      'modelagem_receita.modelagem_id':
+        'é a CHAVE do UPDATE (vai no WHERE), não um valor gravado — a tabela é 1:1 e não tem INSERT aqui',
+    },
+  },
 ];
 
 describe('funções de banco citam toda coluna declarada', () => {
   const sql = fontesSql();
 
-  for (const { arquivo, tabelas } of FUNCOES) {
+  for (const { arquivo, tabelas, excecoes = {} } of FUNCOES) {
     describe(path.basename(arquivo), () => {
       const fonte = readFileSync(path.join(RAIZ, arquivo), 'utf8');
 
@@ -173,13 +233,15 @@ describe('funções de banco citam toda coluna declarada', () => {
             `A função não cita ${tabela} — tabela renomeada ou removida da lista?`,
           ).toBeGreaterThan(0);
 
-          const faltando = [...declaradas].filter((c) => !(c in DISPENSADAS) && !citadas.has(c));
+          const faltando = [...declaradas].filter(
+            (c) => !(c in DISPENSADAS) && !(`${tabela}.${c}` in excecoes) && !citadas.has(c),
+          );
           expect(
             faltando,
             `${arquivo} ignora coluna(s) de ${tabela}: ${faltando.join(', ')}.\n` +
               'A coluna omitida assume o DEFAULT e a linha sai com número errado, sem erro ' +
-              'nenhum. Acrescente-a à função — ou, se for realmente derivada, a DISPENSADAS ' +
-              'com o motivo escrito.',
+              'nenhum. Acrescente-a à função — ou, se ela realmente não pertence a este ' +
+              'salvamento, a `excecoes` desta função, com o motivo escrito na linha.',
           ).toEqual([]);
         });
       }
@@ -195,6 +257,20 @@ describe('funções de banco citam toda coluna declarada', () => {
     expect(dasModelagens).toContain('moeda'); // CHAR(3)
     expect(dasModelagens).toContain('data_inicio'); // DATE
     expect(colunasDaTabela(sql, 'modelagem_cenarios')).toContain('input_snapshot'); // JSONB
+  });
+
+  it('toda exceção declarada aponta para uma coluna que existe de verdade', () => {
+    // Sem isto, uma exceção com nome errado ('modelagens.tipo_modelagen') não
+    // dispensaria nada e ninguém notaria — a coluna de verdade seguiria coberta
+    // e a linha morta ficaria na lista parecendo justificar algo.
+    const orfas: string[] = [];
+    for (const { excecoes = {} } of FUNCOES) {
+      for (const chave of Object.keys(excecoes)) {
+        const [tabela, coluna] = chave.split('.');
+        if (!colunasDaTabela(sql, tabela).has(coluna)) orfas.push(chave);
+      }
+    }
+    expect(orfas).toEqual([]);
   });
 
   it('as duas colunas que motivaram o teste, pelo nome', () => {

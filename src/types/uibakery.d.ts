@@ -13,6 +13,7 @@ declare module '@uibakery/data' {
     totalMs: number;
     authMs: number;
     conexaoMs: number;
+    warmupMs: number;
     queryMs: number;
   }
 
