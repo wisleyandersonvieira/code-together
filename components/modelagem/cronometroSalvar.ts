@@ -37,10 +37,34 @@ export interface Cronometro {
   readonly total: number;
 }
 
+/**
+ * Quanto o editor REPINTOU durante o salvamento.
+ *
+ * Não vem do cronômetro: quem conta é o próprio ModelagemEditor, porque render
+ * é assunto do React e não da rede. Entra no relatório para que as duas contas
+ * — requisições e renders — apareçam lado a lado, que é a única forma de dizer
+ * qual dos dois está custando os 40 segundos.
+ *
+ * `commits` e `passadas` são números diferentes e a diferença importa: sob
+ * StrictMode (que este app liga em main.tsx) o React invoca a função do
+ * componente DUAS vezes por commit em desenvolvimento. `passadas` ≈ 2 ×
+ * `commits` é o esperado em dev, não um sintoma.
+ */
+export interface MedicaoRenders {
+  /** Commits: quantas vezes o React de fato repintou a árvore do editor. */
+  commits: number;
+  /** Invocações da função do componente. Em dev, ~2× commits (StrictMode). */
+  passadas: number;
+  /** Soma de render + commit da árvore, em ms. NÃO inclui a pintura do browser. */
+  ms: number;
+}
+
 export interface RelatorioSalvamento {
   blocos: BlocoMedido[];
   totalRequisicoes: number;
   totalMs: number;
+  /** Ausente quando ninguém mediu render — o relatório sai como antes. */
+  renders?: MedicaoRenders;
 }
 
 /** Lê a flag sem estourar em SSR nem com localStorage bloqueado. */
@@ -65,19 +89,30 @@ export function formatarMs(ms: number): string {
  *
  *   [salvar] premissas        1 req    142 ms
  *   [salvar] custos          38 req  5.204 ms
- *   [salvar] TOTAL          312 req    41.7 s
+ *   [salvar] TOTAL          312 req    41.7 s  416 renders
+ *   [salvar] render       6.2 s em 416 commits (832 passadas)
+ *
+ * As duas últimas linhas só aparecem quando houve medição de render.
  */
 export function formatarRelatorio(r: RelatorioSalvamento): string {
   const linhas = [...r.blocos, { nome: 'TOTAL', requisicoes: r.totalRequisicoes, ms: r.totalMs }];
   const larguraNome = Math.max(...linhas.map((l) => l.nome.length));
   const larguraReq = Math.max(...linhas.map((l) => String(l.requisicoes).length));
   const larguraMs = Math.max(...linhas.map((l) => formatarMs(l.ms).length));
-  return linhas
-    .map(
-      (l) =>
-        `[salvar] ${l.nome.padEnd(larguraNome)}  ${String(l.requisicoes).padStart(larguraReq)} req  ${formatarMs(l.ms).padStart(larguraMs)}`,
-    )
-    .join('\n');
+  const tabela = linhas.map(
+    (l) =>
+      `[salvar] ${l.nome.padEnd(larguraNome)}  ${String(l.requisicoes).padStart(larguraReq)} req  ${formatarMs(l.ms).padStart(larguraMs)}`,
+  );
+  const rd = r.renders;
+  if (rd) {
+    // O número de renders vai na MESMA linha do TOTAL de propósito: é ao lado do
+    // tempo total que ele responde à pergunta que motivou a medição.
+    tabela[tabela.length - 1] += `  ${rd.commits} renders`;
+    tabela.push(
+      `[salvar] render  ${formatarMs(rd.ms)} em ${rd.commits} commits (${rd.passadas} passadas)`,
+    );
+  }
+  return tabela.join('\n');
 }
 
 /** Cronômetro desligado: todos os métodos são no-op e o relatório vem vazio. */

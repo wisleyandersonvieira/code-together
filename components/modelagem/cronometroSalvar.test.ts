@@ -105,3 +105,29 @@ describe('cronômetro do salvamento', () => {
     );
   });
 });
+
+describe('renders no relatório', () => {
+  const base: RelatorioSalvamento = {
+    blocos: [{ nome: 'premissas', requisicoes: 1, ms: 142 }],
+    totalRequisicoes: 208,
+    totalMs: 41_700,
+  };
+
+  it('sem medição de render, a tabela sai exatamente como antes', () => {
+    expect(formatarRelatorio(base)).toBe(
+      ['[salvar] premissas    1 req  142 ms', '[salvar] TOTAL      208 req  41.7 s'].join('\n'),
+    );
+  });
+
+  it('com medição, o número de renders fecha a linha do TOTAL', () => {
+    const texto = formatarRelatorio({
+      ...base,
+      renders: { commits: 416, passadas: 832, ms: 6200 },
+    });
+    expect(texto.split('\n')).toEqual([
+      '[salvar] premissas    1 req  142 ms',
+      '[salvar] TOTAL      208 req  41.7 s  416 renders',
+      '[salvar] render  6.2 s em 416 commits (832 passadas)',
+    ]);
+  });
+});

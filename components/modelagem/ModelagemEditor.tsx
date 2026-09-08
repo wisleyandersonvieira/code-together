@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { observarRequisicoes, useLoadAction, useMutateAction } from '@uibakery/data';
-import { criarCronometro, formatarRelatorio } from './cronometroSalvar';
+import { criarCronometro, formatarRelatorio, type MedicaoRenders } from './cronometroSalvar';
 import { ChevronDown, Copy, Download, FileSpreadsheet, FileText, Loader2, Save, Table2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -167,6 +167,37 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
   /** Natureza da linha, não premissa de cálculo — por isso fora do ModelInput. */
   const [ehModelo, setEhModelo] = useState(false);
   const [duplicando, setDuplicando] = useState(false);
+
+  // ─── Contador de renders (instrumentação, par do cronômetro) ─────────────
+  //
+  // O salvamento faz ~200 requisições em série e cada uma mexe em estado do
+  // editor pelo shim. A pergunta que este contador existe para responder é se o
+  // custo do salvamento está na rede ou em repintar a árvore — AbaFluxoCaixa
+  // desenha 51 colunas sem memo, e não adianta otimizar o lado errado.
+  //
+  // Três números, porque um só mentiria:
+  //   passadas — invocações da função. Sob StrictMode, ~2× os commits em dev.
+  //   commits  — repinturas de verdade.
+  //   ms       — do início do corpo até o layout effect: render da árvore
+  //              inteira mais o commit. NÃO inclui a pintura do navegador.
+  //
+  // Custo quando ninguém está medindo: dois `performance.now()` e um effect sem
+  // dependências por render. Fica sempre ligado porque a flag do cronômetro é
+  // virada no meio da sessão, e um contador que só começa a contar depois do
+  // reload não serviria para nada.
+  const passadasRef = useRef(0);
+  const commitsRef = useRef(0);
+  const msRenderRef = useRef(0);
+  const inicioRenderRef = useRef(0);
+  passadasRef.current++;
+  inicioRenderRef.current = performance.now();
+  // Sem array de dependências: roda a CADA commit, que é justamente o que se
+  // quer contar. `useLayoutEffect` e não `useEffect` porque este roda antes da
+  // pintura — medindo o trabalho do React, sem o do navegador misturado.
+  useLayoutEffect(() => {
+    commitsRef.current++;
+    msRenderRef.current += performance.now() - inicioRenderRef.current;
+  });
 
   const [duplicar] = useMutateAction(duplicarModelagemAction);
   const [salvarPremissas] = useMutateAction(updateModelagemPremissasAction);
@@ -473,6 +504,13 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
     // Cronômetro por bloco, atrás da flag `provison:debug:salvar` no
     // localStorage. Desligado, todo método é no-op e o shim nem cronometra.
     const cron = criarCronometro(observarRequisicoes);
+    // Marco zero dos renders. Os contadores são cumulativos desde a montagem —
+    // é a DIFERENÇA que pertence a este salvamento.
+    const rendersAntes = {
+      passadas: passadasRef.current,
+      commits: commitsRef.current,
+      ms: msRenderRef.current,
+    };
     try {
       cron.bloco('premissas');
       await salvarPremissas({
@@ -883,7 +921,17 @@ export function ModelagemEditor({ modelagemId, onBack }: { modelagemId: number; 
       // No `finally`: um salvamento que estoura no meio também precisa desligar o
       // observador do shim, ou ele seguiria medindo requisições de outras telas.
       const relatorio = cron.encerrar();
-      if (cron.ativo) console.log(formatarRelatorio(relatorio));
+      // O último commit agendado pelo shim pode ainda não ter acontecido quando
+      // esta linha roda, e o do `setSalvando(false)` logo abaixo certamente não
+      // aconteceu: a contagem sai um ou dois commits abaixo do real. Numa ordem
+      // de grandeza de centenas isso não muda leitura nenhuma, e esperar o
+      // agendador só para fechar a conta atrasaria o salvamento de verdade.
+      const renders: MedicaoRenders = {
+        passadas: passadasRef.current - rendersAntes.passadas,
+        commits: commitsRef.current - rendersAntes.commits,
+        ms: msRenderRef.current - rendersAntes.ms,
+      };
+      if (cron.ativo) console.log(formatarRelatorio({ ...relatorio, renders }));
       setSalvando(false);
     }
   };
