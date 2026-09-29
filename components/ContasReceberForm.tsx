@@ -435,6 +435,43 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
     return parcelas;
   };
 
+  const dividirValor = (total: number, n: number) => {
+    const base = Math.floor((total / n) * 100) / 100;
+    const valores = Array(n).fill(base);
+    valores[n - 1] = Math.round((total - base * (n - 1)) * 100) / 100;
+    return valores;
+  };
+
+  const gerarPreview = (n: number) => {
+    const inicio = form.getValues('data_vencimento') || new Date();
+    const valores = dividirValor(valorTotalItens, n);
+    return Array.from({ length: n }, (_, i) => {
+      const d = new Date(inicio);
+      d.setMonth(d.getMonth() + i);
+      return { parcela: i + 1, data_vencimento: d, valor: valores[i] };
+    });
+  };
+
+  const redistribuirValores = () => {
+    const valores = dividirValor(valorTotalItens, parcelasPreview.length);
+    setParcelasPreview(parcelasPreview.map((p, i) => ({ ...p, valor: valores[i] })));
+  };
+
+  const adicionarParcela = () => {
+    const ultima = parcelasPreview[parcelasPreview.length - 1];
+    const d = new Date(ultima?.data_vencimento || form.getValues('data_vencimento') || new Date());
+    if (ultima) d.setMonth(d.getMonth() + 1);
+    const lista = [...parcelasPreview, { parcela: parcelasPreview.length + 1, data_vencimento: d, valor: 0 }];
+    setParcelasPreview(lista);
+    form.setValue('parcelas', lista.length);
+  };
+
+  const removerParcela = (index: number) => {
+    const lista = parcelasPreview.filter((_, i) => i !== index).map((p, i) => ({ ...p, parcela: i + 1 }));
+    setParcelasPreview(lista);
+    form.setValue('parcelas', lista.length || 1);
+  };
+
   const saveContaAndRateio = async (values: z.infer<typeof formSchema>, saveRateioAfter: boolean = false) => {
     // If editing and has receipts, don't allow saving
     if (isEditing && conta.titulos_recebidos > 0) {
@@ -1676,6 +1713,33 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
             <GrupoForm
               onSuccess={handleEntityCriada}
               onCancel={() => setShowEntityModal(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Save and Receive Modal */}
+      <Dialog
+        open={showSaveAndReceiveModal}
+        onOpenChange={(open) => {
+          setShowSaveAndReceiveModal(open);
+          if (!open) onSuccess();
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Efetuar Recebimento</DialogTitle>
+          </DialogHeader>
+          {contaIdParaRecebimento && (
+            <ReceiptModalContent
+              conta={{ id: contaIdParaRecebimento, matriz_id: form.getValues('matriz_id') }}
+              contas={contas || []}
+              onClose={() => { setShowSaveAndReceiveModal(false); onSuccess(); }}
+              onSuccess={() => {
+                setShowSaveAndReceiveModal(false);
+                toast({ title: 'Recebimento realizado', description: 'Recebimento efetuado com sucesso.' });
+                onSuccess();
+              }}
             />
           )}
         </DialogContent>
