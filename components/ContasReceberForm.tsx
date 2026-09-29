@@ -55,6 +55,9 @@ import loadMatrizesAction from '@/actions/loadMatrizes';
 import createContaReceberFaturamentoAction from '@/actions/createContaReceberFaturamento';
 import loadContaReceberFaturamentosAction from '@/actions/loadContaReceberFaturamentos';
 import deleteContaReceberFaturamentosAction from '@/actions/deleteContaReceberFaturamentos';
+import deleteTitulosReceberPendentesAction from '@/actions/deleteTitulosReceberPendentes';
+import loadTitulosByContaReceberAction from '@/actions/loadTitulosByContaReceber';
+import { ReceiptModalContent } from '@/components/ContasReceberList';
 import { ClienteForm } from '@/components/ClienteForm';
 import { EmpresaForm } from '@/components/EmpresaForm';
 import { GrupoForm } from '@/components/GrupoForm';
@@ -150,6 +153,28 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
   const [saveRateioAportes] = useMutateAction(saveRateioAportesAction);
   const [createRateioAporte] = useMutateAction(createRateioAporteAction);
   const [updateTitulosReceberValor] = useMutateAction(updateTitulosReceberValorAction);
+  const [deleteTitulosReceberPendentes] = useMutateAction(deleteTitulosReceberPendentesAction);
+  const [existingTitulos] = useLoadAction(loadTitulosByContaReceberAction, [], { contaReceberId: conta?.id || null });
+  const saveAndReceiveRef = React.useRef(false);
+  const [showSaveAndReceiveModal, setShowSaveAndReceiveModal] = useState(false);
+  const [contaIdParaRecebimento, setContaIdParaRecebimento] = useState<number | null>(null);
+  const [parcelasCarregadas, setParcelasCarregadas] = useState(false);
+  const parcelasEditaveis = !isEditing || (!readOnly && !(Number(conta?.titulos_recebidos) > 0));
+
+  React.useEffect(() => {
+    if (!isEditing || parcelasCarregadas || !parcelasEditaveis) return;
+    if (!existingTitulos || existingTitulos.length === 0) return;
+    const lista = [...existingTitulos]
+      .sort((a: any, b: any) => Number(a.parcela) - Number(b.parcela))
+      .map((t: any, i: number) => ({
+        parcela: i + 1,
+        data_vencimento: new Date(String(t.data_vencimento).split('T')[0] + 'T00:00:00'),
+        valor: Number(t.valor) || 0,
+      }));
+    setParcelasPreview(lista);
+    form.setValue('parcelas', lista.length);
+    setParcelasCarregadas(true);
+  }, [existingTitulos, isEditing, parcelasCarregadas, parcelasEditaveis]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -410,6 +435,43 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
     return parcelas;
   };
 
+  const dividirValor = (total: number, n: number) => {
+    const base = Math.floor((total / n) * 100) / 100;
+    const valores = Array(n).fill(base);
+    valores[n - 1] = Math.round((total - base * (n - 1)) * 100) / 100;
+    return valores;
+  };
+
+  const gerarPreview = (n: number) => {
+    const inicio = form.getValues('data_vencimento') || new Date();
+    const valores = dividirValor(valorTotalItens, n);
+    return Array.from({ length: n }, (_, i) => {
+      const d = new Date(inicio);
+      d.setMonth(d.getMonth() + i);
+      return { parcela: i + 1, data_vencimento: d, valor: valores[i] };
+    });
+  };
+
+  const redistribuirValores = () => {
+    const valores = dividirValor(valorTotalItens, parcelasPreview.length);
+    setParcelasPreview(parcelasPreview.map((p, i) => ({ ...p, valor: valores[i] })));
+  };
+
+  const adicionarParcela = () => {
+    const ultima = parcelasPreview[parcelasPreview.length - 1];
+    const d = new Date(ultima?.data_vencimento || form.getValues('data_vencimento') || new Date());
+    if (ultima) d.setMonth(d.getMonth() + 1);
+    const lista = [...parcelasPreview, { parcela: parcelasPreview.length + 1, data_vencimento: d, valor: 0 }];
+    setParcelasPreview(lista);
+    form.setValue('parcelas', lista.length);
+  };
+
+  const removerParcela = (index: number) => {
+    const lista = parcelasPreview.filter((_, i) => i !== index).map((p, i) => ({ ...p, parcela: i + 1 }));
+    setParcelasPreview(lista);
+    form.setValue('parcelas', lista.length || 1);
+  };
+
   const saveContaAndRateio = async (values: z.infer<typeof formSchema>, saveRateioAfter: boolean = false) => {
     // If editing and has receipts, don't allow saving
     if (isEditing && conta.titulos_recebidos > 0) {
@@ -455,7 +517,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
       }
 
       // Validation - check if parcelas preview total matches valor total
-      if (!isEditing && parcelasPreview.length > 0) {
+      if ((!isEditing || parcelasCarregadas) && parcelasPreview.length > 0) {
         const totalParcelas = parcelasPreview.reduce((sum, p) => sum + p.valor, 0);
         if (Math.abs(totalParcelas - valorTotalItens) > 0.01) {
           toast({
@@ -488,9 +550,9 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
 
         currentContaReceberId = conta.id;
 
-        // Update pending títulos values if valor_total changed
+        // Update pending títulos values if valor_total changed (only when parcelas were not edited directly)
         const antigoValorTotal = parseFloat(conta.valor_total);
-        if (antigoValorTotal && antigoValorTotal !== valorTotalItens) {
+        if (!parcelasCarregadas && antigoValorTotal && antigoValorTotal !== valorTotalItens) {
           await updateTitulosReceberValor({
             conta_receber_id: conta.id,
             antigo_valor_total: antigoValorTotal,
@@ -607,10 +669,21 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
         }
       }
 
+      const shouldOpenReceipt = saveAndReceiveRef.current;
+      saveAndReceiveRef.current = false;
+      const finalizar = () => {
+        if (shouldOpenReceipt) {
+          setContaIdParaRecebimento(currentContaReceberId);
+          setShowSaveAndReceiveModal(true);
+        } else {
+          onSuccess();
+        }
+      };
+
       if (!isEditing) {
         // Generate parcelas/títulos only for new accounts
         const parcelas = parcelasPreview.length > 0
-          ? parcelasPreview.map((p) => ({ ...p, total_parcelas: values.parcelas }))
+          ? parcelasPreview.map((p, i) => ({ ...p, parcela: i + 1, total_parcelas: parcelasPreview.length }))
           : generateParcelas(values.data_vencimento, values.parcelas, valorTotalItens);
 
         // Promise.all preserva a ordem do array de entrada, mantendo a ordem das parcelas
@@ -639,18 +712,31 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
         if (!saveRateioAfter) {
           toast({
             title: "Conta a receber criada",
-            description: `Conta criada com ${values.parcelas} título(s) gerado(s)${pendingFiles.length > 0 ? ` e ${pendingFiles.length} arquivo(s) anexado(s)` : ''}`,
+            description: `Conta criada com ${parcelas.length} título(s) gerado(s)${pendingFiles.length > 0 ? ` e ${pendingFiles.length} arquivo(s) anexado(s)` : ''}`,
           });
         }
-        onSuccess();
+        finalizar();
       } else {
+        if (parcelasCarregadas && parcelasPreview.length > 0) {
+          await deleteTitulosReceberPendentes({ contaReceberId: currentContaReceberId });
+          for (let i = 0; i < parcelasPreview.length; i++) {
+            const p = parcelasPreview[i];
+            await createTituloReceber({
+              conta_receber_id: currentContaReceberId,
+              parcela: i + 1,
+              total_parcelas: parcelasPreview.length,
+              data_vencimento: formatDateForDatabase(p.data_vencimento),
+              valor: Math.round(p.valor * 100) / 100,
+            });
+          }
+        }
         if (!saveRateioAfter) {
           toast({
             title: "Conta a receber atualizada",
             description: "Conta atualizada com sucesso.",
           });
         }
-        onSuccess();
+        finalizar();
       }
     } catch (error) {
       console.error('Error saving conta a receber:', error);
@@ -1423,7 +1509,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
                 description="Configure parcelas e datas com uma composição mais suave, legível e alinhada ao padrão premium."
                 contentClassName="space-y-4"
               >
-                  {!isEditing && (
+                  {parcelasEditaveis && (
                     <FormField
                       control={form.control}
                       name="parcelas"
@@ -1440,21 +1526,8 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
                               onChange={(e) => {
                                 const numParcelas = parseInt(e.target.value) || 1;
                                 field.onChange(numParcelas);
-                                
-                                if (numParcelas > 1) {
-                                  const dataVencimento = form.watch('data_vencimento') || new Date();
-                                  const parcelas = [];
-                                  for (let i = 0; i < numParcelas; i++) {
-                                    const dataVencimentoParcela = new Date(dataVencimento);
-                                    dataVencimentoParcela.setMonth(dataVencimentoParcela.getMonth() + i);
-                                    
-                                    parcelas.push({
-                                      parcela: i + 1,
-                                      data_vencimento: dataVencimentoParcela,
-                                      valor: valorTotalItens / numParcelas,
-                                    });
-                                  }
-                                  setParcelasPreview(parcelas);
+                                if (numParcelas > 1 || isEditing) {
+                                  setParcelasPreview(gerarPreview(numParcelas));
                                 } else {
                                   setParcelasPreview([]);
                                 }
@@ -1472,13 +1545,24 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
                     <div className="space-y-1 text-sm">
                       <div>Valor total: {formatCurrency(valorTotalItens)}</div>
                       <div>Número de parcelas: {form.watch('parcelas')}</div>
-                      <div>Valor por parcela: {formatCurrency(valorTotalItens / form.watch('parcelas'))}</div>
+                      <div>Valor por parcela: {formatCurrency(valorTotalItens / (form.watch('parcelas') || 1))}</div>
                     </div>
                   </div>
 
-                  {!isEditing && parcelasPreview.length > 0 && (
+                  {parcelasEditaveis && parcelasPreview.length > 0 && (
                     <div className="mt-4">
-                      <h4 className="font-medium mb-2">Detalhamento das Parcelas</h4>
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="font-medium">Detalhamento das Parcelas</h4>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={redistribuirValores}>
+                            Redistribuir valores
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={adicionarParcela}>
+                            <Plus className="mr-1 h-4 w-4" />
+                            Adicionar parcela
+                          </Button>
+                        </div>
+                      </div>
                       <div className={financeDetailTableWrapClassName}>
                         <Table>
                           <TableHeader>
@@ -1486,13 +1570,14 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
                               <TableHead className="w-[100px]">Parcela</TableHead>
                               <TableHead>Data Vencimento</TableHead>
                               <TableHead>Valor</TableHead>
+                              <TableHead className="w-[60px]"></TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {parcelasPreview.map((parcela, index) => (
                               <TableRow key={index}>
                                 <TableCell className="font-medium">
-                                  {parcela.parcela}/{form.watch('parcelas')}
+                                  {index + 1}/{parcelasPreview.length}
                                 </TableCell>
                                 <TableCell>
                                   <DatePickerWithYearSelector
@@ -1500,7 +1585,7 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
                                     onDateChange={(date) => {
                                       if (date) {
                                         const updatedParcelas = [...parcelasPreview];
-                                        updatedParcelas[index].data_vencimento = date;
+                                        updatedParcelas[index] = { ...updatedParcelas[index], data_vencimento: date };
                                         setParcelasPreview(updatedParcelas);
                                       }
                                     }}
@@ -1516,10 +1601,22 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
                                     value={parcela.valor}
                                     onChange={(e) => {
                                       const updatedParcelas = [...parcelasPreview];
-                                      updatedParcelas[index].valor = parseFloat(e.target.value) || 0;
+                                      updatedParcelas[index] = { ...updatedParcelas[index], valor: parseFloat(e.target.value) || 0 };
                                       setParcelasPreview(updatedParcelas);
                                     }}
                                   />
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={parcelasPreview.length <= 1}
+                                    onClick={() => removerParcela(index)}
+                                    title="Remover parcela"
+                                  >
+                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                  </Button>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1560,6 +1657,28 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
                         : (isSaving ? 'Salvando...' : 'Salvar Conta')
                     }
                   </Button>
+                  {!readOnly && !(isEditing && conta?.titulos_recebidos > 0) && (
+                    <Button
+                      type="button"
+                      disabled={
+                        isSaving ||
+                        isCreating ||
+                        isUpdating ||
+                        valorTotalItens === 0 ||
+                        (projetosFields.length > 0 && Math.abs(percentualTotalRateio - 100) > 0.01) ||
+                        (faturamentosFields.length > 0 && Math.abs(valorTotalFaturamento - valorTotalItens) > 0.01) ||
+                        itensFields.length === 0
+                      }
+                      className="h-11 flex-1 rounded-xl bg-emerald-700 text-white shadow-sm hover:bg-emerald-600"
+                      onClick={() => {
+                        saveAndReceiveRef.current = true;
+                        form.handleSubmit(onSubmit, () => { saveAndReceiveRef.current = false; })();
+                      }}
+                    >
+                      {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                      {isSaving ? 'Salvando...' : 'Salvar e Baixar'}
+                    </Button>
+                  )}
                   <Button type="button" variant="outline" onClick={onCancel} className="h-11 rounded-xl border-slate-200 bg-white px-5 text-slate-700 hover:border-slate-300 hover:bg-slate-50">
                     Cancelar
                   </Button>
@@ -1594,6 +1713,33 @@ export function ContasReceberForm({ conta, onSuccess, onCancel, readOnly = false
             <GrupoForm
               onSuccess={handleEntityCriada}
               onCancel={() => setShowEntityModal(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Save and Receive Modal */}
+      <Dialog
+        open={showSaveAndReceiveModal}
+        onOpenChange={(open) => {
+          setShowSaveAndReceiveModal(open);
+          if (!open) onSuccess();
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Efetuar Recebimento</DialogTitle>
+          </DialogHeader>
+          {contaIdParaRecebimento && (
+            <ReceiptModalContent
+              conta={{ id: contaIdParaRecebimento, matriz_id: form.getValues('matriz_id') }}
+              contas={contas || []}
+              onClose={() => { setShowSaveAndReceiveModal(false); onSuccess(); }}
+              onSuccess={() => {
+                setShowSaveAndReceiveModal(false);
+                toast({ title: 'Recebimento realizado', description: 'Recebimento efetuado com sucesso.' });
+                onSuccess();
+              }}
             />
           )}
         </DialogContent>

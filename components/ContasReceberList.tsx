@@ -27,6 +27,7 @@ import {
   Eye,
   CreditCard,
   Undo2,
+  Trash2,
   Filter,
   ChevronLeft,
   ChevronRight,
@@ -592,6 +593,10 @@ export function ContasReceberList() {
                               Estornar
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuItem onClick={() => handleDelete(conta)} className="cursor-pointer text-red-600 focus:text-red-700">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Excluir
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -850,7 +855,7 @@ interface ReverseReceiptModalContentProps {
   onSuccess: () => void;
 }
 
-function ReceiptModalContent({ conta, contas, onClose, onSuccess }: ReceiptModalContentProps) {
+export function ReceiptModalContent({ conta, contas, onClose, onSuccess }: ReceiptModalContentProps) {
   const { formatCurrency } = useCurrency();
   const [titulos, loading] = useLoadAction(loadTitulosByContaReceberAction, [], { contaReceberId: conta.id });
   const [receiveTituloReceber] = useMutateAction(receiveTituloReceberAction);

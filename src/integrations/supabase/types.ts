@@ -2202,6 +2202,7 @@ export type Database = {
           created_at: string | null
           custo_venda_pct: number
           id: number
+          mes_inicio_opex: number | null
           modelagem_id: number
           noi_referencia: string
           ocupacao_estabilizada_pct: number
@@ -2214,6 +2215,7 @@ export type Database = {
           created_at?: string | null
           custo_venda_pct?: number
           id?: number
+          mes_inicio_opex?: number | null
           modelagem_id: number
           noi_referencia?: string
           ocupacao_estabilizada_pct?: number
@@ -2226,6 +2228,7 @@ export type Database = {
           created_at?: string | null
           custo_venda_pct?: number
           id?: number
+          mes_inicio_opex?: number | null
           modelagem_id?: number
           noi_referencia?: string
           ocupacao_estabilizada_pct?: number
@@ -3949,6 +3952,7 @@ export type Database = {
         Returns: undefined
       }
       recalc_jornada: { Args: { p_jornada_id: number }; Returns: undefined }
+      salvar_modelagem: { Args: { p_payload: Json }; Returns: Json }
       save_auditoria_fornecedor: {
         Args: { p_payload: Json; p_user_id?: number }
         Returns: Json
